@@ -26,3 +26,4 @@ if __name__ == "__main__":
         )
     else:
         PipelineController(args.camera_config, args.rgbd_video, args.device)
+        
