@@ -55,7 +55,7 @@ class PipelineView:
                                                               [0, 0, 0.5])
         self.camera_view()  # Initially look from the camera
         em = self.window.theme.font_size
-
+        self.em = em
         # Options panel
         self.panel = gui.Vert(em, gui.Margins(em, em, em, em))
         # Remove this line
@@ -440,8 +440,8 @@ class PipelineView:
     def on_layout(self, layout_context):
         """Callback on window initialize / resize"""
         frame = self.window.content_rect
-        panel_width = int(320 * self.window.scaling)
-
+        # panel_width = int(frame.width * 0.2)  # Set panel width to 20% of total width
+        panel_width = self.em*20
         # Set the frame for the panel on the right side
         self.panel.frame = gui.Rect(frame.get_right() - panel_width,
                                     frame.y, panel_width,
@@ -449,14 +449,15 @@ class PipelineView:
 
         # Set the frame for the scene on the left side
         self.pcdview.frame = gui.Rect(frame.x, frame.y,
-                                      frame.width - panel_width,
-                                      frame.height)
+                                    frame.width - panel_width,
+                                    frame.height)
 
         pref = self.fps_label.calc_preferred_size(layout_context,
-                                             gui.Widget.Constraints())
+                                                gui.Widget.Constraints())
         self.fps_label.frame = gui.Rect(frame.x,
-                                   frame.get_bottom() - pref.height, pref.width,
-                                   pref.height)
+                                        frame.get_bottom() - pref.height,
+                                        pref.width, pref.height)
+
 
     def _on_bbox_slider_changed(self, value, param):
         self.bbox_params[param] = value

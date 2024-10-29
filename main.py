@@ -12,7 +12,7 @@ if __name__ == "__main__":
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--camera-config',
                         help='Azure Kinect camera configuration JSON file',
-                        default='/home/capre/PCD/reconstruction_system/sensors/default_config.json')
+                        default='./default_config.json')
     parser.add_argument('--rgbd-video', help='RGBD video file')
     parser.add_argument('--device',
                         default='cuda:0',

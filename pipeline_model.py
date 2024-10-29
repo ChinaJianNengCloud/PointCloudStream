@@ -125,7 +125,10 @@ class PipelineModel:
             self.rgbd_frame = self.camera.capture_frame(True)
             while self.rgbd_frame is None:
                 time.sleep(0.01)
-                self.rgbd_frame = self.camera.capture_frame(True)
+                try:
+                    self.rgbd_frame = self.camera.capture_frame(True)
+                except:
+                    pass
 
         pcd_errors = 0
         while (not self.flag_exit and
