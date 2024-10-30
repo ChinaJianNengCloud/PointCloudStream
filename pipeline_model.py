@@ -260,7 +260,7 @@ class PipelineModel:
             from ultralytics import YOLO, SAM
             # self.executor.submit(get_model, "third_party/scannet200_val.ckpt")
             # model_checkpoint_path = "/home/capre/sapiens/sapiens_host/seg/sapiens_0.3b_goliath_best_goliath_mIoU_7673_epoch_194_torchscript.pt2"
-            self.pcd_seg_model = YOLO("yolo11x-seg.pt")
+            self.pcd_seg_model = YOLO("yolo11s-seg.pt")
             # self.pcd_seg_model = SAM("sam2.1_t.pt")
             # self.yoloworld = YOLOWORLD_Frame(image_size=[1280, 720], vocab='')
         # self.flag_model_init = True
