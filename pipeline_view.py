@@ -38,9 +38,11 @@ class Widget_Init:
     def __init_widgets(self):
         # Initialize all widgets by calling their respective initialization functions
         self.__init_fps_label()
-        self.__init_toggles()
-        self.__init_edit_mode_toggle()
-        self.__init_model_init_toggle()
+        self.__init_toggle_view_set()
+        self.__init_display_mode_combobox()
+        self.__init_robot_button()
+        self.__init_calibrate_button()
+        self.__init_toggle_set_2()
         self.__init_view_buttons()
         self.__init_save_toggles()
         self.__init_save_buttons()
@@ -54,56 +56,87 @@ class Widget_Init:
         self.fps_label = gui.Label("FPS: 00")
         self.window.add_child(self.fps_label)
 
-    def __init_toggles(self):
-        toggles = gui.Horiz(self.em)
-        self.panel.add_child(toggles)
-        self.__init_toggle_capture(toggles)
-        self.__init_toggle_normals(toggles)
+    def __init_robot_button(self):
+        button_layout = gui.Horiz(self.em)
+        # button_layout.add_stretch()
+        self.robot_button = gui.Button("Robot Init")
+        self.robot_button.horizontal_padding_em = 0.5
+        self.robot_button.vertical_padding_em = 0
+    
+        button_layout.add_child(self.robot_button)
 
-    def __init_toggle_capture(self, parent_layout):
+        self.robot_msg = gui.Label("Robot Not Connected    ")
+        button_layout.add_child(self.robot_msg)
+        # button_layout.add_stretch()
+        self.panel.add_child(button_layout)
+
+    def __init_calibrate_button(self):
+        button_layout = gui.Horiz(self.em)
+        self.panel.add_child(button_layout)
+
+        # button_layout.add_stretch()
+    
+        self.calibrate_button = gui.Button("H-E Calibration")
+        self.calibrate_button.tooltip = "Start Hand-Eye Calibration"
+        self.calibrate_button.horizontal_padding_em = 0.5
+        self.calibrate_button.vertical_padding_em = 0
+        button_layout.add_child(self.calibrate_button)
+
+        self.calibration_msg = gui.Label("Not Calibration Yet   ")
+        button_layout.add_child(self.calibration_msg)
+
+        # button_layout.add_stretch()
+        
+
+    def __init_toggle_view_set(self):
+        toggle_layout = gui.Horiz(self.em)
+        self.panel.add_child(toggle_layout)
+        # toggle_layout.add_stretch()
+
         self.toggle_capture = gui.ToggleSwitch("Capture / Play")
         self.toggle_capture.is_on = False
-        self.toggle_capture.set_on_clicked(self.callbacks['on_toggle_capture'])
-        parent_layout.add_child(self.toggle_capture)
+        toggle_layout.add_child(self.toggle_capture)
 
-    def __init_toggle_normals(self, parent_layout):
-        self.toggle_normals = gui.ToggleSwitch("Colors / Normals")
-        self.toggle_normals.is_on = False
-        self.toggle_normals.set_on_clicked(self.callbacks['on_toggle_normals'])
-        parent_layout.add_child(self.toggle_normals)
+        self.toggle_model_init = gui.ToggleSwitch("Seg Mode")
+        self.toggle_model_init.is_on = False
+        toggle_layout.add_child(self.toggle_model_init)
 
-    def __init_edit_mode_toggle(self):
-        edit_mode_toggle = gui.Horiz(self.em)
-        self.panel.add_child(edit_mode_toggle)
-        self.toggle_edit_mode = gui.ToggleSwitch("Edit Mode")
-        self.toggle_edit_mode.is_on = False
-        # Callback to be set later in PipelineView
-        edit_mode_toggle.add_child(self.toggle_edit_mode)
+        # toggle_layout.add_stretch()
 
-        self.__init_toggle_segmentation(edit_mode_toggle)
 
-    def __init_toggle_segmentation(self, parent_layout):
-        self.toggle_segmentation = gui.ToggleSwitch("Show Segmentation")
-        self.toggle_segmentation.is_on = False
-        # Callback to be set later in PipelineView
-        parent_layout.add_child(self.toggle_segmentation)
-
-    def __init_model_init_toggle(self):
+    def __init_toggle_set_2(self):
         edit_mode_toggle_2 = gui.Horiz(self.em)
         self.panel.add_child(edit_mode_toggle_2)
-        self.toggle_model_init = gui.ToggleSwitch("Model Initialization")
-        self.toggle_model_init.is_on = False
-        self.toggle_model_init.set_on_clicked(self.callbacks['on_toggle_model_init'])
-        edit_mode_toggle_2.add_child(self.toggle_model_init)
+        self.toggle_acq_mode = gui.ToggleSwitch("Acquisition Mode")
+        self.toggle_acq_mode.is_on = False
+        edit_mode_toggle_2.add_child(self.toggle_acq_mode)
+
+
+
+
+    def __init_display_mode_combobox(self):
+        display_mode_layout = gui.Horiz(self.em)
+        self.panel.add_child(display_mode_layout)
+
+        display_mode_label = gui.Label("Display Mode:")
+        display_mode_layout.add_child(display_mode_label)
+
+        self.display_mode_combobox = gui.Combobox()
+        self.display_mode_combobox.add_item("Colors")
+        self.display_mode_combobox.add_item("Normals")
+        self.display_mode_combobox.add_item("Segmentation")
+        self.display_mode_combobox.selected_text = "Colors"
+        self.display_mode_combobox.set_on_selection_changed(
+            self.callbacks['on_display_mode_changed'])
+        # Callback to be set later in PipelineView
+        display_mode_layout.add_child(self.display_mode_combobox)
 
     def __init_view_buttons(self):
         view_buttons = gui.Horiz(self.em)
         self.panel.add_child(view_buttons)
         view_buttons.add_stretch()  # for centering
-
         self.__init_camera_view_button(view_buttons)
         self.__init_birds_eye_view_button(view_buttons)
-
         view_buttons.add_stretch()  # for centering
 
     def __init_camera_view_button(self, parent_layout):
@@ -145,11 +178,15 @@ class Widget_Init:
     def __init_save_pcd_button(self, parent_layout):
         self.save_pcd_button = gui.Button("Save Point cloud")
         self.save_pcd_button.set_on_clicked(self.callbacks['on_save_pcd'])
+        self.save_pcd_button.horizontal_padding_em = 0.5
+        self.save_pcd_button.vertical_padding_em = 0
         parent_layout.add_child(self.save_pcd_button)
 
     def __init_save_rgbd_button(self, parent_layout):
         self.save_rgbd_button = gui.Button("Save RGBD frame")
         self.save_rgbd_button.set_on_clicked(self.callbacks['on_save_rgbd'])
+        self.save_rgbd_button.horizontal_padding_em = 0.5
+        self.save_rgbd_button.vertical_padding_em = 0
         parent_layout.add_child(self.save_rgbd_button)
 
     def __init_video_displays(self):
@@ -233,7 +270,7 @@ class PipelineView:
         self.max_pcd_vertices = max_pcd_vertices
         self.callbacks = callbacks  # Store the callbacks dictionary
         self.capturing = False  # Initialize capturing flag
-        self.edit_mode = False  # Initialize edit mode flag
+        self.acq_mode = False  # Initialize acquisition mode flag
 
         gui.Application.instance.initialize()
         self.window = gui.Application.instance.create_window(
@@ -245,11 +282,16 @@ class PipelineView:
         self.widget_all = Widget_Init(self.window, callbacks)
 
         # Set the callbacks for widgets that require methods of PipelineView
-        self.widget_all.toggle_edit_mode.set_on_clicked(self._on_toggle_edit_mode)
-        self.widget_all.toggle_segmentation.set_on_clicked(self._on_toggle_segmentation)
+        self.widget_all.toggle_capture.set_on_clicked(self.callbacks['on_toggle_capture'])
+        self.widget_all.toggle_acq_mode.set_on_clicked(self._on_toggle_acq_mode)
+        self.widget_all.display_mode_combobox.set_on_selection_changed(
+            callbacks['on_display_mode_changed'])
         self.widget_all.camera_view_button.set_on_clicked(self.camera_view)
         self.widget_all.birds_eye_view_button.set_on_clicked(self.birds_eye_view)
         self.widget_all.pcdview.set_on_mouse(callbacks['on_mouse_widget3d'])  # Set initial mouse callback
+        self.widget_all.toggle_model_init.set_on_clicked(callbacks['on_toggle_model_init'])
+        self.widget_all.robot_button.set_on_clicked(callbacks['on_robot_button'])
+        # self.widget_all.robot_msg
         self.toggle_record = self.widget_all.toggle_record
         # Now, we can access the widgets via self.widget_all
         self.pcdview = self.widget_all.get_pcd_view()
@@ -266,24 +308,19 @@ class PipelineView:
         self.camera_view()  # Initially look from the camera
 
         # Initialize other variables
-        self.flag_normals = False
-        self.show_segmentation = False
-        
+        self.display_mode = 'Colors'  # Initialize display mode to 'Colors'
+
         self.video_size = self.widget_all.video_size
 
         self.flag_exit = False
         self.flag_gui_init = False
-        self.camera_material = rendering.MaterialRecord()
-        self.camera_material.shader = "unlitLine"
-        self.camera_material.line_width = 5
+        self.line_material = rendering.MaterialRecord()
+        self.line_material.shader = "unlitLine"
+        self.line_material.line_width = 5
 
         # Initialize plane and rectangle
         self.plane = None
-        self.rectangle = None
-        self.rectangle_material = rendering.MaterialRecord()
-        self.rectangle_material.shader = "unlitLine"
-        self.rectangle_material.line_width = 2  # Adjust the line width as needed
-        
+
         self.palettes = get_num_of_palette(80)
 
         self.__init_bbox()
@@ -303,9 +340,6 @@ class PipelineView:
 
         # Initialize the bounding box in the scene
         self.update_bounding_box()
-
-        # Initialize palettes
-        
 
         # Set up callbacks for bbox sliders and edits
         bbox_params = ['xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax']
@@ -355,7 +389,7 @@ class PipelineView:
 
         if 'camera' in frame_elements:
             self.pcdview.scene.remove_geometry("camera")
-            self.pcdview.scene.add_geometry("camera", frame_elements['camera'], self.camera_material)
+            self.pcdview.scene.add_geometry("camera", frame_elements['camera'], self.line_material)
 
         if 'status_message' in frame_elements:
             self.widget_all.status_message.text = frame_elements["status_message"]
@@ -366,11 +400,6 @@ class PipelineView:
 
         self.widget_all.view_status.text = str(self.pcdview.scene.camera.get_view_matrix())
 
-    def _on_toggle_segmentation(self, is_on):
-        self.show_segmentation = is_on
-        # Update the point cloud visualization
-        self.update_pcd_geometry()
-
     def update_pcd_geometry(self):
         if not self.flag_gui_init:
             # Initialize the point cloud geometry in the scene
@@ -380,15 +409,20 @@ class PipelineView:
                                           o3d.core.Dtype.Float32),
                 'colors':
                     o3d.core.Tensor.zeros((self.max_pcd_vertices, 3),
-                                          o3d.core.Dtype.Float32),
+                                          o3c.Dtype.Float32),
                 'normals':
                     o3d.core.Tensor.zeros((self.max_pcd_vertices, 3),
-                                          o3d.core.Dtype.Float32)
+                                          o3c.Dtype.Float32)
             })
             if self.pcdview.scene.has_geometry('pcd'):
                 self.pcdview.scene.remove_geometry('pcd')
 
-            self.pcd_material.shader = "normals" if self.flag_normals else "defaultLit"
+            # Set shader based on display mode
+            if self.display_mode == 'Normals':
+                self.pcd_material.shader = 'normals'
+            else:
+                self.pcd_material.shader = 'defaultLit'
+
             self.pcdview.scene.add_geometry('pcd', dummy_pcd, self.pcd_material)
             self.flag_gui_init = True
 
@@ -396,15 +430,15 @@ class PipelineView:
         if pcd is None:
             return
 
-        if self.show_segmentation and self.current_seg is not None:
+        if self.display_mode == 'Segmentation' and self.current_seg is not None:
             labels = self.current_seg  # Assuming labels is either a numpy array or a torch tensor
 
             # If labels is a torch tensor (possibly on GPU), handle accordingly
             if isinstance(labels, torch.Tensor):
                 device = labels.device  # Get the device (CPU or GPU)
 
-                # Convert GOLIATH_PALETTE to a torch tensor on the same device
-                GOLIATH_PALETTE_TENSOR = torch.tensor(self.palettes, device=device, dtype=torch.float32) / 255.0
+                # Convert palettes to a torch tensor on the same device
+                PALETTE_TENSOR = torch.tensor(self.palettes, device=device, dtype=torch.float32) / 255.0
 
                 num_points = labels.shape[0]
 
@@ -415,7 +449,7 @@ class PipelineView:
                 valid_indices = torch.nonzero(labels >= 0, as_tuple=False).squeeze(1)
 
                 # Assign colors to valid points
-                colors[valid_indices] = GOLIATH_PALETTE_TENSOR[labels[valid_indices]]
+                colors[valid_indices] = PALETTE_TENSOR[labels[valid_indices]]
 
                 # Convert colors to Open3D tensor and assign to point cloud
                 pcd.point.colors = o3c.Tensor(colors, dtype=o3c.Dtype.Float32, device=device)
@@ -436,8 +470,18 @@ class PipelineView:
                 # Convert colors to Open3D tensor and assign to point cloud
                 pcd.point.colors = o3c.Tensor(colors, dtype=o3c.Dtype.Float32)
 
+            # Set shader to defaultLit for segmentation coloring
+            self.pcd_material.shader = 'defaultLit'
             pcd_to_display = pcd
-        else:
+
+        elif self.display_mode == 'Normals':
+            # Use normals for coloring; shader will use normals
+            self.pcd_material.shader = 'normals'
+            pcd_to_display = pcd
+
+        else:  # 'Colors' mode
+            # Use colors as usual
+            self.pcd_material.shader = 'defaultLit'
             pcd_to_display = pcd
 
         # Update the geometry in the scene
@@ -479,8 +523,8 @@ class PipelineView:
                                                    frame.get_bottom() - pref.height,
                                                    pref.width, pref.height)
 
-    def _on_toggle_edit_mode(self, is_on):
-        self.edit_mode = is_on
+    def _on_toggle_acq_mode(self, is_on):
+        self.acq_mode = is_on
         if is_on:
             # Disable camera controls by setting to PICK_POINTS mode
             self.pcdview.set_view_controls(gui.SceneWidget.Controls.PICK_POINTS)
@@ -503,10 +547,6 @@ class PipelineView:
             if self.plane is not None:
                 self.pcdview.scene.remove_geometry("edit_plane")
                 self.plane = None
-            # Remove the rectangle if it exists
-            if self.rectangle is not None:
-                self.pcdview.scene.remove_geometry("rectangle")
-                self.rectangle = None
             self.pcdview.force_redraw()
 
     def _on_bbox_slider_changed(self, value, param):

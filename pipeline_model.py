@@ -42,10 +42,8 @@ class PipelineModel:
         self.video = None
         self.camera = None
 
-        self.flag_capture = False
         self.cv_capture = threading.Condition()  # condition variable
-        self.recording = False  # Are we currently recording
-        self.flag_record = False  # Request to start/stop recording
+
         if rgbd_video:  # Video file
             self.video = o3d.t.io.RGBDVideoReader.create(rgbd_video)
             self.rgbd_metadata = self.video.metadata
@@ -88,18 +86,23 @@ class PipelineModel:
                                               device=self.o3d_device)
         self.depth_max = 3.0  # m
         self.pcd_stride = 2  # downsample point cloud, may increase frame rate
+        self.__init_gui_signals()
+        self.executor = ThreadPoolExecutor(max_workers=3,
+                                           thread_name_prefix='Capture-Save')
+    
+    def __init_gui_signals(self):
+        self.recording = False  # Are we currently recording
+        self.flag_record = False  # Request to start/stop recording
+        self.flag_capture = False
         self.flag_normals = False
         self.flag_save_rgbd = False
         self.flag_save_pcd = False
         self.flag_model_init = False
-
-        self.pcd_frame = None
-        self.rgbd_frame = None
-        self.executor = ThreadPoolExecutor(max_workers=3,
-                                           thread_name_prefix='Capture-Save')
         self.flag_exit = False
         self.color_mean = None
         self.color_std = None
+        self.pcd_frame = None
+        self.rgbd_frame = None
 
     @property
     def max_points(self):
@@ -200,24 +203,11 @@ class PipelineModel:
                 log.debug(f"color_mean = {self.color_mean}, color_std = {self.color_std}")
 
             if self.flag_model_init:
-                labels = segment_pcd_from_2d(self.pcd_seg_model, self.intrinsic_matrix, self.extrinsics, self.pcd_frame, np.asarray(self.rgbd_frame.color))
-                # mask = inference_single_image(self.pcd_seg_model, color.cpu(), device=self.device, bfp16=False, threshold=0.3)
-                # labels = map_mask_to_point_cloud(self.pcd_frame, mask, self.intrinsic_matrix, self.extrinsics)
+                labels = segment_pcd_from_2d(self.pcd_seg_model, 
+                                             self.intrinsic_matrix, self.extrinsics, 
+                                             self.pcd_frame, np.asarray(self.rgbd_frame.color))
                 frame_elements['seg'] = labels
 
-
-
-            # self.pcd_seg_model(rgb_xyz)
-            # with torch.no_grad():
-            #     self.pcd_seg_model()
-            
-            # process_frame = {
-            #     'rgb_view_list': color.numpy(),
-            #     'pcd': self.pcd_frame.numpy(),
-            #     'mask_binary': None,
-            #     'camera_poses': [self.extrinsics.numpy()],
-            #     'intrinsic_matrices': [self.intrinsic_matrix.numpy()]
-            # }
             self.update_view(frame_elements)
 
             if self.flag_save_rgbd:
@@ -227,7 +217,7 @@ class PipelineModel:
             if self.flag_save_pcd:
                 self.save_pcd()
                 self.flag_save_pcd = False
-                
+
             self.rgbd_frame = future_rgbd_frame.result()
             while self.rgbd_frame is None:
                 time.sleep(0.01)
@@ -298,3 +288,6 @@ class PipelineModel:
         self.executor.submit(o3d.t.io.write_image, filename_depth, depth_image)
         self.status_message = (
             f"Saving RGBD images to {filename_color} and {filename_depth}.")
+        
+    def calibration(self):
+        pass

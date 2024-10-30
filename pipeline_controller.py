@@ -37,10 +37,13 @@ class PipelineController:
             on_toggle_capture=self.on_toggle_capture,
             on_save_pcd=self.on_save_pcd,
             on_save_rgbd=self.on_save_rgbd,
-            on_toggle_record=None,  # Recording not implemented
+            on_toggle_record=self.on_toggle_record,  # Recording not implemented
             on_toggle_normals=self.on_toggle_normals,
-            on_mouse_widget3d=self._on_mouse_widget3d,
-            on_toggle_model_init=self.on_toggle_model_init)
+            on_mouse_widget3d=self.on_mouse_widget3d,
+            on_toggle_model_init=self.on_toggle_model_init,
+            on_display_mode_changed=self.on_display_mode_changed,
+            on_robot_button=self.on_robot_button
+            )
 
         threading.Thread(name='PipelineModel',
                          target=self.pipeline_model.run).start()
@@ -63,7 +66,7 @@ class PipelineController:
 
         if not self.pipeline_view.capturing:
             # Set the mouse callback when not capturing
-            self.pipeline_view.pcdview.set_on_mouse(self._on_mouse_widget3d)
+            self.pipeline_view.pcdview.set_on_mouse(self.on_mouse_widget3d)
         else:
             # Unset the mouse callback when capturing
             self.pipeline_view.pcdview.set_on_mouse(None)
@@ -82,6 +85,27 @@ class PipelineController:
     def on_toggle_record(self, is_enabled):
         """Callback to toggle recording RGBD video."""
         self.pipeline_model.flag_record = is_enabled
+
+    def on_display_mode_changed(self, text, index):
+        """Callback to change display mode."""
+        # self.pipeline_view.flag_normals = False
+        self.pipeline_model.flag_normals = False
+        self.pipeline_view.display_mode = text
+        # log.debug(f'Display mode: {text}')
+        match text:
+            case 'Colors':
+                log.debug('Display mode: Colors')
+                
+                pass
+            case 'Normals':
+                log.debug('Display mode: Normals')
+                # self.pipeline_view.flag_normals = True
+                self.pipeline_model.flag_normals = True
+                self.pipeline_view.flag_gui_init = False
+            case 'Segmentation':
+                log.debug('Display mode: Segmentation')
+                self.pipeline_view.show_segmentation = True
+                self.pipeline_view.update_pcd_geometry()
 
     def on_toggle_normals(self, is_enabled):
         """Callback to toggle display of normals"""
@@ -109,11 +133,11 @@ class PipelineController:
         """Callback to save current RGBD image pair."""
         self.pipeline_model.flag_save_rgbd = True
         
-    def _on_mouse_widget3d(self, event):
+    def on_mouse_widget3d(self, event):
         if self.pipeline_view.capturing:
             return gui.Widget.EventCallbackResult.IGNORED  # Do nothing if capturing
 
-        if not self.pipeline_view.edit_mode:
+        if not self.pipeline_view.acq_mode:
             return gui.Widget.EventCallbackResult.IGNORED
 
         # Handle left button down with Ctrl key to start drawing
@@ -165,3 +189,22 @@ class PipelineController:
             return gui.Widget.EventCallbackResult.HANDLED
 
         return gui.Widget.EventCallbackResult.IGNORED
+    
+    def on_robot_button(self):
+        from robot import RoboticArm
+        try:
+            self.robot = RoboticArm()
+            ip = self.robot.ip_address
+            msg = f'Conected: {ip}'
+            self.pipeline_view.widget_all.robot_msg.text_color = gui.Color(0, 1, 0)
+
+        except Exception as e:
+            self.robot = None
+            msg = f'Robot Connection failed'
+            self.pipeline_view.widget_all.robot_msg.text_color = gui.Color(1, 0, 0)
+
+        self.pipeline_view.widget_all.robot_msg.text = msg
+        pass
+    
+    def _on_robot_init(self):
+        pass
