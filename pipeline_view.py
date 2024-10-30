@@ -283,7 +283,12 @@ class PipelineView:
         self.rectangle_material = rendering.MaterialRecord()
         self.rectangle_material.shader = "unlitLine"
         self.rectangle_material.line_width = 2  # Adjust the line width as needed
+        
+        self.palettes = get_num_of_palette(80)
 
+        self.__init_bbox()
+
+    def __init_bbox(self):
         # Initialize bounding box parameters
         self.bbox_params = {'xmin': -0.5, 'xmax': 0.5,
                             'ymin': -0.5, 'ymax': 0.5,
@@ -300,7 +305,7 @@ class PipelineView:
         self.update_bounding_box()
 
         # Initialize palettes
-        self.palettes = get_num_of_palette(80)
+        
 
         # Set up callbacks for bbox sliders and edits
         bbox_params = ['xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax']
