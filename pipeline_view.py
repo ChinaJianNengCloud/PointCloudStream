@@ -108,11 +108,15 @@ class Widget_Init:
 
     def __init_camera_view_button(self, parent_layout):
         self.camera_view_button = gui.Button("Camera view")
+        self.camera_view_button.horizontal_padding_em = 0.5
+        self.camera_view_button.vertical_padding_em = 0
         # Callback to be set later in PipelineView
         parent_layout.add_child(self.camera_view_button)
 
     def __init_birds_eye_view_button(self, parent_layout):
         self.birds_eye_view_button = gui.Button("Bird's eye view")
+        self.birds_eye_view_button.horizontal_padding_em = 0.5
+        self.birds_eye_view_button.vertical_padding_em = 0
         # Callback to be set later in PipelineView
         parent_layout.add_child(self.birds_eye_view_button)
 
@@ -246,7 +250,7 @@ class PipelineView:
         self.widget_all.camera_view_button.set_on_clicked(self.camera_view)
         self.widget_all.birds_eye_view_button.set_on_clicked(self.birds_eye_view)
         self.widget_all.pcdview.set_on_mouse(callbacks['on_mouse_widget3d'])  # Set initial mouse callback
-
+        self.toggle_record = self.widget_all.toggle_record
         # Now, we can access the widgets via self.widget_all
         self.pcdview = self.widget_all.get_pcd_view()
         self.em = self.widget_all.em
@@ -264,9 +268,7 @@ class PipelineView:
         # Initialize other variables
         self.flag_normals = False
         self.show_segmentation = False
-        self.num_segments = 20
-        self.segcmap = plt.get_cmap('tab20', self.num_segments)
-
+        
         self.video_size = self.widget_all.video_size
 
         self.flag_exit = False
