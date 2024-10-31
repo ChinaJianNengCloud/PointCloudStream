@@ -38,6 +38,7 @@ class Widget_Init:
     def __init_widgets(self):
         # Initialize all widgets by calling their respective initialization functions
         self.__init_fps_label()
+        self.__init_status_message()
         self.__init_toggle_view_set()
         self.__init_display_mode_combobox()
         self.__init_robot_button()
@@ -49,7 +50,6 @@ class Widget_Init:
         self.__init_video_displays()
         self.__init_operate_info()
         self.__init_scene_info()
-        self.__init_status_message()
         self.__init_bbox_controls()
 
     def __init_fps_label(self):
@@ -257,6 +257,22 @@ class Widget_Init:
             self.bbox_controls.add_child(layout)
             self.bbox_sliders[param] = slider
             self.bbox_edits[param] = number_edit
+
+        control_buttons = gui.Horiz(self.em)
+        control_buttons.add_stretch()
+        self.bbox_controls.add_child(control_buttons)
+        self.save_bbox_button = gui.Button("Save")
+        # self.save_bbox_button.set_on_clicked(self.callbacks['on_save_bbox'])
+        self.save_bbox_button.horizontal_padding_em = 0.5
+        self.save_bbox_button.vertical_padding_em = 0
+        control_buttons.add_child(self.save_bbox_button)
+
+        self.load_bbox_button = gui.Button("Load")
+        # self.load_bbox_button.set_on_clicked(self.callbacks['on_load_bbox'])
+        self.load_bbox_button.horizontal_padding_em = 0.5
+        self.load_bbox_button.vertical_padding_em = 0
+        control_buttons.add_child(self.load_bbox_button)
+        control_buttons.add_stretch()
 
     def get_pcd_view(self):
         return self.pcdview

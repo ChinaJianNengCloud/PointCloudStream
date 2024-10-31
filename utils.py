@@ -1,6 +1,5 @@
 
 
-
 def get_num_of_palette(num):
     """
     Returns a list of RGB colors of length 'num'.

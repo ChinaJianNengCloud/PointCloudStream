@@ -37,7 +37,7 @@ class PipelineModel:
         else:
             self.device = 'cuda:0' if o3d.core.cuda.is_available() else 'cpu:0'
         self.o3d_device = o3d.core.Device(self.device)
-        self.torch_device = torch.device('cuda:0')
+        self.torch_device = torch.device(self.device)
         
         self.video = None
         self.camera = None
