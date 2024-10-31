@@ -8,7 +8,7 @@ import numpy as np
 import torch
 import open3d as o3d
 import open3d.core as o3c
-
+import cv2
 from segmentation import segment_pcd_from_2d
 
 
@@ -38,47 +38,14 @@ class PipelineModel:
             self.device = 'cuda:0' if o3d.core.cuda.is_available() else 'cpu:0'
         self.o3d_device = o3d.core.Device(self.device)
         self.torch_device = torch.device(self.device)
-        
+        self.camera_config_file = camera_config_file
+        self.rgbd_video = rgbd_video
+
         self.video = None
         self.camera = None
+        self.rgbd_frame = None
 
         self.cv_capture = threading.Condition()  # condition variable
-
-        if rgbd_video:  # Video file
-            self.video = o3d.t.io.RGBDVideoReader.create(rgbd_video)
-            self.rgbd_metadata = self.video.metadata
-            self.status_message = f"Video {rgbd_video} opened."
-
-            # Get intrinsics from the video metadata
-            self.intrinsic_matrix = o3d.core.Tensor(
-                self.rgbd_metadata.intrinsics.intrinsic_matrix,
-                dtype=o3d.core.Dtype.Float32,
-                device=self.o3d_device)
-            self.depth_scale = self.rgbd_metadata.depth_scale
-
-        else:  # Azure Kinect camera
-            if camera_config_file:
-                config = o3d.io.read_azure_kinect_sensor_config(camera_config_file)
-                self.camera = o3d.io.AzureKinectSensor(config)
-                intrinsic = o3d.io.read_pinhole_camera_intrinsic(camera_config_file)
-            else:
-                self.camera = o3d.io.AzureKinectSensor()
-                # Use default intrinsics
-                intrinsic = o3d.camera.PinholeCameraIntrinsic(
-                    o3d.camera.PinholeCameraIntrinsicParameters.PrimeSenseDefault)
-            if not self.camera.connect(0):
-                raise RuntimeError('Failed to connect to sensor')
-            # self.camera.start_capture()
-            # Set the intrinsic matrix
-            self.intrinsic_matrix = o3d.core.Tensor(
-                intrinsic.intrinsic_matrix,
-                dtype=o3d.core.Dtype.Float32,
-                device=self.o3d_device)
-            self.depth_scale = 1000.0  # Azure Kinect depth scale
-            self.status_message = "Azure Kinect camera connected."
-
-        log.info("Intrinsic matrix:")
-        log.info(self.intrinsic_matrix)
 
         # RGBD -> PCD
         self.extrinsics = o3d.core.Tensor.eye(4,
@@ -86,9 +53,11 @@ class PipelineModel:
                                               device=self.o3d_device)
         self.depth_max = 3.0  # m
         self.pcd_stride = 2  # downsample point cloud, may increase frame rate
+        self.next_frame_func = None
         self.__init_gui_signals()
         self.executor = ThreadPoolExecutor(max_workers=3,
                                            thread_name_prefix='Capture-Save')
+        
     
     def __init_gui_signals(self):
         self.recording = False  # Are we currently recording
@@ -103,6 +72,7 @@ class PipelineModel:
         self.color_std = None
         self.pcd_frame = None
         self.rgbd_frame = None
+        self.flag_stream_init = False
 
     @property
     def max_points(self):
@@ -116,27 +86,82 @@ class PipelineModel:
         return np.rad2deg(2 * np.arctan(self.intrinsic_matrix[1, 2].item() /
                                         self.intrinsic_matrix[1, 1].item()))
     
+    def camera_mode_init(self):
+        if self.camera_config_file:
+            config = o3d.io.read_azure_kinect_sensor_config(self.camera_config_file)
+            if self.camera is None:
+                self.camera = o3d.io.AzureKinectSensor(config)
+            intrinsic = o3d.io.read_pinhole_camera_intrinsic(self.camera_config_file)
+        else:
+            if self.camera is None:
+                self.camera = o3d.io.AzureKinectSensor()
+            # Use default intrinsics
+            intrinsic = o3d.camera.PinholeCameraIntrinsic(
+                o3d.camera.PinholeCameraIntrinsicParameters.PrimeSenseDefault)
+            
+        print(self.camera.connect(0))
+        if not self.camera.connect(0):
+            raise RuntimeError('Failed to connect to sensor')
+        
+        self.intrinsic_matrix = o3d.core.Tensor(
+            intrinsic.intrinsic_matrix,
+            dtype=o3d.core.Dtype.Float32,
+            device=self.o3d_device)
+        self.depth_scale = 1000.0  # Azure Kinect depth scale
+        log.info("Intrinsic matrix:")
+        log.info(self.intrinsic_matrix)
+
+        while self.rgbd_frame is None:
+            time.sleep(0.01)
+            try:
+                self.rgbd_frame = self.camera.capture_frame(True)
+            except:
+                pass
+        # self.next_frame_func = self.camera.capture_frame
+
+    def video_mode_init(self):
+        self.video = o3d.t.io.RGBDVideoReader.create(self.rgbd_video)
+        self.rgbd_metadata = self.video.metadata
+        self.status_message = f"Video {self.rgbd_video} opened."
+
+        # Get intrinsics from the video metadata
+        self.intrinsic_matrix = o3d.core.Tensor(
+            self.rgbd_metadata.intrinsics.intrinsic_matrix,
+            dtype=o3d.core.Dtype.Float32,
+            device=self.o3d_device)
+        self.depth_scale = self.rgbd_metadata.depth_scale
+        self.status_message = "RGBD video Loaded."
+        log.info("Intrinsic matrix:")
+        log.info(self.intrinsic_matrix)
+        self.rgbd_frame = self.video.next_frame()
+        # self.next_frame_func = self.video.next_frame
+
+
     def run(self):
         """Run pipeline."""
         n_pts = 0
         frame_id = 0
         t1 = time.perf_counter()
 
-        if self.video:
-            self.rgbd_frame = self.video.next_frame()
-        else:
-            self.rgbd_frame = self.camera.capture_frame(True)
-            while self.rgbd_frame is None:
-                time.sleep(0.01)
-                try:
-                    self.rgbd_frame = self.camera.capture_frame(True)
-                except:
-                    pass
+        # if self.video:
+        #     self.rgbd_frame = self.video.next_frame()
+        # else:
+        #     self.rgbd_frame = self.camera.capture_frame(True)
+        #     while self.rgbd_frame is None:
+        #         time.sleep(0.01)
+        #         try:
+        #             self.rgbd_frame = self.camera.capture_frame(True)
+        #         except:
+        #             pass
 
         pcd_errors = 0
         while (not self.flag_exit and
                (self.video is None or  # Camera
                 (self.video and not self.video.is_eof()))):  # Video
+            
+            if not self.flag_stream_init:
+                continue
+
             if self.video:
                 future_rgbd_frame = self.executor.submit(self.video.next_frame)
             else:
@@ -144,8 +169,8 @@ class PipelineModel:
                     self.camera.capture_frame, True)
                     
             try:
-                if self.rgbd_frame is None:
-                    continue
+                # if self.rgbd_frame is None:
+                #     continue
                 # time.sleep(0.01)
                 depth = o3d.t.geometry.Image(o3c.Tensor(np.asarray(self.rgbd_frame.depth), 
                                                         device=self.o3d_device))

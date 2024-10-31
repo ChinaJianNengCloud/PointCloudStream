@@ -31,7 +31,6 @@ class PipelineController:
         self.initial_point = None
         self.rectangle_geometry = None
         self.pipeline_view = PipelineView(
-            1.25 * self.pipeline_model.vfov,
             self.pipeline_model.max_points,
             on_window_close=self.on_window_close,
             on_toggle_capture=self.on_toggle_capture,
@@ -42,7 +41,10 @@ class PipelineController:
             on_mouse_widget3d=self.on_mouse_widget3d,
             on_toggle_model_init=self.on_toggle_model_init,
             on_display_mode_changed=self.on_display_mode_changed,
-            on_robot_button=self.on_robot_button
+            on_robot_button=self.on_robot_button,
+            on_camera_view=self.on_camera_view,
+            on_birds_eye_view=self.on_birds_eye_view,
+            on_stream_init_start=self.on_stream_init_start
             )
 
         threading.Thread(name='PipelineModel',
@@ -63,7 +65,7 @@ class PipelineController:
     def on_toggle_capture(self, is_on):
         """Callback to toggle capture."""
         self.pipeline_view.capturing = is_on
-
+        self.pipeline_view.vfov =  1.25 * self.pipeline_model.vfov
         if not self.pipeline_view.capturing:
             # Set the mouse callback when not capturing
             self.pipeline_view.pcdview.set_on_mouse(self.on_mouse_widget3d)
@@ -78,6 +80,7 @@ class PipelineController:
             if self.pipeline_view.toggle_record is not None:
                 self.pipeline_view.toggle_record.is_on = False
         else:
+            
             with self.pipeline_model.cv_capture:
                 self.pipeline_model.cv_capture.notify()
 
@@ -207,4 +210,39 @@ class PipelineController:
         pass
     
     def _on_robot_init(self):
+        pass
+
+    def on_camera_view(self):
+        self.pipeline_view.pcdview.setup_camera(self.pipeline_view.vfov, 
+                                                self.pipeline_view.pcd_bounds, [0, 0, 0])
+        lookat = [0, 0, 0]
+        placeat = [-0.139, -0.356, -0.923]
+        pointat = [-0.037, -0.93, 0.3649]
+        self.pipeline_view.pcdview.scene.camera.look_at(lookat, placeat, pointat)
+
+    def on_birds_eye_view(self):
+        """Callback to reset point cloud view to birds eye (overhead) view"""
+        self.pipeline_view.pcdview.setup_camera(self.vfov, self.pcd_bounds, [0, 0, 0])
+        self.pipeline_view.pcdview.scene.camera.look_at([0, 0, 1.5], [0, 3, 1.5], [0, -1, 0])
+
+    def on_stream_init_start(self):
+        # print(self.pipeline_view.widget_all.stream_combbox.selected_text)
+        log.debug('Stream init start')
+        # self.on_camera_view()
+        match self.pipeline_view.widget_all.stream_combbox.selected_text:
+            case 'Camera':
+                try:
+                    self.pipeline_model.camera_mode_init()
+                    self.pipeline_model.flag_stream_init = True
+                    self.pipeline_view.widget_all.status_message.text = "Azure Kinect camera connected."
+                    self.pipeline_view.widget_all.after_stream_init()
+                    self.pipeline_view.on_camera_view()
+                except Exception as e:
+                    self.pipeline_view.widget_all.status_message.text = "Camera initialization failed!"
+                    pass
+                # self.pipeline_model.camera_mode_init()
+                
+            case 'Video':
+                # self.pipeline_model.video_mode_init()
+                pass
         pass
