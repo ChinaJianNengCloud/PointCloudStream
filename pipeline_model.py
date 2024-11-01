@@ -99,7 +99,7 @@ class PipelineModel:
             intrinsic = o3d.camera.PinholeCameraIntrinsic(
                 o3d.camera.PinholeCameraIntrinsicParameters.PrimeSenseDefault)
             
-        print(self.camera.connect(0))
+        # print(self.camera.connect(0))
         if not self.camera.connect(0):
             raise RuntimeError('Failed to connect to sensor')
         
@@ -211,7 +211,7 @@ class PipelineModel:
                 'depth': depth_in_color.cpu(),
                 'pcd': self.pcd_frame.cpu().clone(),
                 'camera': camera_line,
-                'status_message': self.status_message
+                # 'status_message': self.status_message
             }
 
             n_pts += self.pcd_frame.point.positions.shape[0]

@@ -236,7 +236,7 @@ class PipelineController:
                     self.pipeline_model.flag_stream_init = True
                     self.pipeline_view.widget_all.status_message.text = "Azure Kinect camera connected."
                     self.pipeline_view.widget_all.after_stream_init()
-                    self.pipeline_view.on_camera_view()
+                    self.on_camera_view()
                 except Exception as e:
                     self.pipeline_view.widget_all.status_message.text = "Camera initialization failed!"
                     pass

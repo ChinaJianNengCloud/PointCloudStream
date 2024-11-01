@@ -65,3 +65,8 @@ class RoboticArm:
         return R_g2b, t_g2b
 
 
+if __name__ == "__main__":
+    arm = RoboticArm()
+    arm.connect()
+    # arm.move_command([0, 0, 0, 0, 0, 0])
+    # arm.disconnect()
