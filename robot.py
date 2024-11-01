@@ -2,37 +2,41 @@ import lebai_sdk
 import numpy as np
 import cv2
 from scipy.spatial.transform import Rotation as R
-
+import logging as log
 class RoboticArm:
     def __init__(self, ip_address=None, port=None):
         # Initialize SDK and network parameters
-        lebai_sdk.init()
-        if not ip_address:
-            self.ip_address = lebai_sdk.discover_devices(1)[0]['ip']
-        else:
-            self.ip_address = ip_address
+        self.ip_address = ip_address
         self.port = port
         self.lebai = None
-
         # Initialize motion parameters
         self.acceleration = 0.5
         self.velocity = 0.2
         self.time_running = 0
         self.radius = 0
 
+    def find_device(self):
+        """Find the device and connect to it."""
+        lebai_sdk.init()
+        if not self.ip_address:
+            self.ip_address = lebai_sdk.discover_devices(1)[0]['ip']
+        else:
+            self.ip_address = self.ip_address
+        self.lebai = lebai_sdk.connect(self.ip_address, False)
+
     def connect(self):
         """Establish network connection to the robotic arm."""
         try:
             self.lebai = lebai_sdk.connect(self.ip_address, False)
             self.lebai.start_sys()
-            print(f"Connected to robotic arm at: {self.ip_address}")
+            log.info(f"Connected to robotic arm at: {self.ip_address}")
         except Exception as e:
-            print(f"Failed to connect to robotic arm: {e}")
+            log.info(f"Failed to connect to robotic arm: {e}")
 
     def disconnect(self):
         """Disconnect from the robotic arm."""
         self.lebai.stop_sys()
-        print("Disconnected from robotic arm.")
+        log.info("Disconnected from robotic arm.")
 
     def update_motion_parameters(self, acceleration, velocity, time_running, radius):
         self.acceleration = acceleration
@@ -49,10 +53,10 @@ class RoboticArm:
         """Send movement command to the robotic arm."""
         try:
             self.lebai.movej(joint_pose, self.acceleration, self.velocity, self.time_running, self.radius)
-            print(f"Robot moving to joint position: {joint_pose}")
+            log.info(f"Robot moving to joint position: {joint_pose}")
             self.lebai.wait_move()
         except Exception as e:
-            print(f"Failed to send command: {e}")
+            log.info(f"Failed to send command: {e}")
 
     def capture_gripper_to_base(self):
         """Capture transformation from gripper to base using forward kinematics."""

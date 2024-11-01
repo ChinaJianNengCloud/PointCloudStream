@@ -44,28 +44,36 @@ class Widget_Init:
         self.__init_display_mode_combobox(parent_layout=self.view_tab)
 
         self.__init_stream_set(parent_layout=self.general_tab)
-        self.__init_robot_button(parent_layout=self.general_tab)
-        self.__init_calibrate_button(parent_layout=self.general_tab)
+        self.__init_robot_button(parent_layout=self.hardware_tab)
+        self.__init_chessboard_settings(parent_layout=self.hardware_tab)
+        self.__init_calibrate_button(parent_layout=self.hardware_tab)
         self.__init_toggle_aqui_mode(parent_layout=self.view_tab)
         self.__init_view_buttons(parent_layout=self.view_tab)
         self.__init_save_toggles(parent_layout=self.general_tab)
         self.__init_save_buttons(parent_layout=self.general_tab)
         self.__init_video_displays(parent_layout=self.general_tab)
-        self.__init_operate_info(parent_layout=self.general_tab)
+        self.__init_operate_info(parent_layout=self.view_tab)
         self.__init_scene_info(parent_layout=self.general_tab)
-        self.__init_bbox_controls(parent_layout=self.general_tab)
+        self.__init_bbox_controls(parent_layout=self.bbox_tab)
         self.set_disable_before_stream_init()
 
     def __init_tab_view(self, parent_layout=None):
         self.tab_view = gui.TabControl()
         parent_layout.add_child(self.tab_view)
         self.general_tab = gui.Vert(self.em, gui.Margins(0, self.em, self.em // 2, self.em))
-        self.view_tab = gui.Vert(self.em, gui.Margins(0, self.em, self.em // 2, self.em))
         self.tab_view.add_tab("General", self.general_tab)
+
+        self.view_tab = gui.Vert(self.em, gui.Margins(0, self.em, self.em // 2, self.em))
         self.tab_view.add_tab("View", self.view_tab)
 
+        self.bbox_tab = gui.Vert(self.em, gui.Margins(0, self.em, self.em // 2, self.em))
+        self.tab_view.add_tab("Bbox", self.bbox_tab)
+
+        self.hardware_tab = gui.Vert(self.em, gui.Margins(0, self.em, self.em // 2, self.em))
+        self.tab_view.add_tab("Hardware", self.hardware_tab)
+
     def __init_fps_label(self, parent_layout=None):
-        self.fps_label = gui.Label("FPS: 00")
+        self.fps_label = gui.Label("FPS: 99")
         parent_layout.add_child(self.fps_label)
 
     def __init_stream_set(self, parent_layout=None):
@@ -79,7 +87,7 @@ class Widget_Init:
         layout.add_child(self.stream_combbox)
         self.stream_combbox.selected_text = "Camera"
         self.stream_init_start = gui.Button("Start")
-        self.stream_init_start.horizontal_padding_em = 0.5
+        self.stream_init_start.horizontal_padding_em = 1
         self.stream_init_start.vertical_padding_em = 0
         layout.add_child(self.stream_init_start)
 
@@ -93,27 +101,60 @@ class Widget_Init:
         self.robot_button.vertical_padding_em = 0
     
         button_layout.add_child(self.robot_button)
-
-        self.robot_msg = gui.Label("Robot Not Connected    ")
-        button_layout.add_child(self.robot_msg)
         # button_layout.add_stretch()
         
+    def __init_status_message(self, parent_layout=None):
+        self.status_message = gui.Label("System: No Stream is Initialized                 ")
+        parent_layout.add_child(self.status_message)
+
+        self.robot_msg = gui.Label("Robot: Not Connected                             ")
+        parent_layout.add_child(self.robot_msg)
+
+        self.calibration_msg = gui.Label("Calibration: None                           ")
+        parent_layout.add_child(self.calibration_msg)
+
+
+    def __init_chessboard_settings(self, parent_layout=None):
+
+        setting_layout = gui.Vert()
+
+        calibration_msg = gui.Label("Chessboard type setting: ")
+        setting_layout.add_child(calibration_msg)
+
+        self.chessboard_col = gui.NumberEdit(gui.NumberEdit.INT)
+        self.chessboard_col.int_value = 11
+        self.chessboard_col.set_limits(5, 15)  # value coerced to 1
+        numlayout = gui.Horiz()
+        numlayout.add_child(gui.Label("Col"))
+        numlayout.add_child(self.chessboard_col)
+        numlayout.add_fixed(self.em)
+    
+        self.chessboard_row = gui.NumberEdit(gui.NumberEdit.INT)
+        self.chessboard_row.int_value = 8
+        self.chessboard_row.set_limits(5, 15)  # value coerced to 1
+        numlayout.add_child(gui.Label("Row"))
+        numlayout.add_child(self.chessboard_row)
+        numlayout.add_fixed(self.em)
+        
+        setting_layout.add_child(numlayout)
+
+        parent_layout.add_child(setting_layout)
 
     def __init_calibrate_button(self, parent_layout=None):
         button_layout = gui.Horiz(self.em)
         parent_layout.add_child(button_layout)
-
         # button_layout.add_stretch()
-    
-        self.calibrate_button = gui.Button("H-E Calibration")
-        self.calibrate_button.tooltip = "Start Hand-Eye Calibration"
-        self.calibrate_button.horizontal_padding_em = 0.5
-        self.calibrate_button.vertical_padding_em = 0
-        button_layout.add_child(self.calibrate_button)
+        self.cam_calibreate_button = gui.Button("Camera Calibration")
+        self.cam_calibreate_button.tooltip = "Start Camera Calibration"
+        self.cam_calibreate_button.horizontal_padding_em = 0.5
+        self.cam_calibreate_button.vertical_padding_em = 0
+        button_layout.add_child(self.cam_calibreate_button)
 
-        self.calibration_msg = gui.Label("Not Calibration Yet   ")
-        button_layout.add_child(self.calibration_msg)
-
+        self.he_calibrate_button = gui.Button("H-E Calibration")
+        self.he_calibrate_button.tooltip = "Start Hand-Eye Calibration"
+        self.he_calibrate_button.horizontal_padding_em = 0.5
+        self.he_calibrate_button.vertical_padding_em = 0
+        button_layout.add_child(self.he_calibrate_button)
         # button_layout.add_stretch()
         
 
@@ -251,10 +292,6 @@ class Widget_Init:
         self.view_status = gui.Label("")
         self.scene_info.add_child(self.view_status)
 
-    def __init_status_message(self, parent_layout=None):
-        self.status_message = gui.Label("No Stream is Initialized                ")
-        parent_layout.add_child(self.status_message)
-
     def __init_bbox_controls(self, parent_layout=None):
         self.bbox_controls = gui.CollapsableVert("Bounding Box Controls", self.em, gui.Margins(self.em, 0, 0, 0))
         self.bbox_controls.set_is_open(True)
@@ -300,10 +337,18 @@ class Widget_Init:
     def set_disable_before_stream_init(self):
         self.toggle_capture.enabled = False
         self.toggle_model_init.enabled = False
+        self.cam_calibreate_button.enabled = False
+        self.he_calibrate_button.enabled = False
+        self.save_pcd_button.enabled = False
+        self.save_rgbd_button.enabled = False
     
     def after_stream_init(self):
         self.toggle_capture.enabled = True
         self.toggle_model_init.enabled = True
+        self.cam_calibreate_button.enabled = True
+        self.he_calibrate_button.enabled = True
+        self.save_pcd_button.enabled = True
+        self.save_rgbd_button.enabled = True
 
     def get_pcd_view(self):
         return self.pcdview
@@ -329,8 +374,8 @@ class PipelineView:
         self.widget_all = Widget_Init(self.window, callbacks)
 
         # Set the callbacks for widgets that require methods of PipelineView
-        self.widget_all.toggle_capture.set_on_clicked(self.callbacks['on_toggle_capture'])
-        self.widget_all.toggle_acq_mode.set_on_clicked(self._on_toggle_acq_mode)
+        self.widget_all.toggle_capture.set_on_clicked(callbacks['on_toggle_capture'])
+        self.widget_all.toggle_acq_mode.set_on_clicked(callbacks['on_toggle_acq_mode'])
         self.widget_all.display_mode_combobox.set_on_selection_changed(
             callbacks['on_display_mode_changed'])
         self.widget_all.camera_view_button.set_on_clicked(callbacks['on_camera_view'])
@@ -339,8 +384,12 @@ class PipelineView:
         self.widget_all.toggle_model_init.set_on_clicked(callbacks['on_toggle_model_init'])
         self.widget_all.robot_button.set_on_clicked(callbacks['on_robot_button'])
         self.widget_all.stream_init_start.set_on_clicked(callbacks['on_stream_init_start'])
-        self.widget_all.save_pcd_button.set_on_clicked(self.callbacks['on_save_pcd'])
-        self.widget_all.save_rgbd_button.set_on_clicked(self.callbacks['on_save_rgbd'])
+        self.widget_all.save_pcd_button.set_on_clicked(callbacks['on_save_pcd'])
+        self.widget_all.save_rgbd_button.set_on_clicked(callbacks['on_save_rgbd'])
+        self.widget_all.cam_calibreate_button.set_on_clicked(callbacks['on_camera_calibration'])
+        self.widget_all.he_calibrate_button.set_on_clicked(callbacks['on_he_calibration'])
+        self.widget_all.chessboard_col.set_on_value_changed(callbacks['on_chessboard_col_change'])
+        self.widget_all.chessboard_row.set_on_value_changed(callbacks['on_chessboard_row_change'])
         # self.widget_all.robot_msg
         self.toggle_record = self.widget_all.toggle_record
         # Now, we can access the widgets via self.widget_all
@@ -362,7 +411,6 @@ class PipelineView:
 
         self.video_size = self.widget_all.video_size
 
-        self.flag_exit = False
         self.flag_gui_init = False
         self.line_material = rendering.MaterialRecord()
         self.line_material.shader = "unlitLine"

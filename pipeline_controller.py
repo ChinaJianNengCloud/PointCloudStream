@@ -3,10 +3,12 @@ import threading
 import logging as log
 import open3d.visualization.gui as gui
 import numpy as np
-
+import open3d.visualization.rendering as rendering
+import open3d as o3d
 from pipeline_model import PipelineModel
 from pipeline_view import PipelineView
-
+from calibration import Calibration
+from robot import RoboticArm
 
 class PipelineController:
     """Entry point for the app. Controls the PipelineModel object for IO and
@@ -26,10 +28,11 @@ class PipelineController:
         self.pipeline_model = PipelineModel(self.update_view,
                                             camera_config_file, rgbd_video,
                                             device)
-        
+        self.calibration = None
         self.drawing_rectangle = False
         self.initial_point = None
         self.rectangle_geometry = None
+        self.robot = RoboticArm()
         self.pipeline_view = PipelineView(
             self.pipeline_model.max_points,
             on_window_close=self.on_window_close,
@@ -44,9 +47,14 @@ class PipelineController:
             on_robot_button=self.on_robot_button,
             on_camera_view=self.on_camera_view,
             on_birds_eye_view=self.on_birds_eye_view,
-            on_stream_init_start=self.on_stream_init_start
+            on_stream_init_start=self.on_stream_init_start,
+            on_camera_calibration=self.on_camera_calibration,
+            on_he_calibration=self.on_he_calibration,
+            on_toggle_acq_mode=self.on_toggle_acq_mode,
+            on_chessboard_row_change=self.on_chessboard_row_change,
+            on_chessboard_col_change=self.on_chessboard_col_change
             )
-
+        self.chessboard_type = [11, 8]
         threading.Thread(name='PipelineModel',
                          target=self.pipeline_model.run).start()
         gui.Application.instance.run()
@@ -80,7 +88,6 @@ class PipelineController:
             if self.pipeline_view.toggle_record is not None:
                 self.pipeline_view.toggle_record.is_on = False
         else:
-            
             with self.pipeline_model.cv_capture:
                 self.pipeline_model.cv_capture.notify()
 
@@ -113,7 +120,7 @@ class PipelineController:
     def on_toggle_normals(self, is_enabled):
         """Callback to toggle display of normals"""
         self.pipeline_model.flag_normals = is_enabled
-        self.pipeline_view.flag_normals = is_enabled
+        # self.pipeline_view.flag_normals = is_enabled
         self.pipeline_view.flag_gui_init = False
 
     def on_window_close(self):
@@ -170,7 +177,7 @@ class PipelineController:
 
                     # Update label in the main UI thread
                     def update_label():
-                        self.pipeline_view.mouse_coord.text = text
+                        self.pipeline_view.widget_all.mouse_coord.text = text
                         self.pipeline_view.window.set_needs_layout()
 
                     gui.Application.instance.post_to_main_thread(self.pipeline_view.window, update_label)
@@ -194,22 +201,34 @@ class PipelineController:
         return gui.Widget.EventCallbackResult.IGNORED
     
     def on_robot_button(self):
-        from robot import RoboticArm
         try:
-            self.robot = RoboticArm()
+            self.robot.find_device()
+            self.robot.connect()
             ip = self.robot.ip_address
-            msg = f'Conected: {ip}'
+            msg = f'Robot: Conected [{ip}]'
             self.pipeline_view.widget_all.robot_msg.text_color = gui.Color(0, 1, 0)
 
         except Exception as e:
-            self.robot = None
-            msg = f'Robot Connection failed'
+            msg = f'Robot: Connection failed [{e}]'
             self.pipeline_view.widget_all.robot_msg.text_color = gui.Color(1, 0, 0)
 
         self.pipeline_view.widget_all.robot_msg.text = msg
-        pass
-    
-    def _on_robot_init(self):
+        
+
+    def on_camera_calibration(self):
+        # self.calibration = CameraCalibration()
+        distortion  = self.pipeline_model.camera_json.get('intrinsic_matrix', None)
+        if self.calibration is None:
+            self.calibration = Calibration(self.robot, 
+                                        self.pipeline_model.camera,
+                                        intrinsic=self.pipeline_model.intrinsic_matrix, 
+                                        dist_coeffs=distortion)
+        self.calibration.chessboard_size = self.chessboard_type
+        self.pipeline_model.calib_exec.submit(self.calibration.calibrate_camera)
+        # self.calibration.calibrate_camera()
+        self.on_camera_view()
+
+    def on_he_calibration(self):
         pass
 
     def on_camera_view(self):
@@ -239,10 +258,42 @@ class PipelineController:
                     self.on_camera_view()
                 except Exception as e:
                     self.pipeline_view.widget_all.status_message.text = "Camera initialization failed!"
-                    pass
                 # self.pipeline_model.camera_mode_init()
                 
             case 'Video':
                 # self.pipeline_model.video_mode_init()
                 pass
-        pass
+        
+    def on_toggle_acq_mode(self, is_on):
+        self.pipeline_view.acq_mode = is_on
+        if is_on:
+            # Disable camera controls by setting to PICK_POINTS mode
+            self.pipeline_view.pcdview.set_view_controls(gui.SceneWidget.Controls.PICK_POINTS)
+            # Add plane at y=1 to the scene
+            if self.pipeline_view.plane is None:
+                # Create a plane geometry at y=1
+                plane = o3d.geometry.TriangleMesh.create_box(width=10, height=0.01, depth=10)
+                plane.translate([-5, 1, -5])  # Position the plane at y=1
+                plane.paint_uniform_color([0.8, 0.8, 0.8])  # Light gray color
+                plane_material = rendering.MaterialRecord()
+                plane_material.shader = "defaultUnlit"
+                plane_material.base_color = [0.8, 0.8, 0.8, 0.5]  # Semi-transparent
+                self.pipeline_view.pcdview.scene.add_geometry("edit_plane", plane, plane_material)
+                self.pipeline_view.plane = plane
+                self.pipeline_view.pcdview.force_redraw()
+        else:
+            # Enable normal camera controls
+            self.pipeline_view.pcdview.set_view_controls(gui.SceneWidget.Controls.ROTATE_CAMERA)
+            # Remove the plane from the scene
+            if self.pipeline_view.plane is not None:
+                self.pipeline_view.pcdview.scene.remove_geometry("edit_plane")
+                self.pipeline_view.plane = None
+            self.pipeline_view.pcdview.force_redraw()
+
+    def on_chessboard_row_change(self, value):
+        self.chessboard_type[1] = int(value)
+        log.debug(f'Chessboard type: {self.chessboard_type}')
+    
+    def on_chessboard_col_change(self, value):
+        self.chessboard_type[0] = int(value)
+        log.debug(f'Chessboard type: {self.chessboard_type}')

@@ -9,6 +9,7 @@ import torch
 import open3d as o3d
 import open3d.core as o3c
 import cv2
+import json
 from segmentation import segment_pcd_from_2d
 
 
@@ -33,17 +34,18 @@ class PipelineModel:
         """
         self.update_view = update_view
         if device:
-            self.device = device.lower()
+            self.device_str = device.lower()
         else:
-            self.device = 'cuda:0' if o3d.core.cuda.is_available() else 'cpu:0'
-        self.o3d_device = o3d.core.Device(self.device)
-        self.torch_device = torch.device(self.device)
+            self.device_str = 'cuda:0' if o3d.core.cuda.is_available() else 'cpu:0'
+        self.o3d_device = o3d.core.Device(self.device_str)
+        self.torch_device = torch.device(self.device_str)
         self.camera_config_file = camera_config_file
         self.rgbd_video = rgbd_video
 
         self.video = None
         self.camera = None
         self.rgbd_frame = None
+        self.close_stream = None
 
         self.cv_capture = threading.Condition()  # condition variable
 
@@ -57,6 +59,9 @@ class PipelineModel:
         self.__init_gui_signals()
         self.executor = ThreadPoolExecutor(max_workers=3,
                                            thread_name_prefix='Capture-Save')
+        
+        self.calib_exec = ThreadPoolExecutor(max_workers=3,
+                                           thread_name_prefix='Calibreation')
         
     
     def __init_gui_signals(self):
@@ -91,6 +96,7 @@ class PipelineModel:
             config = o3d.io.read_azure_kinect_sensor_config(self.camera_config_file)
             if self.camera is None:
                 self.camera = o3d.io.AzureKinectSensor(config)
+                self.camera_json = json.load(open(self.camera_config_file, 'r'))
             intrinsic = o3d.io.read_pinhole_camera_intrinsic(self.camera_config_file)
         else:
             if self.camera is None:
@@ -117,6 +123,7 @@ class PipelineModel:
                 self.rgbd_frame = self.camera.capture_frame(True)
             except:
                 pass
+        self.close_stream = self.camera.disconnect
         # self.next_frame_func = self.camera.capture_frame
 
     def video_mode_init(self):
@@ -134,6 +141,7 @@ class PipelineModel:
         log.info("Intrinsic matrix:")
         log.info(self.intrinsic_matrix)
         self.rgbd_frame = self.video.next_frame()
+        self.close_stream = self.video.close
         # self.next_frame_func = self.video.next_frame
 
 
@@ -142,17 +150,6 @@ class PipelineModel:
         n_pts = 0
         frame_id = 0
         t1 = time.perf_counter()
-
-        # if self.video:
-        #     self.rgbd_frame = self.video.next_frame()
-        # else:
-        #     self.rgbd_frame = self.camera.capture_frame(True)
-        #     while self.rgbd_frame is None:
-        #         time.sleep(0.01)
-        #         try:
-        #             self.rgbd_frame = self.camera.capture_frame(True)
-        #         except:
-        #             pass
 
         pcd_errors = 0
         while (not self.flag_exit and
@@ -254,11 +251,9 @@ class PipelineModel:
             self.toggle_record()
             frame_id += 1
 
-        if self.camera:
-            self.camera.disconnect()
-        else:
-            self.video.close()
+        self.close_stream()
         self.executor.shutdown(wait=True)  # Ensure all threads finish cleanly
+        self.calib_exec.shutdown(wait=True)
         log.debug(f"create_from_depth_image() errors = {pcd_errors}")
 
     def toggle_record(self):

@@ -6,19 +6,24 @@ from robot import RoboticArm
 import logging as log
 
 # Configure logging
-log.basicConfig(level=log.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# log.basicConfig(level=log.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-class EyeHandCalibration:
+class Calibration:
     def __init__(self, robotic_arm, camera, num_samples=10, eye_to_hand=True, intrinsic=None, dist_coeffs=None):
         self.robotic_arm: RoboticArm = robotic_arm
         self.camera = camera
         self.num_samples = num_samples
-        self.intrinsic = intrinsic if intrinsic is not None else np.eye(3)
-        self.dist_coeffs = dist_coeffs if dist_coeffs is not None else np.zeros((5, 1))
+        self.__init_camera_parameters(intrinsic, dist_coeffs)
         self.eye_to_hand = eye_to_hand
         self.chessboard_size = (11, 8)  # Adjust as needed (number of corners per row and column)
         self.square_size = 0.01  # Chessboard square size in meters, adjust as needed
         self.previous_rvecs = []  # For checking pose differences during hand-eye calibration
+
+    def __init_camera_parameters(self, intrinsic=None, dist_coeffs=None):
+        self.intrinsic = intrinsic if intrinsic is not None else np.eye(3)
+        self.dist_coeffs = dist_coeffs if dist_coeffs is not None else np.zeros((5, 1))
+        log.info("Camera Intrinsic Parameters:\n%s", self.intrinsic)
+        log.info("Camera Distortion Coefficients:\n%s", self.dist_coeffs)
 
     def is_blurry(self, image, threshold=100):
         """
@@ -358,16 +363,17 @@ if __name__ == "__main__":
     camera.connect(0)
     print(config['intrinsic_matrix'])
     print(config['distortion_coeffs'])
+    print(config.get('intrinsic_matrixs', None))
     # Initialize EyeHandCalibration without intrinsic parameters
-    eye_hand_calib = EyeHandCalibration(robot, camera, 
-                                        num_samples=10, 
-                                        eye_to_hand=True,
-                                        intrinsic=config['intrinsic_matrix'],
-                                        dist_coeffs=config['distortion_coeffs'],
-                                        )
+    eye_hand_calib = Calibration(robot, camera, 
+                                num_samples=10, 
+                                eye_to_hand=True,
+                                intrinsic=config['intrinsic_matrix'],
+                                dist_coeffs=config['distortion_coeffs'],
+                                )
 
-    # Calibrate the camera
-    eye_hand_calib.calibrate_camera(num_images=20)
+    # # Calibrate the camera
+    # eye_hand_calib.calibrate_camera(num_images=20)
 
     # Perform eye-hand calibration
     # eye_hand_calib.calibrate()
