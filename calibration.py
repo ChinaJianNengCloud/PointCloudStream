@@ -15,7 +15,7 @@ class Calibration:
         self.num_samples = num_samples
         self.__init_camera_parameters(intrinsic, dist_coeffs)
         self.eye_to_hand = eye_to_hand
-        self.chessboard_size = (11, 8)  # Adjust as needed (number of corners per row and column)
+        self.chessboard_size = [11, 8]  # Adjust as needed (number of corners per row and column)
         self.square_size = 0.01  # Chessboard square size in meters, adjust as needed
         self.previous_rvecs = []  # For checking pose differences during hand-eye calibration
 
@@ -225,21 +225,26 @@ class Calibration:
 
             # Capture target-to-camera transformation
             ret, R_t2c, t_t2c, rvec = self.detect_chessboard_pose(return_rvec=True)
-            if ret:
-                if self.is_pose_different(rvec, previous_rvecs, angle_threshold):
-                    if not self.is_blurry_image:  # Check if the last image was not blurry
-                        R_gripper2base.append(R_g2b)
-                        t_gripper2base.append(t_g2b)
-                        R_target2cam.append(R_t2c)
-                        t_target2cam.append(t_t2c)
-                        previous_rvecs.append(rvec)
-                        log.info(f"Captured transformation {len(R_gripper2base)}/{self.num_samples}.")
-                    else:
-                        log.warning("Image is blurry. Please stabilize the camera or chessboard.")
-                else:
-                    log.warning("Pose is too similar to previous images. Please change the angle.")
-            else:
+            if not ret:
                 log.warning("Chessboard not detected. Ensure proper target positioning and retry.")
+                continue
+
+            if not self.is_pose_different(rvec, previous_rvecs, angle_threshold):
+                log.warning("Pose is too similar to previous images. Please change the angle.")
+                continue
+
+            if self.is_blurry:  # Check if the last image was not blurry
+                log.warning("Image is blurry. Please stabilize the camera or chessboard.")
+                continue
+        
+            R_gripper2base.append(R_g2b)
+            t_gripper2base.append(t_g2b)
+            R_target2cam.append(R_t2c)
+            t_target2cam.append(t_t2c)
+            previous_rvecs.append(rvec)
+            log.info(f"Captured transformation {len(R_gripper2base)}/{self.num_samples}.")
+
+                
 
         log.info("Finished capturing transformations.")
         return R_gripper2base, t_gripper2base, R_target2cam, t_target2cam
@@ -270,7 +275,10 @@ class Calibration:
 
         ret, image_rgb, gray, corners2= self.get_valid_corner_images()
         if not ret:
-            return False, None, None
+            if return_rvec:
+                return False, None, None, None
+            else:
+                return False, None, None
         
         # SolvePnP to find the rotation and translation of the chessboard relative to the camera
         ret_pnp, rvec, tvec = cv2.solvePnP(objp, corners2, self.intrinsic, self.dist_coeffs)
@@ -288,7 +296,7 @@ class Calibration:
         else:
             return False, None, None
 
-    def calibrate(self, angle_threshold=10):
+    def calibrate_eye_hand_from_camera(self, angle_threshold=10):
         """
         Perform eye-hand calibration.
 
@@ -298,10 +306,6 @@ class Calibration:
         Returns:
             Calibrated rotation matrix and translation vector.
         """
-        if self.intrinsic is None or self.dist_coeffs is None:
-            log.info("Camera Intrinsic Parameters and Distortion Coefficients are not set.")
-            log.info("Starting Camera Calibration.")
-            self.calibrate_camera()
 
         # Capture the required transformations
         R_gripper2base, t_gripper2base, R_target2cam, t_target2cam = self.capture_transformations(angle_threshold)
@@ -352,8 +356,10 @@ class Calibration:
 
 if __name__ == "__main__":
     # Create a RoboticArm object
-    # robot = RoboticArm()  # Replace with your robotic arm initialization
-    robot = None  # Replace with your robotic arm initialization
+    robot = RoboticArm()  # Replace with your robotic arm initialization
+    robot.find_device()
+    robot.connect()
+    # robot = None  # Replace with your robotic arm initialization
     import json
     # Create a Camera object
     camera_config = './default_config.json'
@@ -364,16 +370,19 @@ if __name__ == "__main__":
     print(config['intrinsic_matrix'])
     print(config['distortion_coeffs'])
     print(config.get('intrinsic_matrixs', None))
+    intrinsic = np.array(config['intrinsic_matrix']).reshape(3, 3).T
+    print(intrinsic)
+    dist_coeffs = np.array(config['distortion_coeffs']).reshape(5, 1)
     # Initialize EyeHandCalibration without intrinsic parameters
     eye_hand_calib = Calibration(robot, camera, 
                                 num_samples=10, 
                                 eye_to_hand=True,
-                                intrinsic=config['intrinsic_matrix'],
+                                intrinsic=intrinsic,
                                 dist_coeffs=config['distortion_coeffs'],
                                 )
 
     # # Calibrate the camera
-    # eye_hand_calib.calibrate_camera(num_images=20)
+    eye_hand_calib.calibrate_eye_hand_from_camera()
 
     # Perform eye-hand calibration
     # eye_hand_calib.calibrate()

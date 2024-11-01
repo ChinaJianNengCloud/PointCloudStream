@@ -218,6 +218,9 @@ class PipelineController:
             ip = self.robot.ip_address
             msg = f'Robot: Connected [{ip}]'
             self.pipeline_view.widget_all.robot_msg.text_color = gui.Color(0, 1, 0)
+            self.pipeline_model.robot_init = True
+            if self.pipeline_model.robot_init and self.pipeline_model.camera_init:
+                self.pipeline_view.widget_all.he_calibreate_button.enabled = True
 
         except Exception as e:
             msg = f'Robot: Connection failed [{e}]'
@@ -227,7 +230,7 @@ class PipelineController:
 
     @callback
     def on_camera_calibration(self):
-        distortion  = self.pipeline_model.camera_json.get('intrinsic_matrix', None)
+        distortion  = self.pipeline_model.camera_json.get('distortion_coeffs', None)
         if self.calibration is None:
             self.calibration = Calibration(self.robot, 
                                         self.pipeline_model.camera,
@@ -235,11 +238,22 @@ class PipelineController:
                                         dist_coeffs=distortion)
         self.calibration.chessboard_size = self.chessboard_type
         self.pipeline_model.calib_exec.submit(self.calibration.calibrate_camera)
+        self.pipeline_view.widget_all.calibration_msg.text = "Calibration: Camera calibration..."
+        # self.pipeline_model.calib_exec.shutdown()
         self.on_camera_view()
 
     @callback
     def on_he_calibration(self):
-        pass
+        distortion  = self.pipeline_model.camera_json.get('distortion_coeffs', None)
+        if self.calibration is None:
+            self.calibration = Calibration(self.robot, 
+                                        self.pipeline_model.camera,
+                                        intrinsic=self.pipeline_model.intrinsic_matrix, 
+                                        dist_coeffs=distortion)
+        self.calibration.chessboard_size = self.chessboard_type
+        self.pipeline_model.calib_exec.submit(self.calibration.calibrate_eye_hand_from_camera)
+        self.pipeline_view.widget_all.calibration_msg.text = "Calibration: HandEye calibration..."
+        self.pipeline_view.widget_all.he_calibreate_button.enabled = False
 
     @callback
     def on_camera_view(self):
@@ -266,6 +280,9 @@ class PipelineController:
                     self.pipeline_model.flag_stream_init = True
                     self.pipeline_view.widget_all.status_message.text = "Azure Kinect camera connected."
                     self.pipeline_view.widget_all.after_stream_init()
+                    self.pipeline_model.camera_init = True
+                    if self.pipeline_model.robot_init and self.pipeline_model.camera_init:
+                        self.pipeline_view.widget_all.he_calibreate_button.enabled = True
                     self.on_camera_view()
                 except Exception as e:
                     self.pipeline_view.widget_all.status_message.text = "Camera initialization failed!"
@@ -296,10 +313,10 @@ class PipelineController:
 
     @callback
     def on_chessboard_row_change(self, value):
-        self.chessboard_type[1] = int(value)
+        self.calibration.chessboard_size[1] = int(value)
         log.debug(f'Chessboard type: {self.chessboard_type}')
 
     @callback
     def on_chessboard_col_change(self, value):
-        self.chessboard_type[0] = int(value)
+        self.calibration.chessboard_size[0] = int(value)
         log.debug(f'Chessboard type: {self.chessboard_type}')

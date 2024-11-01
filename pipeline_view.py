@@ -151,11 +151,11 @@ class Widget_Init:
         self.cam_calibreate_button.vertical_padding_em = 0
         button_layout.add_child(self.cam_calibreate_button)
 
-        self.he_calibrate_button = gui.Button("H-E Calibration")
-        self.he_calibrate_button.tooltip = "Start Hand-Eye Calibration"
-        self.he_calibrate_button.horizontal_padding_em = 0.5
-        self.he_calibrate_button.vertical_padding_em = 0
-        button_layout.add_child(self.he_calibrate_button)
+        self.he_calibreate_button = gui.Button("H-E Calibration")
+        self.he_calibreate_button.tooltip = "Start Hand-Eye Calibration"
+        self.he_calibreate_button.horizontal_padding_em = 0.5
+        self.he_calibreate_button.vertical_padding_em = 0
+        button_layout.add_child(self.he_calibreate_button)
         # button_layout.add_stretch()
         
 
@@ -339,7 +339,7 @@ class Widget_Init:
         self.toggle_capture.enabled = False
         self.toggle_model_init.enabled = False
         self.cam_calibreate_button.enabled = False
-        self.he_calibrate_button.enabled = False
+        self.he_calibreate_button.enabled = False
         self.save_pcd_button.enabled = False
         self.save_rgbd_button.enabled = False
     
@@ -347,7 +347,6 @@ class Widget_Init:
         self.toggle_capture.enabled = True
         self.toggle_model_init.enabled = True
         self.cam_calibreate_button.enabled = True
-        self.he_calibrate_button.enabled = True
         self.save_pcd_button.enabled = True
         self.save_rgbd_button.enabled = True
 
@@ -389,7 +388,7 @@ class PipelineView:
         self.widget_all.save_pcd_button.set_on_clicked(callbacks['on_save_pcd'])
         self.widget_all.save_rgbd_button.set_on_clicked(callbacks['on_save_rgbd'])
         self.widget_all.cam_calibreate_button.set_on_clicked(callbacks['on_camera_calibration'])
-        self.widget_all.he_calibrate_button.set_on_clicked(callbacks['on_he_calibration'])
+        self.widget_all.he_calibreate_button.set_on_clicked(callbacks['on_he_calibration'])
         self.widget_all.chessboard_col.set_on_value_changed(callbacks['on_chessboard_col_change'])
         self.widget_all.chessboard_row.set_on_value_changed(callbacks['on_chessboard_row_change'])
         # self.widget_all.robot_msg
@@ -611,31 +610,6 @@ class PipelineView:
                                                    frame.get_bottom() - pref.height,
                                                    pref.width, pref.height)
 
-    def _on_toggle_acq_mode(self, is_on):
-        self.acq_mode = is_on
-        if is_on:
-            # Disable camera controls by setting to PICK_POINTS mode
-            self.pcdview.set_view_controls(gui.SceneWidget.Controls.PICK_POINTS)
-            # Add plane at y=1 to the scene
-            if self.plane is None:
-                # Create a plane geometry at y=1
-                plane = o3d.geometry.TriangleMesh.create_box(width=10, height=0.01, depth=10)
-                plane.translate([-5, 1, -5])  # Position the plane at y=1
-                plane.paint_uniform_color([0.8, 0.8, 0.8])  # Light gray color
-                plane_material = rendering.MaterialRecord()
-                plane_material.shader = "defaultUnlit"
-                plane_material.base_color = [0.8, 0.8, 0.8, 0.5]  # Semi-transparent
-                self.pcdview.scene.add_geometry("edit_plane", plane, plane_material)
-                self.plane = plane
-                self.pcdview.force_redraw()
-        else:
-            # Enable normal camera controls
-            self.pcdview.set_view_controls(gui.SceneWidget.Controls.ROTATE_CAMERA)
-            # Remove the plane from the scene
-            if self.plane is not None:
-                self.pcdview.scene.remove_geometry("edit_plane")
-                self.plane = None
-            self.pcdview.force_redraw()
 
     def _on_bbox_slider_changed(self, value, param):
         self.bbox_params[param] = value

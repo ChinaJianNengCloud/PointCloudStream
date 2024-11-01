@@ -78,6 +78,8 @@ class PipelineModel:
         self.pcd_frame = None
         self.rgbd_frame = None
         self.flag_stream_init = False
+        self.robot_init = False
+        self.camera_init = False
 
     @property
     def max_points(self):
