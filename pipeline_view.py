@@ -6,6 +6,7 @@ import open3d.core as o3c
 import numpy as np
 import torch
 from utils import get_num_of_palette
+from typing import Callable
 
 class Widget_Init:
     def __init__(self, window, callbacks):
@@ -356,7 +357,8 @@ class Widget_Init:
 class PipelineView:
     """Controls display and user interface. All methods must run in the main thread."""
 
-    def __init__(self, max_pcd_vertices=1 << 20, **callbacks):
+    def __init__(self, max_pcd_vertices=1 << 20, callbacks:dict[str, Callable]=None):
+        # def __init__(self, max_pcd_vertices=1 << 20, **callbacks):
         """Initialize."""
         self.vfov = 60
         self.max_pcd_vertices = max_pcd_vertices

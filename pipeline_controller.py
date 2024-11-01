@@ -1,4 +1,3 @@
-# pipeline_controller.py
 import threading
 import logging as log
 import open3d.visualization.gui as gui
@@ -9,12 +8,32 @@ from pipeline_model import PipelineModel
 from pipeline_view import PipelineView
 from calibration import Calibration
 from robot import RoboticArm
+from functools import wraps
+
+
+_callback_names = []
+
+@staticmethod
+def callback(func):
+    """Decorator to collect callback methods."""
+    _callback_names.append(func.__name__)
+
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        return func(self, *args, **kwargs)
+    # setattr(PipelineController, func.__name__, wrapper)
+
+    return wrapper
+
 
 class PipelineController:
     """Entry point for the app. Controls the PipelineModel object for IO and
     processing  and the PipelineView object for display and UI. All methods
     operate on the main thread.
     """
+
+    # Class-level dictionary to store callbacks
+    
 
     def __init__(self, camera_config_file=None, rgbd_video=None, device=None):
         """Initialize.
@@ -33,31 +52,20 @@ class PipelineController:
         self.initial_point = None
         self.rectangle_geometry = None
         self.robot = RoboticArm()
+
+        # Collect bound methods into callbacks dictionary
+        self.callbacks = {name: getattr(self, name) for name in _callback_names}
+
         self.pipeline_view = PipelineView(
             self.pipeline_model.max_points,
-            on_window_close=self.on_window_close,
-            on_toggle_capture=self.on_toggle_capture,
-            on_save_pcd=self.on_save_pcd,
-            on_save_rgbd=self.on_save_rgbd,
-            on_toggle_record=self.on_toggle_record,  # Recording not implemented
-            on_toggle_normals=self.on_toggle_normals,
-            on_mouse_widget3d=self.on_mouse_widget3d,
-            on_toggle_model_init=self.on_toggle_model_init,
-            on_display_mode_changed=self.on_display_mode_changed,
-            on_robot_button=self.on_robot_button,
-            on_camera_view=self.on_camera_view,
-            on_birds_eye_view=self.on_birds_eye_view,
-            on_stream_init_start=self.on_stream_init_start,
-            on_camera_calibration=self.on_camera_calibration,
-            on_he_calibration=self.on_he_calibration,
-            on_toggle_acq_mode=self.on_toggle_acq_mode,
-            on_chessboard_row_change=self.on_chessboard_row_change,
-            on_chessboard_col_change=self.on_chessboard_col_change
-            )
+            callbacks=self.callbacks
+        )
+
         self.chessboard_type = [11, 8]
         threading.Thread(name='PipelineModel',
                          target=self.pipeline_model.run).start()
         gui.Application.instance.run()
+
 
     def update_view(self, frame_elements):
         """Updates view with new data. May be called from any thread.
@@ -70,6 +78,7 @@ class PipelineController:
             self.pipeline_view.window,
             lambda: self.pipeline_view.update(frame_elements))
 
+    @callback
     def on_toggle_capture(self, is_on):
         """Callback to toggle capture."""
         self.pipeline_view.capturing = is_on
@@ -91,25 +100,22 @@ class PipelineController:
             with self.pipeline_model.cv_capture:
                 self.pipeline_model.cv_capture.notify()
 
-
+    @callback
     def on_toggle_record(self, is_enabled):
         """Callback to toggle recording RGBD video."""
         self.pipeline_model.flag_record = is_enabled
 
+    @callback
     def on_display_mode_changed(self, text, index):
         """Callback to change display mode."""
-        # self.pipeline_view.flag_normals = False
         self.pipeline_model.flag_normals = False
         self.pipeline_view.display_mode = text
-        # log.debug(f'Display mode: {text}')
         match text:
             case 'Colors':
                 log.debug('Display mode: Colors')
-                
                 pass
             case 'Normals':
                 log.debug('Display mode: Normals')
-                # self.pipeline_view.flag_normals = True
                 self.pipeline_model.flag_normals = True
                 self.pipeline_view.flag_gui_init = False
             case 'Segmentation':
@@ -117,12 +123,13 @@ class PipelineController:
                 self.pipeline_view.show_segmentation = True
                 self.pipeline_view.update_pcd_geometry()
 
+    @callback
     def on_toggle_normals(self, is_enabled):
         """Callback to toggle display of normals"""
         self.pipeline_model.flag_normals = is_enabled
-        # self.pipeline_view.flag_normals = is_enabled
         self.pipeline_view.flag_gui_init = False
 
+    @callback
     def on_window_close(self):
         """Callback when the user closes the application window."""
         self.pipeline_model.flag_exit = True
@@ -130,19 +137,22 @@ class PipelineController:
             self.pipeline_model.cv_capture.notify_all()
         return True  # OK to close window
 
+    @callback
     def on_save_pcd(self):
         """Callback to save current point cloud."""
         self.pipeline_model.flag_save_pcd = True
 
+    @callback
     def on_toggle_model_init(self, is_enabled):
         self.pipeline_model.model_intialization()
-        # self.pipeline_view.toggle_model_init.enabled=False
         self.pipeline_model.flag_model_init = is_enabled
 
+    @callback
     def on_save_rgbd(self):
         """Callback to save current RGBD image pair."""
         self.pipeline_model.flag_save_rgbd = True
-        
+
+    @callback
     def on_mouse_widget3d(self, event):
         if self.pipeline_view.capturing:
             return gui.Widget.EventCallbackResult.IGNORED  # Do nothing if capturing
@@ -199,13 +209,14 @@ class PipelineController:
             return gui.Widget.EventCallbackResult.HANDLED
 
         return gui.Widget.EventCallbackResult.IGNORED
-    
+
+    @callback
     def on_robot_button(self):
         try:
             self.robot.find_device()
             self.robot.connect()
             ip = self.robot.ip_address
-            msg = f'Robot: Conected [{ip}]'
+            msg = f'Robot: Connected [{ip}]'
             self.pipeline_view.widget_all.robot_msg.text_color = gui.Color(0, 1, 0)
 
         except Exception as e:
@@ -213,10 +224,9 @@ class PipelineController:
             self.pipeline_view.widget_all.robot_msg.text_color = gui.Color(1, 0, 0)
 
         self.pipeline_view.widget_all.robot_msg.text = msg
-        
 
+    @callback
     def on_camera_calibration(self):
-        # self.calibration = CameraCalibration()
         distortion  = self.pipeline_model.camera_json.get('intrinsic_matrix', None)
         if self.calibration is None:
             self.calibration = Calibration(self.robot, 
@@ -225,12 +235,13 @@ class PipelineController:
                                         dist_coeffs=distortion)
         self.calibration.chessboard_size = self.chessboard_type
         self.pipeline_model.calib_exec.submit(self.calibration.calibrate_camera)
-        # self.calibration.calibrate_camera()
         self.on_camera_view()
 
+    @callback
     def on_he_calibration(self):
         pass
 
+    @callback
     def on_camera_view(self):
         self.pipeline_view.pcdview.setup_camera(self.pipeline_view.vfov, 
                                                 self.pipeline_view.pcd_bounds, [0, 0, 0])
@@ -239,15 +250,15 @@ class PipelineController:
         pointat = [-0.037, -0.93, 0.3649]
         self.pipeline_view.pcdview.scene.camera.look_at(lookat, placeat, pointat)
 
+    @callback
     def on_birds_eye_view(self):
         """Callback to reset point cloud view to birds eye (overhead) view"""
         self.pipeline_view.pcdview.setup_camera(self.vfov, self.pcd_bounds, [0, 0, 0])
         self.pipeline_view.pcdview.scene.camera.look_at([0, 0, 1.5], [0, 3, 1.5], [0, -1, 0])
 
+    @callback
     def on_stream_init_start(self):
-        # print(self.pipeline_view.widget_all.stream_combbox.selected_text)
         log.debug('Stream init start')
-        # self.on_camera_view()
         match self.pipeline_view.widget_all.stream_combbox.selected_text:
             case 'Camera':
                 try:
@@ -258,20 +269,15 @@ class PipelineController:
                     self.on_camera_view()
                 except Exception as e:
                     self.pipeline_view.widget_all.status_message.text = "Camera initialization failed!"
-                # self.pipeline_model.camera_mode_init()
-                
             case 'Video':
-                # self.pipeline_model.video_mode_init()
                 pass
-        
+
+    @callback
     def on_toggle_acq_mode(self, is_on):
         self.pipeline_view.acq_mode = is_on
         if is_on:
-            # Disable camera controls by setting to PICK_POINTS mode
             self.pipeline_view.pcdview.set_view_controls(gui.SceneWidget.Controls.PICK_POINTS)
-            # Add plane at y=1 to the scene
             if self.pipeline_view.plane is None:
-                # Create a plane geometry at y=1
                 plane = o3d.geometry.TriangleMesh.create_box(width=10, height=0.01, depth=10)
                 plane.translate([-5, 1, -5])  # Position the plane at y=1
                 plane.paint_uniform_color([0.8, 0.8, 0.8])  # Light gray color
@@ -282,18 +288,18 @@ class PipelineController:
                 self.pipeline_view.plane = plane
                 self.pipeline_view.pcdview.force_redraw()
         else:
-            # Enable normal camera controls
             self.pipeline_view.pcdview.set_view_controls(gui.SceneWidget.Controls.ROTATE_CAMERA)
-            # Remove the plane from the scene
             if self.pipeline_view.plane is not None:
                 self.pipeline_view.pcdview.scene.remove_geometry("edit_plane")
                 self.pipeline_view.plane = None
             self.pipeline_view.pcdview.force_redraw()
 
+    @callback
     def on_chessboard_row_change(self, value):
         self.chessboard_type[1] = int(value)
         log.debug(f'Chessboard type: {self.chessboard_type}')
-    
+
+    @callback
     def on_chessboard_col_change(self, value):
         self.chessboard_type[0] = int(value)
         log.debug(f'Chessboard type: {self.chessboard_type}')
