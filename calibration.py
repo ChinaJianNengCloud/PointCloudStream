@@ -6,7 +6,7 @@ from robot import RoboticArm
 import logging as log
 
 # Configure logging
-# log.basicConfig(level=log.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# log.basicConfig(level=log.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class Calibration:
     def __init__(self, robotic_arm, camera, num_samples=10, eye_to_hand=True, intrinsic=None, dist_coeffs=None):
@@ -15,8 +15,8 @@ class Calibration:
         self.num_samples = num_samples
         self.__init_camera_parameters(intrinsic, dist_coeffs)
         self.eye_to_hand = eye_to_hand
-        self.chessboard_size = [11, 8]  # Adjust as needed (number of corners per row and column)
-        self.square_size = 0.01  # Chessboard square size in meters, adjust as needed
+        self.chessboard_size = [10, 7]  # Adjust as needed (number of corners per row and column)
+        self.square_size = 0.02  # Chessboard square size in meters, adjust as needed
         self.previous_rvecs = []  # For checking pose differences during hand-eye calibration
 
     def __init_camera_parameters(self, intrinsic=None, dist_coeffs=None):
@@ -38,6 +38,7 @@ class Calibration:
         """
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         variance = cv2.Laplacian(gray, cv2.CV_64F).var()
+        log.info("Variance: %s", variance)
         return variance < threshold
 
     def rotationMatrixToEulerAngles(self, R):
@@ -117,10 +118,10 @@ class Calibration:
         cv2.drawChessboardCorners(image_rgb, self.chessboard_size, corners2, ret)
         cv2.imshow('Calibration Image', image_rgb)
         cv2.waitKey(1)
-        if self.is_blurry(image):
-            # Compute the pose of the chessboard
-            log.warning("Image is blurry. Please stabilize the camera or chessboard.")
-            return False, image_rgb, gray, None
+        # if self.is_blurry(image):
+        #     # Compute the pose of the chessboard
+        #     log.warning("Image is blurry. Please stabilize the camera or chessboard.")
+        #     return False, image_rgb, gray, None
         
         return True, image_rgb, gray, corners2
         
@@ -221,6 +222,7 @@ class Calibration:
             R_g2b, t_g2b = self.robotic_arm.capture_gripper_to_base()
             if R_g2b is None or t_g2b is None:
                 log.warning("Failed to get robot transformation. Retrying...")
+                log.info(R_g2b, t_g2b)
                 continue
 
             # Capture target-to-camera transformation
@@ -231,10 +233,6 @@ class Calibration:
 
             if not self.is_pose_different(rvec, previous_rvecs, angle_threshold):
                 log.warning("Pose is too similar to previous images. Please change the angle.")
-                continue
-
-            if self.is_blurry:  # Check if the last image was not blurry
-                log.warning("Image is blurry. Please stabilize the camera or chessboard.")
                 continue
         
             R_gripper2base.append(R_g2b)
@@ -357,8 +355,10 @@ class Calibration:
 if __name__ == "__main__":
     # Create a RoboticArm object
     robot = RoboticArm()  # Replace with your robotic arm initialization
+    import time
     robot.find_device()
     robot.connect()
+
     # robot = None  # Replace with your robotic arm initialization
     import json
     # Create a Camera object
@@ -378,11 +378,14 @@ if __name__ == "__main__":
                                 num_samples=10, 
                                 eye_to_hand=True,
                                 intrinsic=intrinsic,
-                                dist_coeffs=config['distortion_coeffs'],
+                                dist_coeffs=dist_coeffs,
                                 )
 
     # # Calibrate the camera
+    # while True:
+    #     print(robot.capture_gripper_to_base()[1])
     eye_hand_calib.calibrate_eye_hand_from_camera()
+    # eye_hand_calib.calibrate_camera(angle_threshold=5)
 
     # Perform eye-hand calibration
     # eye_hand_calib.calibrate()

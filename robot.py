@@ -71,6 +71,13 @@ class RoboticArm:
 
 if __name__ == "__main__":
     arm = RoboticArm()
+    import time
+    arm.find_device()
     arm.connect()
+    print(arm.get_position())
+    # arm.lebai.start_record_trajectory()
+    # time.sleep(10)
+    # arm.lebai.end_record_trajectory("calib")
+    # motion_id = arm.lebai.move_trajectory("calib")
     # arm.move_command([0, 0, 0, 0, 0, 0])
     # arm.disconnect()

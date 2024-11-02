@@ -5,7 +5,6 @@ import argparse
 from pipeline_controller import PipelineController
 
 if __name__ == "__main__":
-
     log.basicConfig(level=log.DEBUG)
     parser = argparse.ArgumentParser(
         description="Real-time 3D depth video processing pipeline adjusted for Azure Kinect camera.",

@@ -221,6 +221,8 @@ class PipelineController:
             self.pipeline_model.robot_init = True
             if self.pipeline_model.robot_init and self.pipeline_model.camera_init:
                 self.pipeline_view.widget_all.he_calibreate_button.enabled = True
+            self.pipeline_model.robot_init = True
+            self.pipeline_model.robot = self.robot
 
         except Exception as e:
             msg = f'Robot: Connection failed [{e}]'
@@ -254,6 +256,7 @@ class PipelineController:
         self.pipeline_model.calib_exec.submit(self.calibration.calibrate_eye_hand_from_camera)
         self.pipeline_view.widget_all.calibration_msg.text = "Calibration: HandEye calibration..."
         self.pipeline_view.widget_all.he_calibreate_button.enabled = False
+
 
     @callback
     def on_camera_view(self):

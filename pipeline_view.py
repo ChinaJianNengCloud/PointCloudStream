@@ -7,6 +7,7 @@ import numpy as np
 import torch
 from utils import get_num_of_palette
 from typing import Callable
+import logging as log
 
 class Widget_Init:
     def __init__(self, window, callbacks):
@@ -448,7 +449,7 @@ class PipelineView:
             self.widget_all.bbox_edits[param].double_value = self.bbox_params[param]
             self.widget_all.bbox_edits[param].set_on_value_changed(lambda value, p=param: self._on_bbox_edit_changed(value, p))
 
-    def update(self, frame_elements):
+    def update(self, frame_elements: dict):
         """Update visualization with point cloud and images. Must run in main
         thread since this makes GUI calls.
 
@@ -462,15 +463,9 @@ class PipelineView:
                     'status_message': message
         """
         # Store the current point cloud and segmentation data
-        if 'pcd' in frame_elements:
-            self.current_pcd = frame_elements['pcd']
-        else:
-            self.current_pcd = None
-
-        if 'seg' in frame_elements:
-            self.current_seg = frame_elements['seg']
-        else:
-            self.current_seg = None
+        self.current_pcd = frame_elements.get('pcd', None)
+        self.current_seg = frame_elements.get('seg', None)
+        self.current_robot_frame = frame_elements.get('robot_frame', None)
 
         # Update the point cloud visualization
         self.update_pcd_geometry()
@@ -489,6 +484,10 @@ class PipelineView:
         if 'camera' in frame_elements:
             self.pcdview.scene.remove_geometry("camera")
             self.pcdview.scene.add_geometry("camera", frame_elements['camera'], self.line_material)
+
+        if 'robot_frame' in frame_elements:
+            self.pcdview.scene.remove_geometry("robot_frame")
+            self.pcdview.scene.add_geometry("robot_frame", frame_elements['robot_frame'], self.line_material)
 
         if 'status_message' in frame_elements:
             self.widget_all.status_message.text = frame_elements["status_message"]

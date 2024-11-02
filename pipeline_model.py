@@ -11,7 +11,17 @@ import open3d.core as o3c
 import cv2
 import json
 from segmentation import segment_pcd_from_2d
+from robot import RoboticArm
 
+R_calibrated = np.array([[ 0.02136029, -0.88086103,  0.47289279],
+                        [ 0.1774027,   0.46883412,  0.86528773],
+                        [-0.98390651,  0.06540966,  0.16628156]]).T
+T_calibrated = np.array([[-1.22580156],
+                        [-0.87918139],
+                        [ 0.16767223]])
+calibrated_camera_to_end_effector = np.eye(4)
+calibrated_camera_to_end_effector[:3, :3] = R_calibrated
+calibrated_camera_to_end_effector[:3, 3] = T_calibrated.flatten()
 
 class PipelineModel:
     """Controls IO (camera, video file, recording, saving frames). Methods run
@@ -46,6 +56,8 @@ class PipelineModel:
         self.camera = None
         self.rgbd_frame = None
         self.close_stream = None
+        self.robot:RoboticArm = None
+        self.robot_trans_matrix = calibrated_camera_to_end_effector
 
         self.cv_capture = threading.Condition()  # condition variable
 
@@ -53,6 +65,9 @@ class PipelineModel:
         self.extrinsics = o3d.core.Tensor.eye(4,
                                               dtype=o3d.core.Dtype.Float32,
                                               device=self.o3d_device)
+        
+        # self.extrinsics = o3c.Tensor(robot_trans_matrix, dtype=o3d.core.Dtype.Float32,
+        #                                       device=self.o3d_device)
         self.depth_max = 3.0  # m
         self.pcd_stride = 2  # downsample point cloud, may increase frame rate
         self.next_frame_func = None
@@ -200,10 +215,6 @@ class PipelineModel:
                 log.warning(f"Runtime error in frame {frame_id}: {e}")
                 continue
 
-            # if self.pcd_frame.is_empty():
-            #     log.warning(f"No valid depth data in frame {frame_id}")
-            #     continue
-
 
             frame_elements = {
                 'color': color.cpu(),
@@ -225,6 +236,33 @@ class PipelineModel:
                 self.color_mean = np.mean(frame_elements['pcd'].point.colors.cpu().numpy(), axis=0).tolist()  # frame_elements['pcd'].point.colors.mean(dim=0)
                 self.color_std = np.std(frame_elements['pcd'].point.colors.cpu().numpy(), axis=0).tolist()  # frame_elements['pcd'].point.colors.std(dim=0)
                 log.debug(f"color_mean = {self.color_mean}, color_std = {self.color_std}")
+
+            if self.robot_init:
+                # Draw an axis for the robot position pose in the scene
+                pose_robot = self.robot.get_position()
+                
+                # Extract position and rotation
+                x, y, z = pose_robot['x'], pose_robot['y'], pose_robot['z']
+                rx, ry, rz = pose_robot['rx'], pose_robot['ry'], pose_robot['rz']
+                log.debug(f"Robot pose: {x}, {y}, {z}, {rx}, {ry}, {rz}")
+                # Compute rotation matrix from robot's orientation
+                R_robot = o3d.geometry.get_rotation_matrix_from_xyz([rx, ry, rz])
+                
+                # Construct the robot's transformation matrix
+                robot_end_effector_to_base = np.eye(4)
+                robot_end_effector_to_base[:3, :3] = R_robot
+                robot_end_effector_to_base[:3, 3] = [x, y, z]
+
+                # Transform robot pose to camera coordinate frame using calibration matrix
+                robot_end_effector_pose_in_camera = calibrated_camera_to_end_effector @ robot_end_effector_to_base
+                
+
+                # Create a coordinate frame at the robot's position in the scene
+                robot_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.4)
+                robot_frame.transform(robot_end_effector_pose_in_camera)
+
+                # Add the robot frame to the frame elements for visualization
+                frame_elements['robot_frame'] = robot_frame
 
             if self.flag_model_init:
                 labels = segment_pcd_from_2d(self.pcd_seg_model, 
