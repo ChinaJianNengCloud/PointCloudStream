@@ -8,6 +8,7 @@ import numpy as np
 import torch
 import open3d as o3d
 import open3d.core as o3c
+from scipy.spatial.transform import Rotation as R
 import cv2
 import json
 from segmentation import segment_pcd_from_2d
@@ -239,30 +240,8 @@ class PipelineModel:
 
             if self.robot_init:
                 # Draw an axis for the robot position pose in the scene
-                pose_robot = self.robot.get_position()
-                
-                # Extract position and rotation
-                x, y, z = pose_robot['x'], pose_robot['y'], pose_robot['z']
-                rx, ry, rz = pose_robot['rx'], pose_robot['ry'], pose_robot['rz']
-                log.debug(f"Robot pose: {x}, {y}, {z}, {rx}, {ry}, {rz}")
-                # Compute rotation matrix from robot's orientation
-                R_robot = o3d.geometry.get_rotation_matrix_from_xyz([rx, ry, rz])
-                
-                # Construct the robot's transformation matrix
-                robot_end_effector_to_base = np.eye(4)
-                robot_end_effector_to_base[:3, :3] = R_robot
-                robot_end_effector_to_base[:3, 3] = [x, y, z]
+                frame_elements['robot_frame'] = self.robot_tracking()
 
-                # Transform robot pose to camera coordinate frame using calibration matrix
-                robot_end_effector_pose_in_camera = calibrated_camera_to_end_effector @ robot_end_effector_to_base
-                
-
-                # Create a coordinate frame at the robot's position in the scene
-                robot_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.4)
-                robot_frame.transform(robot_end_effector_pose_in_camera)
-
-                # Add the robot frame to the frame elements for visualization
-                frame_elements['robot_frame'] = robot_frame
 
             if self.flag_model_init:
                 labels = segment_pcd_from_2d(self.pcd_seg_model, 
@@ -351,3 +330,29 @@ class PipelineModel:
         
     def calibration(self):
         pass
+
+    def robot_tracking(self):
+        pose_robot = self.robot.get_position()
+        # Extract position and rotation from pose
+        x, y, z = pose_robot['x'], pose_robot['y'], pose_robot['z']
+        rx, ry, rz = pose_robot['rx'], pose_robot['ry'], pose_robot['rz']
+        
+        rotation_robot = R.from_euler('xyz', [rx, ry, rz])
+        robot_R = rotation_robot.as_matrix()
+
+        T_base_to_ee = np.eye(4)
+        T_base_to_ee[0:3, 0:3] = robot_R
+        T_base_to_ee[0:3, 3] = [x, y, z]
+
+        log.debug(f"Robot pose: {x}, {y}, {z}, {rx}, {ry}, {rz}")
+
+        T_ee_to_cam = np.eye(4)
+        T_ee_to_cam[0:3, 0:3] = R_calibrated
+        T_ee_to_cam[0:3, 3] = T_calibrated.ravel()
+        T_base_to_cam = np.dot(T_base_to_ee, T_ee_to_cam)
+        # Create a coordinate frame at the robot's position in the scene
+        robot_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.4)
+        robot_frame.transform(T_base_to_cam)
+
+        # Add the robot frame to the frame elements for visualization
+        return robot_frame
