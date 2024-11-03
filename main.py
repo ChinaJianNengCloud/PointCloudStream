@@ -1,11 +1,12 @@
 # main.py
-import logging as log
+import logging
 import argparse
 
 from pipeline_controller import PipelineController
 
 if __name__ == "__main__":
-    log.basicConfig(level=log.DEBUG)
+    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(levelname)s] %(message)s')
+    logger = logging.getLogger(__name__)
     parser = argparse.ArgumentParser(
         description="Real-time 3D depth video processing pipeline adjusted for Azure Kinect camera.",
         formatter_class=argparse.RawDescriptionHelpFormatter)

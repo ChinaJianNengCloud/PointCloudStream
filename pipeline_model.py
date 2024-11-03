@@ -12,7 +12,10 @@ from scipy.spatial.transform import Rotation as R
 import cv2
 import json
 from segmentation import segment_pcd_from_2d
-from robot import RoboticArm
+from robot import RobotInterface
+import logging
+
+logger = logging.getLogger(__name__)
 
 R_calibrated = np.array([[ 0.02136029, -0.88086103,  0.47289279],
                         [ 0.1774027,   0.46883412,  0.86528773],
@@ -57,7 +60,7 @@ class PipelineModel:
         self.camera = None
         self.rgbd_frame = None
         self.close_stream = None
-        self.robot:RoboticArm = None
+        self.robot:RobotInterface = None
         self.robot_trans_matrix = calibrated_camera_to_end_effector
 
         self.cv_capture = threading.Condition()  # condition variable

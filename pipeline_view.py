@@ -7,7 +7,9 @@ import numpy as np
 import torch
 from utils import get_num_of_palette
 from typing import Callable
-import logging as log
+import logging
+
+logger = logging.getLogger(__name__)
 
 class Widget_Init:
     def __init__(self, window, callbacks):

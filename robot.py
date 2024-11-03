@@ -2,8 +2,10 @@ import lebai_sdk
 import numpy as np
 import cv2
 from scipy.spatial.transform import Rotation as R
-import logging as log
-class RoboticArm:
+import logging
+
+logger = logging.getLogger(__name__)
+class RobotInterface:
     def __init__(self, ip_address=None, port=None):
         # Initialize SDK and network parameters
         self.ip_address = ip_address
@@ -48,7 +50,7 @@ class RoboticArm:
         """Retrieve the current position of the robot's end-effector."""
         position = self.lebai.get_kin_data()
         return position['actual_tcp_pose']
-
+    
     def move_command(self, joint_pose):
         """Send movement command to the robotic arm."""
         try:
@@ -70,7 +72,7 @@ class RoboticArm:
 
 
 if __name__ == "__main__":
-    arm = RoboticArm()
+    arm = RobotInterface()
     import time
     arm.find_device()
     arm.connect()

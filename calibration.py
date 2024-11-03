@@ -1,391 +1,213 @@
-import numpy as np
-import cv2
-import open3d as o3d
+import os
+import sys
 import time
-from robot import RoboticArm
-import logging as log
+import cv2
+import numpy as np
+from datetime import datetime
+import open3d as o3d
+import json
+from scipy.spatial.transform import Rotation as R
+from robot import RobotInterface
+import logging
 
 # Configure logging
-# log.basicConfig(level=log.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(levelname)s] %(message)s')
+logger = logging.getLogger(__name__)
 
-class Calibration:
-    def __init__(self, robotic_arm, camera, num_samples=10, eye_to_hand=True, intrinsic=None, dist_coeffs=None):
-        self.robotic_arm: RoboticArm = robotic_arm
+class CameraInterface:
+    def __init__(self, camera):
         self.camera = camera
-        self.num_samples = num_samples
-        self.__init_camera_parameters(intrinsic, dist_coeffs)
-        self.eye_to_hand = eye_to_hand
-        self.chessboard_size = [10, 7]  # Adjust as needed (number of corners per row and column)
-        self.square_size = 0.02  # Chessboard square size in meters, adjust as needed
-        self.previous_rvecs = []  # For checking pose differences during hand-eye calibration
 
-    def __init_camera_parameters(self, intrinsic=None, dist_coeffs=None):
-        self.intrinsic = intrinsic if intrinsic is not None else np.eye(3)
-        self.dist_coeffs = dist_coeffs if dist_coeffs is not None else np.zeros((5, 1))
-        log.info("Camera Intrinsic Parameters:\n%s", self.intrinsic)
-        log.info("Camera Distortion Coefficients:\n%s", self.dist_coeffs)
-
-    def is_blurry(self, image, threshold=100):
-        """
-        Check if the image is blurry using the variance of the Laplacian.
-
-        Args:
-            image: The image to check.
-            threshold: The variance threshold below which the image is considered blurry.
-
-        Returns:
-            True if the image is blurry, False otherwise.
-        """
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        variance = cv2.Laplacian(gray, cv2.CV_64F).var()
-        log.info("Variance: %s", variance)
-        return variance < threshold
-
-    def rotationMatrixToEulerAngles(self, R):
-        """
-        Convert rotation matrix to Euler angles.
-
-        Args:
-            R: Rotation matrix.
-
-        Returns:
-            Euler angles (theta_x, theta_y, theta_z).
-        """
-        sy = np.sqrt(R[0, 0] * R[0, 0] +  R[1, 0] * R[1, 0])
-        singular = sy < 1e-6
-
-        if not singular:
-            x = np.arctan2(R[2, 1] , R[2, 2])
-            y = np.arctan2(-R[2, 0], sy)
-            z = np.arctan2(R[1, 0], R[0, 0])
-        else:
-            x = np.arctan2(-R[1, 2], R[1, 1])
-            y = np.arctan2(-R[2, 0], sy)
-            z = 0
-
-        return np.array([x, y, z])
-
-    def is_pose_different(self, current_rvec, previous_rvecs, angle_threshold):
-        """
-        Check if the current pose is sufficiently different from previous poses.
-
-        Args:
-            current_rvec: Rotation vector of the current pose.
-            previous_rvecs: List of previous rotation vectors.
-            angle_threshold: Minimum angular difference in degrees.
-
-        Returns:
-            True if the pose is different enough, False otherwise.
-        """
-        current_rot = cv2.Rodrigues(current_rvec)[0]
-        current_euler = self.rotationMatrixToEulerAngles(current_rot)
-
-        for prev_rvec in previous_rvecs:
-            prev_rot = cv2.Rodrigues(prev_rvec)[0]
-            prev_euler = self.rotationMatrixToEulerAngles(prev_rot)
-
-            angle_diff = np.abs(current_euler - prev_euler)
-            angle_diff = np.degrees(angle_diff)  # Convert radians to degrees
-
-            if np.all(angle_diff < angle_threshold):
-                return False  # Pose is too similar
-
-        return True  # Pose is sufficiently different
-
-    def get_valid_corner_images(self):
-        rgbd = None
-        while not rgbd:
+    def live_feedback(self):
+        while True:
             rgbd = self.camera.capture_frame(True)
-        image = np.asarray(rgbd.color)
-        # Convert to grayscale
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        # Find the chessboard corners
-        ret, corners = cv2.findChessboardCorners(gray, self.chessboard_size, None)
-
-        if not ret:
-            cv2.imshow('Calibration Image', image_rgb)
-            cv2.waitKey(1)
-            log.warning("Chessboard not detected. Please adjust the chessboard and try again.")
-            return False, image_rgb, gray, None
-
-        # Refine the corners
-        corners2 = cv2.cornerSubPix(
-            gray, corners, (11, 11), (-1, -1),
-            criteria=(cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001))
-        # Draw and display the corners
-
-        cv2.drawChessboardCorners(image_rgb, self.chessboard_size, corners2, ret)
-        cv2.imshow('Calibration Image', image_rgb)
-        cv2.waitKey(1)
-        # if self.is_blurry(image):
-        #     # Compute the pose of the chessboard
-        #     log.warning("Image is blurry. Please stabilize the camera or chessboard.")
-        #     return False, image_rgb, gray, None
-        
-        return True, image_rgb, gray, corners2
-        
-
-    def calibrate_camera(self, num_images=20, angle_threshold=10):
-        """
-        Calibrate the camera using multiple images of a chessboard pattern.
-
-        Args:
-            num_images: Number of images to capture for calibration.
-            angle_threshold: Minimum angular difference between poses in degrees.
-
-        Updates:
-            self.intrinsic: Camera intrinsic matrix.
-            self.dist_coeffs: Distortion coefficients.
-        """
-        n_img = 0
-        objpoints = []  # 3D points in real-world space
-        imgpoints = []  # 2D points in image plane
-        previous_rvecs = []  # List to store previous rotation vectors
-        self.intrinsic = np.eye(3)
-        self.dist_coeffs = np.zeros((5, 1))
-
-        # Prepare object points based on the real chessboard dimensions
-        objp = np.zeros((self.chessboard_size[0] * self.chessboard_size[1], 3), np.float32)
-        objp[:, :2] = np.mgrid[0:self.chessboard_size[0],
-                               0:self.chessboard_size[1]].T.reshape(-1, 2)
-        objp *= self.square_size
-
-        log.info("Starting camera calibration...")
-        while n_img < num_images:
-            # Capture an image from the camera
-            ret, image_rgb, gray, corners2 = self.get_valid_corner_images()
-
-            if not ret:
+            if rgbd is None:
                 continue
+            color = np.asarray(rgbd.color)
+            color = cv2.cvtColor(color, cv2.COLOR_BGRA2BGR)
+            cv2.imshow('Live Feedback', color)
+            key = cv2.waitKey(1)
+            if key == ord('q'):
+                cv2.destroyAllWindows()
+                return None  # User chose to quit
+            elif key == ord(' '):  # Press space to capture image
+                cv2.destroyAllWindows()
+                return color  # Return the captured image
 
-            ret_pnp, rvec, tvec = cv2.solvePnP(
-                objp, corners2, self.intrinsic, self.dist_coeffs)
-            if not ret_pnp:
-                log.warning("Could not compute pose. Please adjust the chessboard and try again.")
-                continue
+    def capture_frame(self):
+        rgbd = self.camera.capture_frame(True)
+        if rgbd is None:
+            raise RuntimeError('Failed to capture frame')
+        color = np.asarray(rgbd.color)
+        color = cv2.cvtColor(color, cv2.COLOR_BGRA2BGR)
+        return color
 
-            if not self.is_pose_different(rvec, previous_rvecs, angle_threshold):
-                log.warning("Pose is too similar to previous images. Please change the angle.")
-                continue
-
-            # Append object points and image points
-            n_img += 1
-            objpoints.append(objp)
-            imgpoints.append(corners2)
-            previous_rvecs.append(rvec)
-            log.info(f"Captured image {n_img}/{num_images} for calibration.")
-
-
+    def show_image(self, image, time_ms=1500):
+        cv2.imshow('Image', image)
+        cv2.waitKey(time_ms)
         cv2.destroyAllWindows()
 
-        if n_img < num_images:
-            log.error("Calibration was not completed.")
+    def clear(self):
+        pass  # No cleanup necessary for Open3D Azure Kinect sensor
+
+
+class CalibrationProcess:
+    def __init__(self, params, camera_interface: CameraInterface, robot_interface: RobotInterface):
+        self.directory = params.get('directory', os.getcwd())
+        self.image_amount = params.get('ImageAmount', 25)
+        self.square_size = params.get('CheckerboardSquareSize', 0.025)
+        self.checkerboard_dims = params.get('Checkerboard', (9, 6))
+        self.camera = camera_interface
+        self.robot = robot_interface
+        self.img_frames = []
+        self.position_list = []
+        self.useful_positions = []
+        self.objpoints = []
+        self.imgpoints = []
+        self.camera_matrix = None
+        self.dist_coeffs = None
+        self.new_camera_mtx = None
+        self.roi = None
+        self.rvecs = None
+        self.tvecs = None
+
+        timestamp = datetime.now().strftime('%d-%m-%Y_%H-%M-%S')
+        self.picture_folder = os.path.join(self.directory, f'Calibration_{timestamp}')
+        os.makedirs(self.picture_folder, exist_ok=True)
+
+    def capture_images(self):
+        for iteration in range(self.image_amount):
+            logger.info("Press space to take picture or 'q' to quit...")
+            img = None
+            while img is None:
+                img = self.camera.live_feedback()
+                if img is None:
+                    logger.info("User opted to quit capturing images.")
+                    return  # Exit the method if user quits
+            self.img_frames.append(img)
+            logger.info(f"Captured image {iteration + 1} of {self.image_amount}")
+
+            R_g2b, t_g2b = self.robot.capture_gripper_to_base()
+            rvecs, _ = cv2.Rodrigues(R_g2b)
+            tvecs = t_g2b.flatten()
+            logger.info(f"Robot translation vector: {tvecs}")
+            position = np.hstack((tvecs.reshape(1, 3), rvecs.reshape(1, 3)))
+            self.position_list.append(position)
+            time.sleep(0.2)
+        cv2.destroyAllWindows()
+
+        with open(os.path.join(self.picture_folder, "robot_positions.txt"), "w") as file:
+            for position in self.position_list:
+                file.write(f"{position.tolist()}\n")
+        self.camera.clear()
+
+    def find_corners(self):
+        objp = np.zeros((self.checkerboard_dims[1] * self.checkerboard_dims[0], 3), np.float32)
+        objp[:, :2] = np.mgrid[0:self.checkerboard_dims[0], 0:self.checkerboard_dims[1]].T.reshape(-1, 2) * self.square_size
+
+        criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+        for idx, img in enumerate(self.img_frames):
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            ret, corners = cv2.findChessboardCorners(gray, self.checkerboard_dims, None)
+            if ret:
+                self.objpoints.append(objp)
+                corners2 = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
+                self.imgpoints.append(corners2)
+                img_with_corners = cv2.drawChessboardCorners(img, self.checkerboard_dims, corners2, ret)
+                self.camera.show_image(img_with_corners)
+                self.useful_positions.append(self.position_list[idx])
+
+    def calibrate_camera(self):
+        ret, self.camera_matrix, self.dist_coeffs, self.rvecs, self.tvecs = cv2.calibrateCamera(
+            self.objpoints, self.imgpoints, self.img_frames[0].shape[1::-1], None, None)
+        logger.info("Camera calibration results:")
+        logger.info(f"Camera matrix:\n{self.camera_matrix}")
+        logger.info(f"Distortion coefficients:\n{self.dist_coeffs}")
+
+    def undistort_images(self):
+        h, w = self.img_frames[0].shape[:2]
+        self.new_camera_mtx, self.roi = cv2.getOptimalNewCameraMatrix(self.camera_matrix, self.dist_coeffs, (w, h), 1, (w, h))
+        for idx, img in enumerate(self.img_frames):
+            undistorted_img = cv2.undistort(img, self.camera_matrix, self.dist_coeffs, None, self.new_camera_mtx)
+            x, y, w, h = self.roi
+            undistorted_img = undistorted_img[y:y + h, x:x + w]
+            self.camera.show_image(undistorted_img)
+            cv2.waitKey(0)
+        cv2.destroyAllWindows()
+
+    def compute_reprojection_error(self):
+        total_error = 0
+        for i in range(len(self.objpoints)):
+            imgpoints2, _ = cv2.projectPoints(self.objpoints[i], self.rvecs[i], self.tvecs[i], self.camera_matrix, self.dist_coeffs)
+            error = cv2.norm(self.imgpoints[i], imgpoints2, cv2.NORM_L2) / len(imgpoints2)
+            total_error += error
+        mean_error = total_error / len(self.objpoints)
+        logger.info(f"Total reprojection error: {mean_error}")
+        self.camera.clear()
+
+    def hand_eye_calibration(self):
+        robot_rvecs = []
+        robot_tvecs = []
+        for position in self.useful_positions:
+            robot_rvecs.append(position[0][3:6])
+            robot_tvecs.append(position[0][0:3])
+
+        methods = {
+            1: cv2.CALIB_HAND_EYE_PARK,
+            2: cv2.CALIB_HAND_EYE_TSAI,
+            3: cv2.CALIB_HAND_EYE_HORAUD,
+            4: cv2.CALIB_HAND_EYE_DANIILIDIS
+        }
+        results = {}
+        for idx, (key, method) in enumerate(methods.items(), 1):
+            R_cam2gripper, t_cam2gripper = cv2.calibrateHandEye(robot_rvecs, robot_tvecs, self.rvecs, self.tvecs, method=method)
+            transformation_matrix = np.eye(4)
+            transformation_matrix[:3, :3] = R_cam2gripper
+            transformation_matrix[:3, 3] = t_cam2gripper.flatten()
+            results[key] = transformation_matrix
+            method_name = ["Park-Martin", "Tsai", "Horaud", "Daniilidis"][idx - 1]
+            logger.info(f"{method_name} Calibration Matrix ({idx}):\n{transformation_matrix}\n")
+
+        calibration_choice = int(input("Choose Calibration method (1-4): "))
+        chosen_matrix = results.get(calibration_choice, results[1])
+        logger.info(f"Selected Calibration Matrix:\n{chosen_matrix}\n")
+        logger.info(f"Camera Intrinsic Matrix:\n{self.camera_matrix}\n")
+        logger.info(f"Optimal Camera Intrinsic Matrix:\n{self.new_camera_mtx}\n")
+
+    def run(self):
+        self.capture_images()
+        if not self.img_frames:
+            logger.info("No images were captured. Exiting calibration process.")
             return
+        self.find_corners()
+        if not self.objpoints or not self.imgpoints:
+            logger.info("Chessboard corners were not found in any image. Exiting calibration process.")
+            return
+        self.calibrate_camera()
+        self.undistort_images()
+        self.compute_reprojection_error()
+        self.hand_eye_calibration()
 
-        # Get image size
-        image_size = gray.shape[::-1]
+def main():
+    params = {
+        'directory': '.',  # Change to your directory if needed
+        'ImageAmount': 20,
+        'CheckerboardSquareSize': 0.02,
+        'Checkerboard': [10, 7],
+    }
 
-        # Calibrate the camera
-        ret, camera_matrix, dist_coeffs, rvecs, tvecs = cv2.calibrateCamera(
-            objpoints, imgpoints, image_size, None, None)
-
-        if ret:
-            # Store the intrinsic parameters and distortion coefficients
-            self.intrinsic = camera_matrix
-            self.dist_coeffs = dist_coeffs
-
-            # Log the results
-            log.info("Camera calibration successful.")
-            log.info("Camera matrix:\n%s", camera_matrix)
-            log.info("Distortion coefficients:\n%s", dist_coeffs)
-        else:
-            log.error("Camera calibration failed.")
-
-    def capture_transformations(self, angle_threshold=10):
-        """
-        Capture transformations from robot to base and from target to camera.
-
-        Args:
-            angle_threshold: Minimum angular difference between poses in degrees.
-
-        Returns:
-            R_gripper2base, t_gripper2base, R_target2cam, t_target2cam
-        """
-        R_gripper2base, t_gripper2base = [], []
-        R_target2cam, t_target2cam = [], []
-        previous_rvecs = []  # For checking pose differences
-
-        log.info("Starting to capture transformations for hand-eye calibration...")
-        while len(R_gripper2base) < self.num_samples:
-            # Capture gripper-to-base transformation
-            R_g2b, t_g2b = self.robotic_arm.capture_gripper_to_base()
-            if R_g2b is None or t_g2b is None:
-                log.warning("Failed to get robot transformation. Retrying...")
-                log.info(R_g2b, t_g2b)
-                continue
-
-            # Capture target-to-camera transformation
-            ret, R_t2c, t_t2c, rvec = self.detect_chessboard_pose(return_rvec=True)
-            if not ret:
-                log.warning("Chessboard not detected. Ensure proper target positioning and retry.")
-                continue
-
-            if not self.is_pose_different(rvec, previous_rvecs, angle_threshold):
-                log.warning("Pose is too similar to previous images. Please change the angle.")
-                continue
-        
-            R_gripper2base.append(R_g2b)
-            t_gripper2base.append(t_g2b)
-            R_target2cam.append(R_t2c)
-            t_target2cam.append(t_t2c)
-            previous_rvecs.append(rvec)
-            log.info(f"Captured transformation {len(R_gripper2base)}/{self.num_samples}.")
-
-                
-
-        log.info("Finished capturing transformations.")
-        return R_gripper2base, t_gripper2base, R_target2cam, t_target2cam
-
-    def detect_chessboard_pose(self, return_rvec=False):
-        """
-        Detect the chessboard in the image and compute its pose relative to the camera.
-
-        Args:
-            return_rvec: If True, also return the rotation vector.
-
-        Returns:
-            ret: Boolean indicating success of chessboard detection.
-            R_t2c: Rotation matrix from target (chessboard) to camera.
-            t_t2c: Translation vector from target (chessboard) to camera.
-            rvec (optional): Rotation vector from target to camera.
-        """
-        if self.intrinsic is None or self.dist_coeffs is None:
-            raise ValueError("Camera intrinsic parameters and distortion coefficients are not set. "
-                             "Please calibrate the camera first.")
-
-        # Define object points (3D points of the chessboard corners in the chessboard frame)
-        objp = np.zeros((self.chessboard_size[0] * self.chessboard_size[1], 3), np.float32)
-        objp[:, :2] = np.mgrid[0:self.chessboard_size[0],
-                               0:self.chessboard_size[1]].T.reshape(-1, 2)
-        objp *= self.square_size
-
-
-        ret, image_rgb, gray, corners2= self.get_valid_corner_images()
-        if not ret:
-            if return_rvec:
-                return False, None, None, None
-            else:
-                return False, None, None
-        
-        # SolvePnP to find the rotation and translation of the chessboard relative to the camera
-        ret_pnp, rvec, tvec = cv2.solvePnP(objp, corners2, self.intrinsic, self.dist_coeffs)
-
-        if ret_pnp:
-            R_t2c = cv2.Rodrigues(rvec)[0]
-            t_t2c = tvec
-            if return_rvec:
-                return True, R_t2c, t_t2c, rvec
-            else:
-                return True, R_t2c, t_t2c
-
-        if return_rvec:
-            return False, None, None, None
-        else:
-            return False, None, None
-
-    def calibrate_eye_hand_from_camera(self, angle_threshold=10):
-        """
-        Perform eye-hand calibration.
-
-        Args:
-            angle_threshold: Minimum angular difference between poses in degrees.
-
-        Returns:
-            Calibrated rotation matrix and translation vector.
-        """
-
-        # Capture the required transformations
-        R_gripper2base, t_gripper2base, R_target2cam, t_target2cam = self.capture_transformations(angle_threshold)
-
-        # Perform the calibration
-        R_calibrated, t_calibrated = self.calibrate_eye_hand(
-            R_gripper2base, t_gripper2base, R_target2cam, t_target2cam, self.eye_to_hand
-        )
-
-        log.info("Hand-eye calibration completed.")
-        log.info("Calibrated Rotation Matrix:\n%s", R_calibrated)
-        log.info("Calibrated Translation Vector:\n%s", t_calibrated)
-        return R_calibrated, t_calibrated
-
-    @staticmethod
-    def calibrate_eye_hand(R_gripper2base, t_gripper2base, R_target2cam, t_target2cam, eye_to_hand=True):
-        """
-        Perform eye-hand calibration using OpenCV.
-
-        Args:
-            R_gripper2base: List of rotation matrices from gripper to base.
-            t_gripper2base: List of translation vectors from gripper to base.
-            R_target2cam: List of rotation matrices from target to camera.
-            t_target2cam: List of translation vectors from target to camera.
-            eye_to_hand: Boolean indicating eye-to-hand calibration.
-
-        Returns:
-            Calibrated rotation matrix and translation vector.
-        """
-        if eye_to_hand:
-            R_base2gripper, t_base2gripper = [], []
-            for R, t in zip(R_gripper2base, t_gripper2base):
-                R_b2g = R.T
-                t_b2g = -R_b2g @ t
-                R_base2gripper.append(R_b2g)
-                t_base2gripper.append(t_b2g)
-
-            R_gripper2base = R_base2gripper
-            t_gripper2base = t_base2gripper
-
-        R, t = cv2.calibrateHandEye(
-            R_gripper2base=R_gripper2base,
-            t_gripper2base=t_gripper2base,
-            R_target2cam=R_target2cam,
-            t_target2cam=t_target2cam,
-        )
-        return R, t
-
-if __name__ == "__main__":
-    # Create a RoboticArm object
-    robot = RoboticArm()  # Replace with your robotic arm initialization
-    import time
-    robot.find_device()
-    robot.connect()
-
-    # robot = None  # Replace with your robotic arm initialization
-    import json
-    # Create a Camera object
     camera_config = './default_config.json'
-    config = json.load(open(camera_config, 'r'))
-    camera = o3d.io.AzureKinectSensor(
-        o3d.io.read_azure_kinect_sensor_config(camera_config))
-    camera.connect(0)
-    print(config['intrinsic_matrix'])
-    print(config['distortion_coeffs'])
-    print(config.get('intrinsic_matrixs', None))
-    intrinsic = np.array(config['intrinsic_matrix']).reshape(3, 3).T
-    print(intrinsic)
-    dist_coeffs = np.array(config['distortion_coeffs']).reshape(5, 1)
-    # Initialize EyeHandCalibration without intrinsic parameters
-    eye_hand_calib = Calibration(robot, camera, 
-                                num_samples=10, 
-                                eye_to_hand=True,
-                                intrinsic=intrinsic,
-                                dist_coeffs=dist_coeffs,
-                                )
+    sensor_config = o3d.io.read_azure_kinect_sensor_config(camera_config)
+    camera = o3d.io.AzureKinectSensor(sensor_config)
+    if not camera.connect(0):
+        raise RuntimeError('Failed to connect to Azure Kinect sensor')
 
-    # # Calibrate the camera
-    # while True:
-    #     print(robot.capture_gripper_to_base()[1])
-    eye_hand_calib.calibrate_eye_hand_from_camera()
-    # eye_hand_calib.calibrate_camera(angle_threshold=5)
+    camera_interface = CameraInterface(camera)
+    robot_interface = RobotInterface()
+    robot_interface.find_device()
+    robot_interface.connect()
+    calibration_process = CalibrationProcess(params, camera_interface, robot_interface)
+    calibration_process.run()
 
-    # Perform eye-hand calibration
-    # eye_hand_calib.calibrate()
+if __name__ == '__main__':
+    main()

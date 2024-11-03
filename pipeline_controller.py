@@ -6,11 +6,12 @@ import open3d.visualization.rendering as rendering
 import open3d as o3d
 from pipeline_model import PipelineModel
 from pipeline_view import PipelineView
-from calibration import Calibration
-from robot import RoboticArm
+from calibration import CalibrationProcess
+from robot import RobotInterface
 from functools import wraps
+import logging
 
-
+logger = logging.getLogger(__name__)
 _callback_names = []
 
 @staticmethod
@@ -51,7 +52,7 @@ class PipelineController:
         self.drawing_rectangle = False
         self.initial_point = None
         self.rectangle_geometry = None
-        self.robot = RoboticArm()
+        self.robot = RobotInterface()
 
         # Collect bound methods into callbacks dictionary
         self.callbacks = {name: getattr(self, name) for name in _callback_names}
@@ -234,13 +235,13 @@ class PipelineController:
     def on_camera_calibration(self):
         distortion  = self.pipeline_model.camera_json.get('distortion_coeffs', None)
         if self.calibration is None:
-            self.calibration = Calibration(self.robot, 
+            self.calibration = CalibrationProcess(self.robot, 
                                         self.pipeline_model.camera,
                                         intrinsic=self.pipeline_model.intrinsic_matrix, 
                                         dist_coeffs=distortion)
         self.calibration.chessboard_size = self.chessboard_type
         self.pipeline_model.calib_exec.submit(self.calibration.calibrate_camera)
-        self.pipeline_view.widget_all.calibration_msg.text = "Calibration: Camera calibration..."
+        self.pipeline_view.widget_all.calibration_msg.text = "CalibrationProcess: Camera calibration..."
         # self.pipeline_model.calib_exec.shutdown()
         self.on_camera_view()
 
@@ -248,13 +249,13 @@ class PipelineController:
     def on_he_calibration(self):
         distortion  = self.pipeline_model.camera_json.get('distortion_coeffs', None)
         if self.calibration is None:
-            self.calibration = Calibration(self.robot, 
+            self.calibration = CalibrationProcess(self.robot, 
                                         self.pipeline_model.camera,
                                         intrinsic=self.pipeline_model.intrinsic_matrix, 
                                         dist_coeffs=distortion)
         self.calibration.chessboard_size = self.chessboard_type
         self.pipeline_model.calib_exec.submit(self.calibration.calibrate_eye_hand_from_camera)
-        self.pipeline_view.widget_all.calibration_msg.text = "Calibration: HandEye calibration..."
+        self.pipeline_view.widget_all.calibration_msg.text = "CalibrationProcess: HandEye calibration..."
         self.pipeline_view.widget_all.he_calibreate_button.enabled = False
 
 
