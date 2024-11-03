@@ -15,23 +15,32 @@ logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(levelname)s] %(m
 logger = logging.getLogger(__name__)
 
 class CameraInterface:
-    def __init__(self, camera):
+    def __init__(self, camera, checkerboard_dims):
         self.camera = camera
+        self.checkerboard_dims = tuple(checkerboard_dims)
+        self.criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 
     def live_feedback(self):
+        cv2.namedWindow('Live Feedback')
         while True:
             rgbd = self.camera.capture_frame(True)
             if rgbd is None:
                 continue
             color = np.asarray(rgbd.color)
-            color = cv2.cvtColor(color, cv2.COLOR_BGRA2BGR)
-            cv2.imshow('Live Feedback', color)
+            color = cv2.cvtColor(color, cv2.COLOR_BGRA2RGB)
+            gray = cv2.cvtColor(color, cv2.COLOR_BGR2GRAY)
+            ret, corners = cv2.findChessboardCorners(gray, self.checkerboard_dims, None)
+            if ret:
+                corners2 = cv2.cornerSubPix(gray, corners, (11,11), (-1,-1), self.criteria)
+                color_display = cv2.drawChessboardCorners(color.copy(), self.checkerboard_dims, corners2, ret)
+            else:
+                color_display = color.copy()
+            cv2.imshow('Live Feedback', color_display)
             key = cv2.waitKey(1)
             if key == ord('q'):
-                cv2.destroyAllWindows()
                 return None  # User chose to quit
             elif key == ord(' '):  # Press space to capture image
-                cv2.destroyAllWindows()
+                logger.info("Image captured.")
                 return color  # Return the captured image
 
     def capture_frame(self):
@@ -42,10 +51,11 @@ class CameraInterface:
         color = cv2.cvtColor(color, cv2.COLOR_BGRA2BGR)
         return color
 
-    def show_image(self, image, time_ms=1500):
-        cv2.imshow('Image', image)
+    def show_image(self, image, window_name='Image', time_ms=1500):
+        cv2.namedWindow(window_name)
+        cv2.imshow(window_name, image)
         cv2.waitKey(time_ms)
-        cv2.destroyAllWindows()
+        # Do not destroy the window
 
     def clear(self):
         pass  # No cleanup necessary for Open3D Azure Kinect sensor
@@ -56,7 +66,7 @@ class CalibrationProcess:
         self.directory = params.get('directory', os.getcwd())
         self.image_amount = params.get('ImageAmount', 25)
         self.square_size = params.get('CheckerboardSquareSize', 0.025)
-        self.checkerboard_dims = params.get('Checkerboard', (9, 6))
+        self.checkerboard_dims = tuple(params.get('Checkerboard', (9, 6)))
         self.camera = camera_interface
         self.robot = robot_interface
         self.img_frames = []
@@ -66,8 +76,6 @@ class CalibrationProcess:
         self.imgpoints = []
         self.camera_matrix = None
         self.dist_coeffs = None
-        self.new_camera_mtx = None
-        self.roi = None
         self.rvecs = None
         self.tvecs = None
 
@@ -76,6 +84,7 @@ class CalibrationProcess:
         os.makedirs(self.picture_folder, exist_ok=True)
 
     def capture_images(self):
+        logger.info("Starting image capture...")
         for iteration in range(self.image_amount):
             logger.info("Press space to take picture or 'q' to quit...")
             img = None
@@ -94,7 +103,8 @@ class CalibrationProcess:
             position = np.hstack((tvecs.reshape(1, 3), rvecs.reshape(1, 3)))
             self.position_list.append(position)
             time.sleep(0.2)
-        cv2.destroyAllWindows()
+        logger.info("Image capture completed.")
+        # No need to destroy windows here
 
         with open(os.path.join(self.picture_folder, "robot_positions.txt"), "w") as file:
             for position in self.position_list:
@@ -105,16 +115,16 @@ class CalibrationProcess:
         objp = np.zeros((self.checkerboard_dims[1] * self.checkerboard_dims[0], 3), np.float32)
         objp[:, :2] = np.mgrid[0:self.checkerboard_dims[0], 0:self.checkerboard_dims[1]].T.reshape(-1, 2) * self.square_size
 
-        criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
         for idx, img in enumerate(self.img_frames):
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             ret, corners = cv2.findChessboardCorners(gray, self.checkerboard_dims, None)
             if ret:
                 self.objpoints.append(objp)
-                corners2 = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
+                corners2 = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), self.camera.criteria)
                 self.imgpoints.append(corners2)
-                img_with_corners = cv2.drawChessboardCorners(img, self.checkerboard_dims, corners2, ret)
-                self.camera.show_image(img_with_corners)
+                img_with_corners = cv2.drawChessboardCorners(img.copy(), self.checkerboard_dims, corners2, ret)
+                window_name = f'Corners Image'
+                self.camera.show_image(img_with_corners, window_name=window_name, time_ms=1500)
                 self.useful_positions.append(self.position_list[idx])
 
     def calibrate_camera(self):
@@ -124,21 +134,11 @@ class CalibrationProcess:
         logger.info(f"Camera matrix:\n{self.camera_matrix}")
         logger.info(f"Distortion coefficients:\n{self.dist_coeffs}")
 
-    def undistort_images(self):
-        h, w = self.img_frames[0].shape[:2]
-        self.new_camera_mtx, self.roi = cv2.getOptimalNewCameraMatrix(self.camera_matrix, self.dist_coeffs, (w, h), 1, (w, h))
-        for idx, img in enumerate(self.img_frames):
-            undistorted_img = cv2.undistort(img, self.camera_matrix, self.dist_coeffs, None, self.new_camera_mtx)
-            x, y, w, h = self.roi
-            undistorted_img = undistorted_img[y:y + h, x:x + w]
-            self.camera.show_image(undistorted_img)
-            cv2.waitKey(0)
-        cv2.destroyAllWindows()
-
     def compute_reprojection_error(self):
         total_error = 0
         for i in range(len(self.objpoints)):
-            imgpoints2, _ = cv2.projectPoints(self.objpoints[i], self.rvecs[i], self.tvecs[i], self.camera_matrix, self.dist_coeffs)
+            imgpoints2, _ = cv2.projectPoints(
+                self.objpoints[i], self.rvecs[i], self.tvecs[i], self.camera_matrix, self.dist_coeffs)
             error = cv2.norm(self.imgpoints[i], imgpoints2, cv2.NORM_L2) / len(imgpoints2)
             total_error += error
         mean_error = total_error / len(self.objpoints)
@@ -153,26 +153,34 @@ class CalibrationProcess:
             robot_tvecs.append(position[0][0:3])
 
         methods = {
-            1: cv2.CALIB_HAND_EYE_PARK,
-            2: cv2.CALIB_HAND_EYE_TSAI,
-            3: cv2.CALIB_HAND_EYE_HORAUD,
-            4: cv2.CALIB_HAND_EYE_DANIILIDIS
+            'Park': cv2.CALIB_HAND_EYE_PARK,
+            'Tsai': cv2.CALIB_HAND_EYE_TSAI,
+            'Horaud': cv2.CALIB_HAND_EYE_HORAUD,
+            'Daniilidis': cv2.CALIB_HAND_EYE_DANIILIDIS
         }
-        results = {}
-        for idx, (key, method) in enumerate(methods.items(), 1):
-            R_cam2gripper, t_cam2gripper = cv2.calibrateHandEye(robot_rvecs, robot_tvecs, self.rvecs, self.tvecs, method=method)
+
+        calibration_results = {}
+        for method_name, method in methods.items():
+            R_cam2gripper, t_cam2gripper = cv2.calibrateHandEye(
+                robot_rvecs, robot_tvecs, self.rvecs, self.tvecs, method=method)
             transformation_matrix = np.eye(4)
             transformation_matrix[:3, :3] = R_cam2gripper
             transformation_matrix[:3, 3] = t_cam2gripper.flatten()
-            results[key] = transformation_matrix
-            method_name = ["Park-Martin", "Tsai", "Horaud", "Daniilidis"][idx - 1]
-            logger.info(f"{method_name} Calibration Matrix ({idx}):\n{transformation_matrix}\n")
+            calibration_results[method_name] = transformation_matrix.tolist()
+            logger.info(f"{method_name} Calibration Matrix:\n{transformation_matrix}\n")
 
-        calibration_choice = int(input("Choose Calibration method (1-4): "))
-        chosen_matrix = results.get(calibration_choice, results[1])
-        logger.info(f"Selected Calibration Matrix:\n{chosen_matrix}\n")
         logger.info(f"Camera Intrinsic Matrix:\n{self.camera_matrix}\n")
-        logger.info(f"Optimal Camera Intrinsic Matrix:\n{self.new_camera_mtx}\n")
+
+        # Save calibration results to JSON
+        calibration_data = {
+            'camera_matrix': self.camera_matrix.tolist(),
+            'dist_coeffs': self.dist_coeffs.tolist(),
+            'transformation_matrices': calibration_results
+        }
+        json_path = os.path.join(self.picture_folder, 'calibration_results.json')
+        with open(json_path, 'w') as json_file:
+            json.dump(calibration_data, json_file, indent=4)
+        logger.info(f"Calibration results saved to {json_path}")
 
     def run(self):
         self.capture_images()
@@ -184,9 +192,9 @@ class CalibrationProcess:
             logger.info("Chessboard corners were not found in any image. Exiting calibration process.")
             return
         self.calibrate_camera()
-        self.undistort_images()
         self.compute_reprojection_error()
         self.hand_eye_calibration()
+        cv2.destroyAllWindows()  # Destroy all windows at the end of the process
 
 def main():
     params = {
@@ -202,7 +210,7 @@ def main():
     if not camera.connect(0):
         raise RuntimeError('Failed to connect to Azure Kinect sensor')
 
-    camera_interface = CameraInterface(camera)
+    camera_interface = CameraInterface(camera, params['Checkerboard'])
     robot_interface = RobotInterface()
     robot_interface.find_device()
     robot_interface.connect()

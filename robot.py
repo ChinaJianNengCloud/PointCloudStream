@@ -31,14 +31,14 @@ class RobotInterface:
         try:
             self.lebai = lebai_sdk.connect(self.ip_address, False)
             self.lebai.start_sys()
-            log.info(f"Connected to robotic arm at: {self.ip_address}")
+            logging.info(f"Connected to robotic arm at: {self.ip_address}")
         except Exception as e:
-            log.info(f"Failed to connect to robotic arm: {e}")
+            logging.info(f"Failed to connect to robotic arm: {e}")
 
     def disconnect(self):
         """Disconnect from the robotic arm."""
         self.lebai.stop_sys()
-        log.info("Disconnected from robotic arm.")
+        logging.info("Disconnected from robotic arm.")
 
     def update_motion_parameters(self, acceleration, velocity, time_running, radius):
         self.acceleration = acceleration
@@ -55,10 +55,10 @@ class RobotInterface:
         """Send movement command to the robotic arm."""
         try:
             self.lebai.movej(joint_pose, self.acceleration, self.velocity, self.time_running, self.radius)
-            log.info(f"Robot moving to joint position: {joint_pose}")
+            logging.info(f"Robot moving to joint position: {joint_pose}")
             self.lebai.wait_move()
         except Exception as e:
-            log.info(f"Failed to send command: {e}")
+            logging.info(f"Failed to send command: {e}")
 
     def capture_gripper_to_base(self):
         """Capture transformation from gripper to base using forward kinematics."""

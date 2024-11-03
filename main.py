@@ -21,7 +21,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     if args.camera_config and args.rgbd_video:
-        log.critical(
+        logging.critical(
             "Please provide only one of --camera-config and --rgbd-video arguments"
         )
     else:
