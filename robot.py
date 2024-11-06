@@ -65,8 +65,9 @@ class RobotInterface:
         cpose = self.lebai.get_kin_data()['actual_tcp_pose']
         x, y, z = cpose['x'], cpose['y'], cpose['z']
         Rz, Ry, Rx = cpose['rz'], cpose['ry'], cpose['rx']
-        rotation = R.from_euler('zyx', [Rz, Ry, Rx], degrees=False)
+        rotation = R.from_euler('xyz', [Rx, Ry, Rz], degrees=False)
         R_g2b = rotation.as_matrix()
+        # R_g2b = np.array([[Rx], [Ry], [Rz]])
         t_g2b = np.array([[x], [y], [z]])
         return R_g2b, t_g2b
 
@@ -77,6 +78,10 @@ if __name__ == "__main__":
     arm.find_device()
     arm.connect()
     print(arm.get_position())
+    print(arm.lebai.get_kin_data().keys())
+    print(arm.lebai.get_kin_data()['actual_tcp_pose'])
+    
+    print(cv2.Rodrigues(arm.capture_gripper_to_base()[0])[0])
     # arm.lebai.start_record_trajectory()
     # time.sleep(10)
     # arm.lebai.end_record_trajectory("calib")

@@ -48,6 +48,7 @@ class Widget_Init:
         self.__init_display_mode_combobox(parent_layout=self.view_tab)
 
         self.__init_stream_set(parent_layout=self.general_tab)
+        self.__init_calibrate_set(parent_layout=self.general_tab)
         self.__init_robot_button(parent_layout=self.hardware_tab)
         self.__init_chessboard_settings(parent_layout=self.hardware_tab)
         self.__init_calibrate_button(parent_layout=self.hardware_tab)
@@ -94,6 +95,24 @@ class Widget_Init:
         self.stream_init_start.horizontal_padding_em = 1
         self.stream_init_start.vertical_padding_em = 0
         layout.add_child(self.stream_init_start)
+
+
+    def __init_calibrate_set(self, parent_layout=None):
+        layout = gui.Horiz(self.em)
+        parent_layout.add_child(layout)
+        stream_label = gui.Label("Check calib: ")
+        layout.add_child(stream_label)
+        self.calib_combobox = gui.Combobox()
+        self.calib_combobox.add_item("None")
+        self.calib_combobox.enabled = False
+        # self.stream_combbox.add_item("Video")
+        layout.add_child(self.calib_combobox)
+
+        # self.stream_combbox.selected_text = "Camera"
+        self.calib_check = gui.Button("check")
+        self.calib_check.horizontal_padding_em = 1
+        self.calib_check.vertical_padding_em = 0
+        layout.add_child(self.calib_check)
 
 
     def __init_robot_button(self, parent_layout=None):
@@ -378,22 +397,41 @@ class PipelineView:
         self.widget_all = Widget_Init(self.window, callbacks)
 
         # Set the callbacks for widgets that require methods of PipelineView
-        self.widget_all.toggle_capture.set_on_clicked(callbacks['on_toggle_capture'])
-        self.widget_all.toggle_acq_mode.set_on_clicked(callbacks['on_toggle_acq_mode'])
+        self.widget_all.toggle_capture.set_on_clicked(
+            callbacks['on_toggle_capture'])
+        self.widget_all.toggle_acq_mode.set_on_clicked(
+            callbacks['on_toggle_acq_mode'])
         self.widget_all.display_mode_combobox.set_on_selection_changed(
             callbacks['on_display_mode_changed'])
-        self.widget_all.camera_view_button.set_on_clicked(callbacks['on_camera_view'])
-        self.widget_all.birds_eye_view_button.set_on_clicked(callbacks['on_birds_eye_view'])
-        self.widget_all.pcdview.set_on_mouse(callbacks['on_mouse_widget3d'])  # Set initial mouse callback
-        self.widget_all.toggle_model_init.set_on_clicked(callbacks['on_toggle_model_init'])
-        self.widget_all.robot_button.set_on_clicked(callbacks['on_robot_button'])
-        self.widget_all.stream_init_start.set_on_clicked(callbacks['on_stream_init_start'])
-        self.widget_all.save_pcd_button.set_on_clicked(callbacks['on_save_pcd'])
-        self.widget_all.save_rgbd_button.set_on_clicked(callbacks['on_save_rgbd'])
-        self.widget_all.cam_calibreate_button.set_on_clicked(callbacks['on_camera_calibration'])
-        self.widget_all.he_calibreate_button.set_on_clicked(callbacks['on_he_calibration'])
-        self.widget_all.chessboard_col.set_on_value_changed(callbacks['on_chessboard_col_change'])
-        self.widget_all.chessboard_row.set_on_value_changed(callbacks['on_chessboard_row_change'])
+        self.widget_all.camera_view_button.set_on_clicked(
+            callbacks['on_camera_view'])
+        self.widget_all.birds_eye_view_button.set_on_clicked(
+            callbacks['on_birds_eye_view'])
+        self.widget_all.pcdview.set_on_mouse(
+            callbacks['on_mouse_widget3d'])  # Set initial mouse callback
+        self.widget_all.toggle_model_init.set_on_clicked(
+            callbacks['on_toggle_model_init'])
+        self.widget_all.robot_button.set_on_clicked(
+            callbacks['on_robot_button'])
+        self.widget_all.stream_init_start.set_on_clicked(
+            callbacks['on_stream_init_start'])
+        self.widget_all.save_pcd_button.set_on_clicked(
+            callbacks['on_save_pcd'])
+        self.widget_all.save_rgbd_button.set_on_clicked(
+            callbacks['on_save_rgbd'])
+        self.widget_all.cam_calibreate_button.set_on_clicked(
+            callbacks['on_camera_calibration'])
+        self.widget_all.he_calibreate_button.set_on_clicked(
+            callbacks['on_he_calibration'])
+        self.widget_all.chessboard_col.set_on_value_changed(
+            callbacks['on_chessboard_col_change'])
+        self.widget_all.chessboard_row.set_on_value_changed(
+            callbacks['on_chessboard_row_change'])
+        self.widget_all.calib_check.set_on_clicked(
+            callbacks['on_check_calibrate_result'])
+        self.widget_all.calib_combobox.set_on_selection_changed(
+            callbacks['on_calib_combobox_change'])
+        
         # self.widget_all.robot_msg
         self.toggle_record = self.widget_all.toggle_record
         # Now, we can access the widgets via self.widget_all

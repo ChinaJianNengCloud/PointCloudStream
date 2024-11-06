@@ -10,6 +10,7 @@ from calibration import CalibrationProcess
 from robot import RobotInterface
 from functools import wraps
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 _callback_names = []
@@ -152,6 +153,7 @@ class PipelineController:
     def on_save_rgbd(self):
         """Callback to save current RGBD image pair."""
         self.pipeline_model.flag_save_rgbd = True
+        logger.debug('Saving RGBD image pair')
 
     @callback
     def on_mouse_widget3d(self, event):
@@ -324,3 +326,29 @@ class PipelineController:
     def on_chessboard_col_change(self, value):
         self.calibration.chessboard_size[0] = int(value)
         log.debug(f'Chessboard type: {self.chessboard_type}')
+
+    @callback
+    def on_check_calibrate_result(self):
+        try:
+            path = './Calibration_results/calibration_results.json'
+            with open(path, 'r') as f:
+                self.calib = json.load(f)
+            intrinsic = np.array(self.calib.get('camera_matrix'))
+            self.pipeline_model.intrinsic_matrix =  o3d.core.Tensor(
+                                                    intrinsic,
+                                                    dtype=o3d.core.Dtype.Float32,
+                                                    device=self.pipeline_model.o3d_device)
+            self.pipeline_view.widget_all.calib_combobox.clear_items()
+            for name in self.calib.get('calibration_results').keys():
+                self.pipeline_view.widget_all.calib_combobox.add_item(name)
+            self.pipeline_view.widget_all.calib_combobox.enabled = True
+            self.pipeline_view.widget_all.calib_combobox.selected_index = 0
+            
+        except Exception as e:
+            self.pipeline_view.widget_all.calib_combobox.enabled = False
+            log.error(e)
+
+    @callback
+    def on_calib_combobox_change(self, text, index):
+        self.pipeline_model.T_cam_to_base = np.array(self.calib.get('calibration_results').get(text).get('transformation_matrix'))
+        # self.pipeline_model.T_cam_to_base

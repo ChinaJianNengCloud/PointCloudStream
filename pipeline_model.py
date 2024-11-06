@@ -1,7 +1,6 @@
 # pipeline_model.py
 import threading
 import time
-import logging as log
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
@@ -17,15 +16,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-R_calibrated = np.array([[ 0.02136029, -0.88086103,  0.47289279],
-                        [ 0.1774027,   0.46883412,  0.86528773],
-                        [-0.98390651,  0.06540966,  0.16628156]]).T
-T_calibrated = np.array([[-1.22580156],
-                        [-0.87918139],
-                        [ 0.16767223]])
-calibrated_camera_to_end_effector = np.eye(4)
-calibrated_camera_to_end_effector[:3, :3] = R_calibrated
-calibrated_camera_to_end_effector[:3, 3] = T_calibrated.flatten()
+calib = json.load(open('Calibration_results/calibration_results.json'))
+T_cam_to_base = np.array(calib.get('calibration_results').get('Park').get('transformation_matrix'))
 
 class PipelineModel:
     """Controls IO (camera, video file, recording, saving frames). Methods run
@@ -60,8 +52,9 @@ class PipelineModel:
         self.camera = None
         self.rgbd_frame = None
         self.close_stream = None
+        self.T_cam_to_base = T_cam_to_base
         self.robot:RobotInterface = None
-        self.robot_trans_matrix = calibrated_camera_to_end_effector
+        # self.robot_trans_matrix = calibrated_camera_to_end_effector
 
         self.cv_capture = threading.Condition()  # condition variable
 
@@ -135,8 +128,8 @@ class PipelineModel:
             dtype=o3d.core.Dtype.Float32,
             device=self.o3d_device)
         self.depth_scale = 1000.0  # Azure Kinect depth scale
-        log.info("Intrinsic matrix:")
-        log.info(self.intrinsic_matrix)
+        logger.info("Intrinsic matrix:")
+        logger.info(self.intrinsic_matrix)
 
         while self.rgbd_frame is None:
             time.sleep(0.01)
@@ -159,8 +152,8 @@ class PipelineModel:
             device=self.o3d_device)
         self.depth_scale = self.rgbd_metadata.depth_scale
         self.status_message = "RGBD video Loaded."
-        log.info("Intrinsic matrix:")
-        log.info(self.intrinsic_matrix)
+        logger.info("Intrinsic matrix:")
+        logger.info(self.intrinsic_matrix)
         self.rgbd_frame = self.video.next_frame()
         self.close_stream = self.video.close
         # self.next_frame_func = self.video.next_frame
@@ -208,7 +201,7 @@ class PipelineModel:
                 camera_line.paint_uniform_color([0.961, 0.475, 0.000])
                 
                 if self.pcd_frame.is_empty():
-                    log.warning(f"No valid depth data in frame {frame_id}")
+                    logger.warning(f"No valid depth data in frame {frame_id}")
                     continue
                 
                 depth_in_color = depth.colorize_depth(
@@ -216,7 +209,7 @@ class PipelineModel:
 
             except RuntimeError as e:
                 pcd_errors += 1
-                log.warning(f"Runtime error in frame {frame_id}: {e}")
+                logger.warning(f"Runtime error in frame {frame_id}: {e}")
                 continue
 
 
@@ -231,7 +224,7 @@ class PipelineModel:
             n_pts += self.pcd_frame.point.positions.shape[0]
             if frame_id % 30 == 0 and frame_id > 0:
                 t0, t1 = t1, time.perf_counter()
-            #     log.debug(f"\nframe_id = {frame_id}, \t {(t1-t0)*1000./60:0.2f}"
+            #     logger.debug(f"\nframe_id = {frame_id}, \t {(t1-t0)*1000./60:0.2f}"
             #               f"ms/frame \t {(t1-t0)*1e9/n_pts:.2f} ms/Mp\t")
             #     n_pts = 0
                 frame_elements['fps'] =  30 * (1.0 / (t1 - t0))
@@ -239,7 +232,7 @@ class PipelineModel:
             if frame_id % 120 == 0:
                 self.color_mean = np.mean(frame_elements['pcd'].point.colors.cpu().numpy(), axis=0).tolist()  # frame_elements['pcd'].point.colors.mean(dim=0)
                 self.color_std = np.std(frame_elements['pcd'].point.colors.cpu().numpy(), axis=0).tolist()  # frame_elements['pcd'].point.colors.std(dim=0)
-                log.debug(f"color_mean = {self.color_mean}, color_std = {self.color_std}")
+                logger.debug(f"color_mean = {self.color_mean}, color_std = {self.color_std}")
 
             if self.robot_init:
                 # Draw an axis for the robot position pose in the scene
@@ -276,7 +269,7 @@ class PipelineModel:
         self.close_stream()
         self.executor.shutdown(wait=True)  # Ensure all threads finish cleanly
         self.calib_exec.shutdown(wait=True)
-        log.debug(f"create_from_depth_image() errors = {pcd_errors}")
+        logger.debug(f"create_from_depth_image() errors = {pcd_errors}")
 
     def toggle_record(self):
         """Toggle recording RGBD video.
@@ -337,25 +330,39 @@ class PipelineModel:
     def robot_tracking(self):
         pose_robot = self.robot.get_position()
         # Extract position and rotation from pose
-        x, y, z = pose_robot['x'], pose_robot['y'], pose_robot['z']
-        rx, ry, rz = pose_robot['rx'], pose_robot['ry'], pose_robot['rz']
+        x, y, z = -pose_robot['x'], -pose_robot['y'], pose_robot['z']
+        rx, ry, rz = -pose_robot['rx'], -pose_robot['ry'], pose_robot['rz']
+
+        # rotation_robot = R.from_euler('xyz', [rx, ry, rz])
+        # # rotation_robot = cv2.Rodrigues(np.array([rx, ry, rz]))
+        # robot_R = rotation_robot.as_matrix()
+        rotation_matrix = R.from_euler('xyz', [rx, ry, rz], degrees=False).as_matrix()
+        rotation_vector, _ = cv2.Rodrigues(rotation_matrix)
+        rotation_matrix, _ = cv2.Rodrigues(rotation_vector)
         
-        rotation_robot = R.from_euler('xyz', [rx, ry, rz])
-        robot_R = rotation_robot.as_matrix()
+        translation_vector = [x, y, z]
 
         T_base_to_ee = np.eye(4)
-        T_base_to_ee[0:3, 0:3] = robot_R
-        T_base_to_ee[0:3, 3] = [x, y, z]
-
-        log.debug(f"Robot pose: {x}, {y}, {z}, {rx}, {ry}, {rz}")
-
-        T_ee_to_cam = np.eye(4)
-        T_ee_to_cam[0:3, 0:3] = R_calibrated
-        T_ee_to_cam[0:3, 3] = T_calibrated.ravel()
-        T_base_to_cam = np.dot(T_base_to_ee, T_ee_to_cam)
+        T_base_to_ee[:3, :3] = rotation_matrix
+        T_base_to_ee[:3, 3] = translation_vector
+        T_base_to_cam = np.linalg.inv(self.T_cam_to_base)
+        # logger.debug(f"Robot pose: {x}, {y}, {z}, {rx}, {ry}, {rz}")
+        
+        # T_ee_to_cam = np.eye(4)
+        # T_ee_to_cam[0:3, 0:3] = R_calibrated
+        # T_ee_to_cam[0:3, 3] = T_calibrated.ravel()
+        T_ee_to_cam = T_base_to_cam @ T_base_to_ee
+        # cur_x, cur_y, cur_z = T_base_to_cam[0, 3], T_base_to_cam[1, 3], T_base_to_cam[2, 3]
+        # logger.debug(f"Robot pose: {cur_x}, {cur_y}, {cur_z}")
         # Create a coordinate frame at the robot's position in the scene
         robot_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.4)
-        robot_frame.transform(T_base_to_cam)
+
+        # T = np.array([[-0.96329073, -0.18501453, -0.19452657,  0.2299668 ],
+        # [ 0.09574839, -0.91372172,  0.39489855,  0.1004863 ],
+        # [-0.25080512,  0.36177651,  0.89789451,  0.42462353],
+        # [ 0.,          0.,          0.,          1.,        ]])
+
+        robot_frame.transform(T_ee_to_cam)
 
         # Add the robot frame to the frame elements for visualization
         return robot_frame
