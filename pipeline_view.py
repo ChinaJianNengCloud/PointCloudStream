@@ -45,14 +45,16 @@ class Widget_Init:
         self.__init_status_message(parent_layout=self.panel)
         self.__init_tab_view(parent_layout=self.panel)
         self.__init_toggle_view_set(parent_layout=self.view_tab)
+        self.__init_toggle_aqui_mode(parent_layout=self.view_tab)
+        self.__init_chessboard_track_mode(parent_layout=self.view_tab)
         self.__init_display_mode_combobox(parent_layout=self.view_tab)
-
+        self.__init_calibrate_set(parent_layout=self.view_tab)
         self.__init_stream_set(parent_layout=self.general_tab)
-        self.__init_calibrate_set(parent_layout=self.general_tab)
+
         self.__init_robot_button(parent_layout=self.hardware_tab)
         self.__init_chessboard_settings(parent_layout=self.hardware_tab)
         self.__init_calibrate_button(parent_layout=self.hardware_tab)
-        self.__init_toggle_aqui_mode(parent_layout=self.view_tab)
+
         self.__init_view_buttons(parent_layout=self.view_tab)
         self.__init_save_toggles(parent_layout=self.general_tab)
         self.__init_save_buttons(parent_layout=self.general_tab)
@@ -103,7 +105,7 @@ class Widget_Init:
         stream_label = gui.Label("Check calib: ")
         layout.add_child(stream_label)
         self.calib_combobox = gui.Combobox()
-        self.calib_combobox.add_item("None")
+        self.calib_combobox.add_item("None      ")
         self.calib_combobox.enabled = False
         # self.stream_combbox.add_item("Video")
         layout.add_child(self.calib_combobox)
@@ -204,6 +206,15 @@ class Widget_Init:
         self.toggle_acq_mode = gui.ToggleSwitch("Acquisition Mode")
         self.toggle_acq_mode.is_on = False
         edit_mode_toggle_2.add_child(self.toggle_acq_mode)
+
+    def __init_chessboard_track_mode(self, parent_layout=None):
+        edit_mode_toggle_2 = gui.Horiz(self.em)
+        parent_layout.add_child(edit_mode_toggle_2)
+
+        self.chessboard_mode = gui.ToggleSwitch("Track Chessboard")
+        self.chessboard_mode.is_on = False
+        self.chessboard_mode.enabled = False
+        edit_mode_toggle_2.add_child(self.chessboard_mode)
 
 
     def __init_display_mode_combobox(self, parent_layout=None):
@@ -431,6 +442,9 @@ class PipelineView:
             callbacks['on_check_calibrate_result'])
         self.widget_all.calib_combobox.set_on_selection_changed(
             callbacks['on_calib_combobox_change'])
+        self.widget_all.chessboard_mode.set_on_clicked(
+            callbacks['on_chessboard_tracking'])
+        
         
         # self.widget_all.robot_msg
         self.toggle_record = self.widget_all.toggle_record
@@ -521,13 +535,12 @@ class PipelineView:
             self.widget_all.depth_video.update_image(
                 frame_elements['depth'].resize(sampling_ratio).to_legacy())
 
-        if 'camera' in frame_elements:
-            self.pcdview.scene.remove_geometry("camera")
-            self.pcdview.scene.add_geometry("camera", frame_elements['camera'], self.line_material)
 
-        if 'robot_frame' in frame_elements:
-            self.pcdview.scene.remove_geometry("robot_frame")
-            self.pcdview.scene.add_geometry("robot_frame", frame_elements['robot_frame'], self.line_material)
+        self.geometry_registry("camera", frame_elements, self.line_material)
+        self.geometry_registry("robot_base_frame", frame_elements, self.pcd_material)
+        self.geometry_registry("robot_end_frame", frame_elements, self.pcd_material)
+        self.geometry_registry("chessboard", frame_elements, self.pcd_material)
+
 
         if 'status_message' in frame_elements:
             self.widget_all.status_message.text = frame_elements["status_message"]
@@ -537,6 +550,14 @@ class PipelineView:
             self.widget_all.fps_label.text = f"FPS: {int(fps)}"
 
         self.widget_all.view_status.text = str(self.pcdview.scene.camera.get_view_matrix())
+
+    def geometry_registry(self, name, frame_elements, material):
+        if name in frame_elements:
+            self.pcdview.scene.remove_geometry(name)
+            self.pcdview.scene.add_geometry(name, frame_elements[name], material)
+        # else:
+        #     if self.pcdview.scene.has_geometry(name):
+        #         self.pcdview.scene.remove_geometry(name)
 
     def update_pcd_geometry(self):
         if not self.flag_gui_init:

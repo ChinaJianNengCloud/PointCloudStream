@@ -17,7 +17,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 calib = json.load(open('Calibration_results/calibration_results.json'))
-T_cam_to_base = np.array(calib.get('calibration_results').get('Park').get('transformation_matrix'))
+T_cam_to_base = np.array(calib.get('calibration_results').get('Tsai').get('transformation_matrix'))
 
 class PipelineModel:
     """Controls IO (camera, video file, recording, saving frames). Methods run
@@ -47,7 +47,7 @@ class PipelineModel:
         self.torch_device = torch.device(self.device_str)
         self.camera_config_file = camera_config_file
         self.rgbd_video = rgbd_video
-
+        self.checkerboard_dims = (10, 7)
         self.video = None
         self.camera = None
         self.rgbd_frame = None
@@ -68,6 +68,8 @@ class PipelineModel:
         self.depth_max = 3.0  # m
         self.pcd_stride = 2  # downsample point cloud, may increase frame rate
         self.next_frame_func = None
+        self.square_size = 0.015
+        self.T_cam_to_board = np.eye(4)
         self.__init_gui_signals()
         self.executor = ThreadPoolExecutor(max_workers=3,
                                            thread_name_prefix='Capture-Save')
@@ -92,6 +94,10 @@ class PipelineModel:
         self.flag_stream_init = False
         self.robot_init = False
         self.camera_init = False
+        self.hand_eye_calib = False
+        self.flag_track_chessboard = False
+        self.objp = None
+        self.dist_coeffs = None
 
     @property
     def max_points(self):
@@ -158,12 +164,19 @@ class PipelineModel:
         self.close_stream = self.video.close
         # self.next_frame_func = self.video.next_frame
 
+    def objp_update(self, chessboard_dims, square_size=0.02):
+        self.checkerboard_dims = chessboard_dims
+        self.square_size = square_size
+        self.objp = np.zeros((self.checkerboard_dims[1] * self.checkerboard_dims[0], 3), np.float32)
+        self.objp[:, :2] = np.mgrid[0:self.checkerboard_dims[0], 0:self.checkerboard_dims[1]].T.reshape(-1, 2) * self.square_size
+
 
     def run(self):
         """Run pipeline."""
         n_pts = 0
         frame_id = 0
         t1 = time.perf_counter()
+        self.objp_update(self.checkerboard_dims, self.square_size)
 
         pcd_errors = 0
         while (not self.flag_exit and
@@ -234,10 +247,17 @@ class PipelineModel:
                 self.color_std = np.std(frame_elements['pcd'].point.colors.cpu().numpy(), axis=0).tolist()  # frame_elements['pcd'].point.colors.std(dim=0)
                 logger.debug(f"color_mean = {self.color_mean}, color_std = {self.color_std}")
 
-            if self.robot_init:
+            if self.robot_init and self.hand_eye_calib:
                 # Draw an axis for the robot position pose in the scene
-                frame_elements['robot_frame'] = self.robot_tracking()
+                robot_end_frame, robot_base_frame = self.robot_tracking()
+                frame_elements['robot_end_frame'] = robot_end_frame
+                frame_elements['robot_base_frame'] = robot_base_frame
 
+            if self.flag_track_chessboard:
+                chessboard_pose = self.chessboard_tracking(
+                    color_image=self.rgbd_frame.color)
+                if chessboard_pose is not None:
+                    frame_elements['chessboard'] = chessboard_pose
 
             if self.flag_model_init:
                 labels = segment_pcd_from_2d(self.pcd_seg_model, 
@@ -329,40 +349,55 @@ class PipelineModel:
 
     def robot_tracking(self):
         pose_robot = self.robot.get_position()
+        rvecs, tvects = self.robot.capture_gripper_to_base()
         # Extract position and rotation from pose
-        x, y, z = -pose_robot['x'], -pose_robot['y'], pose_robot['z']
-        rx, ry, rz = -pose_robot['rx'], -pose_robot['ry'], pose_robot['rz']
-
         # rotation_robot = R.from_euler('xyz', [rx, ry, rz])
         # # rotation_robot = cv2.Rodrigues(np.array([rx, ry, rz]))
         # robot_R = rotation_robot.as_matrix()
-        rotation_matrix = R.from_euler('xyz', [rx, ry, rz], degrees=False).as_matrix()
-        rotation_vector, _ = cv2.Rodrigues(rotation_matrix)
-        rotation_matrix, _ = cv2.Rodrigues(rotation_vector)
+        # rotation_matrix = R.from_euler('xyz', [rx, ry, rz], degrees=False).as_matrix()
+        # rotation_vector, _ = cv2.Rodrigues(rotation_matrix)
+        rotation_matrix, _ = cv2.Rodrigues(rvecs)
         
-        translation_vector = [x, y, z]
 
-        T_base_to_ee = np.eye(4)
-        T_base_to_ee[:3, :3] = rotation_matrix
-        T_base_to_ee[:3, 3] = translation_vector
-        T_base_to_cam = np.linalg.inv(self.T_cam_to_base)
+        T_end_to_base = np.eye(4)
+        T_end_to_base[:3, :3] = rotation_matrix
+        T_end_to_base[:3, 3] = tvects.ravel()
+        # T_base_to_cam = self.T_cam_to_base
+        T_base_to_cam =  np.linalg.inv(self.T_cam_to_base)
         # logger.debug(f"Robot pose: {x}, {y}, {z}, {rx}, {ry}, {rz}")
-        
+        # T_end_to_base = np.linalg.inv(T_base_to_end)
         # T_ee_to_cam = np.eye(4)
         # T_ee_to_cam[0:3, 0:3] = R_calibrated
         # T_ee_to_cam[0:3, 3] = T_calibrated.ravel()
-        T_ee_to_cam = T_base_to_cam @ T_base_to_ee
+        T_cam_to_end = T_base_to_cam @ T_end_to_base
         # cur_x, cur_y, cur_z = T_base_to_cam[0, 3], T_base_to_cam[1, 3], T_base_to_cam[2, 3]
         # logger.debug(f"Robot pose: {cur_x}, {cur_y}, {cur_z}")
         # Create a coordinate frame at the robot's position in the scene
-        robot_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.4)
-
-        # T = np.array([[-0.96329073, -0.18501453, -0.19452657,  0.2299668 ],
-        # [ 0.09574839, -0.91372172,  0.39489855,  0.1004863 ],
-        # [-0.25080512,  0.36177651,  0.89789451,  0.42462353],
-        # [ 0.,          0.,          0.,          1.,        ]])
-
-        robot_frame.transform(T_ee_to_cam)
-
+        robot_end_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
+        robot_base_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
+        robot_end_frame.transform(T_cam_to_end)
+        robot_base_frame.transform(T_base_to_cam)
         # Add the robot frame to the frame elements for visualization
-        return robot_frame
+        return robot_end_frame, robot_base_frame
+
+    def chessboard_tracking(self, color_image):
+        color = np.asarray(color_image)
+        gray = cv2.cvtColor(color, cv2.COLOR_BGR2GRAY)
+
+        ret, corners = cv2.findChessboardCorners(gray, self.checkerboard_dims, None, flags=cv2.CALIB_CB_FAST_CHECK | cv2.CALIB_CB_ADAPTIVE_THRESH | cv2.CALIB_CB_NORMALIZE_IMAGE)
+        if ret:
+            corners2 = cv2.cornerSubPix(gray, corners, (11, 11), (-1,-1), 
+                                        (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001))
+            ret2, board_to_camera_rvecs, board_to_camera_tvecs = cv2.solvePnP(
+                    self.objp, corners2, self.intrinsic_matrix.cpu().numpy(), 
+                    self.dist_coeffs)
+            if ret2:
+                
+                self.T_cam_to_board [:3, :3] = R.from_euler('xyz', board_to_camera_rvecs.reshape(1, 3), degrees=False).as_matrix().reshape(3, 3)
+                self.T_cam_to_board [:3, 3] = board_to_camera_tvecs.ravel()
+                chessboard_pose_instance = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
+                chessboard_pose_instance.transform(self.T_cam_to_board )
+                logger.debug("chessboard_detected")
+                return chessboard_pose_instance
+
+        return None

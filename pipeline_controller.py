@@ -63,7 +63,7 @@ class PipelineController:
             callbacks=self.callbacks
         )
 
-        self.chessboard_type = [11, 8]
+        self.chessboard_dims = [11, 8]
         threading.Thread(name='PipelineModel',
                          target=self.pipeline_model.run).start()
         gui.Application.instance.run()
@@ -241,7 +241,7 @@ class PipelineController:
                                         self.pipeline_model.camera,
                                         intrinsic=self.pipeline_model.intrinsic_matrix, 
                                         dist_coeffs=distortion)
-        self.calibration.chessboard_size = self.chessboard_type
+        self.calibration.checkerboard_dims = self.chessboard_dims
         self.pipeline_model.calib_exec.submit(self.calibration.calibrate_camera)
         self.pipeline_view.widget_all.calibration_msg.text = "CalibrationProcess: Camera calibration..."
         # self.pipeline_model.calib_exec.shutdown()
@@ -255,7 +255,7 @@ class PipelineController:
                                         self.pipeline_model.camera,
                                         intrinsic=self.pipeline_model.intrinsic_matrix, 
                                         dist_coeffs=distortion)
-        self.calibration.chessboard_size = self.chessboard_type
+        self.calibration.checkerboard_dims = self.chessboard_dims
         self.pipeline_model.calib_exec.submit(self.calibration.calibrate_eye_hand_from_camera)
         self.pipeline_view.widget_all.calibration_msg.text = "CalibrationProcess: HandEye calibration..."
         self.pipeline_view.widget_all.he_calibreate_button.enabled = False
@@ -318,30 +318,25 @@ class PipelineController:
             self.pipeline_view.pcdview.force_redraw()
 
     @callback
-    def on_chessboard_row_change(self, value):
-        self.calibration.chessboard_size[1] = int(value)
-        log.debug(f'Chessboard type: {self.chessboard_type}')
-
-    @callback
-    def on_chessboard_col_change(self, value):
-        self.calibration.chessboard_size[0] = int(value)
-        log.debug(f'Chessboard type: {self.chessboard_type}')
-
-    @callback
     def on_check_calibrate_result(self):
         try:
             path = './Calibration_results/calibration_results.json'
             with open(path, 'r') as f:
                 self.calib = json.load(f)
             intrinsic = np.array(self.calib.get('camera_matrix'))
+            self.pipeline_model.dist_coeffs = np.array(self.calib.get('dist_coeffs'))
             self.pipeline_model.intrinsic_matrix =  o3d.core.Tensor(
                                                     intrinsic,
                                                     dtype=o3d.core.Dtype.Float32,
                                                     device=self.pipeline_model.o3d_device)
             self.pipeline_view.widget_all.calib_combobox.clear_items()
+            
             for name in self.calib.get('calibration_results').keys():
                 self.pipeline_view.widget_all.calib_combobox.add_item(name)
+            
+            self.pipeline_view.widget_all.chessboard_mode.enabled = True
             self.pipeline_view.widget_all.calib_combobox.enabled = True
+            self.pipeline_model.hand_eye_calib = True
             self.pipeline_view.widget_all.calib_combobox.selected_index = 0
             
         except Exception as e:
@@ -352,3 +347,24 @@ class PipelineController:
     def on_calib_combobox_change(self, text, index):
         self.pipeline_model.T_cam_to_base = np.array(self.calib.get('calibration_results').get(text).get('transformation_matrix'))
         # self.pipeline_model.T_cam_to_base
+
+    @callback
+    def on_chessboard_tracking(self, is_on):
+        self.pipeline_model.objp_update(self.chessboard_dims, self.pipeline_model.square_size)
+        self.pipeline_model.flag_track_chessboard = is_on
+        
+
+    @callback
+    def on_chessboard_col_change(self, value):
+        # self.calibration.chessboard_size[0] = int(value)
+        self.chessboard_dims = (int(value), self.chessboard_dims[1])
+        self.pipeline_model.checkerboard_dims = (self.chessboard_dims[0], self.chessboard_dims[1])
+        self.pipeline_model.objp_update(self.chessboard_dims, self.pipeline_model.square_size)
+        log.debug(f'Chessboard type: {self.chessboard_dims}')
+
+    @callback
+    def on_chessboard_row_change(self, value):
+        # self.calibration.chessboard_size[1] = int(value)
+        self.chessboard_dims = (self.chessboard_dims[0], int(value))
+        self.pipeline_model.objp_update(self.chessboard_dims, self.pipeline_model.square_size)
+        log.debug(f'Chessboard type: {self.chessboard_dims}')
