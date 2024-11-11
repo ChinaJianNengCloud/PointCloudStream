@@ -37,7 +37,7 @@ class PipelineController:
     # Class-level dictionary to store callbacks
     
 
-    def __init__(self, camera_config_file=None, rgbd_video=None, device=None):
+    def __init__(self, params:dict):
         """Initialize.
 
         Args:
@@ -46,9 +46,11 @@ class PipelineController:
                 provided, connected cameras are ignored.
             device (str): Compute device (e.g.: 'cpu:0' or 'cuda:0').
         """
+        self.params = params
         self.pipeline_model = PipelineModel(self.update_view,
-                                            camera_config_file, rgbd_video,
-                                            device)
+                                            params.get('camera_config'), 
+                                            params.get('rgbd_video'),
+                                            params.get('device'))
         self.calibration = None
         self.drawing_rectangle = False
         self.initial_point = None
@@ -147,7 +149,7 @@ class PipelineController:
     @callback
     def on_toggle_model_init(self, is_enabled):
         self.pipeline_model.model_intialization()
-        self.pipeline_model.flag_model_init = is_enabled
+        self.pipeline_model.flag_segemtation_mode = is_enabled
 
     @callback
     def on_save_rgbd(self):
@@ -334,7 +336,7 @@ class PipelineController:
             for name in self.calib.get('calibration_results').keys():
                 self.pipeline_view.widget_all.calib_combobox.add_item(name)
             
-            self.pipeline_view.widget_all.chessboard_mode.enabled = True
+            self.pipeline_view.widget_all.calibration_mode.enabled = True
             self.pipeline_view.widget_all.calib_combobox.enabled = True
             self.pipeline_model.hand_eye_calib = True
             self.pipeline_view.widget_all.calib_combobox.selected_index = 0
@@ -349,9 +351,11 @@ class PipelineController:
         # self.pipeline_model.T_cam_to_base
 
     @callback
-    def on_chessboard_tracking(self, is_on):
+    def on_calibration_mode(self, is_on):
         self.pipeline_model.objp_update(self.chessboard_dims, self.pipeline_model.square_size)
-        self.pipeline_model.flag_track_chessboard = is_on
+        self.pipeline_model.flag_calibration_mode = is_on
+        if not is_on:
+            self.pipeline_view.geometry_remove('chessboard')
         
 
     @callback

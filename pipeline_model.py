@@ -85,7 +85,7 @@ class PipelineModel:
         self.flag_normals = False
         self.flag_save_rgbd = False
         self.flag_save_pcd = False
-        self.flag_model_init = False
+        self.flag_segemtation_mode = False
         self.flag_exit = False
         self.color_mean = None
         self.color_std = None
@@ -95,7 +95,7 @@ class PipelineModel:
         self.robot_init = False
         self.camera_init = False
         self.hand_eye_calib = False
-        self.flag_track_chessboard = False
+        self.flag_calibration_mode = False
         self.objp = None
         self.dist_coeffs = None
 
@@ -253,13 +253,13 @@ class PipelineModel:
                 frame_elements['robot_end_frame'] = robot_end_frame
                 frame_elements['robot_base_frame'] = robot_base_frame
 
-            if self.flag_track_chessboard:
+            if self.flag_calibration_mode:
                 chessboard_pose = self.chessboard_tracking(
                     color_image=self.rgbd_frame.color)
                 if chessboard_pose is not None:
                     frame_elements['chessboard'] = chessboard_pose
 
-            if self.flag_model_init:
+            if self.flag_segemtation_mode:
                 labels = segment_pcd_from_2d(self.pcd_seg_model, 
                                              self.intrinsic_matrix, self.extrinsics, 
                                              self.pcd_frame, np.asarray(self.rgbd_frame.color))

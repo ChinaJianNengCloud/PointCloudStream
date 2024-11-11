@@ -211,10 +211,10 @@ class Widget_Init:
         edit_mode_toggle_2 = gui.Horiz(self.em)
         parent_layout.add_child(edit_mode_toggle_2)
 
-        self.chessboard_mode = gui.ToggleSwitch("Track Chessboard")
-        self.chessboard_mode.is_on = False
-        self.chessboard_mode.enabled = False
-        edit_mode_toggle_2.add_child(self.chessboard_mode)
+        self.calibration_mode = gui.ToggleSwitch("Calibration Mode")
+        self.calibration_mode.is_on = False
+        self.calibration_mode.enabled = False
+        edit_mode_toggle_2.add_child(self.calibration_mode)
 
 
     def __init_display_mode_combobox(self, parent_layout=None):
@@ -442,8 +442,8 @@ class PipelineView:
             callbacks['on_check_calibrate_result'])
         self.widget_all.calib_combobox.set_on_selection_changed(
             callbacks['on_calib_combobox_change'])
-        self.widget_all.chessboard_mode.set_on_clicked(
-            callbacks['on_chessboard_tracking'])
+        self.widget_all.calibration_mode.set_on_clicked(
+            callbacks['on_calibration_mode'])
         
         
         # self.widget_all.robot_msg
@@ -555,9 +555,10 @@ class PipelineView:
         if name in frame_elements:
             self.pcdview.scene.remove_geometry(name)
             self.pcdview.scene.add_geometry(name, frame_elements[name], material)
-        # else:
-        #     if self.pcdview.scene.has_geometry(name):
-        #         self.pcdview.scene.remove_geometry(name)
+
+    def geometry_remove(self, object_name):
+        if self.pcdview.scene.has_geometry(object_name):
+            self.pcdview.scene.remove_geometry(object_name)
 
     def update_pcd_geometry(self):
         if not self.flag_gui_init:

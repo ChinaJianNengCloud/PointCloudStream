@@ -114,7 +114,7 @@ class CameraInterface:
         if marker_ids is not None:
             cv2.aruco.drawDetectedMarkers(frame_rgb, marker_corners, marker_ids)
             if charuco_corners is not None and charuco_ids is not None:
-                logger.info(f"Detected Charuco IDs: {charuco_ids.ravel()}")
+                # logger.info(f"Detected Charuco IDs: {charuco_ids.ravel()}")
                 cv2.aruco.drawDetectedCornersCharuco(frame_rgb, charuco_corners, charuco_ids)
                 
                 if self.camera_matrix is not None and self.dist_coeffs is not None:
@@ -135,13 +135,15 @@ class CameraInterface:
 
         cv2.imshow('Live Feedback', frame_rgb)
 
+    def clear(self):
+        self.captured_images.clear()
+
+
 class CalibrationProcess:
     def __init__(self, params: dict, camera_interface: CameraInterface, robot_interface: RobotInterface):
         self.params = params
         self.directory = params.get('directory', os.getcwd())
         self.image_amount = params.get('ImageAmount', None)
-        self.square_size = params.get('CheckerboardSquareSize', None)
-        self.checkerboard_dims = tuple(params.get('Checkerboard', None))
         self.input_method = params.get('input_method', 'capture')
         self.folder_path = params.get('folder_path', None)
         self.pose_file_path = params.get('pose_file_path', None)
@@ -163,75 +165,89 @@ class CalibrationProcess:
         self.calibration_dir = os.path.join(self.directory, f'Calibration_results')
         os.makedirs(self.calibration_dir, exist_ok=True)
 
+    def _save_image_and_pose(self, img, robot_pose, index, img_save_path, pose_file=None):
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        img_filename = img_save_path / f"{index}.png"
+        cv2.imwrite(str(img_filename), img)
+        tvecs = robot_pose[0][:3]
+        rvecs = robot_pose[0][3:]
+        if pose_file is not None:
+            pose_file.write(f"{tvecs[0]*1000:.3f} {tvecs[1]*1000:.3f} {tvecs[2]*1000:.3f} "
+                        f"{np.rad2deg(rvecs[0]):.3f} {np.rad2deg(rvecs[1]):.3f} {np.rad2deg(rvecs[2]):.3f}\n")
+        logger.info(f"Captured and saved image {index + 1}")
+
     def capture_images(self):
+        img_save_path = Path(self.directory) / '_tmp'
+        img_save_path.mkdir(parents=True, exist_ok=True)
+        pose_save_path = img_save_path / 'pose.txt'
+
         if self.input_method == 'capture':
             logger.info("Starting image capture...")
-            self.camera.start_live_feedback()
-            last_num_images = 0
-            while len(self.camera.captured_images) < self.image_amount:
-                current_num_images = len(self.camera.captured_images)
-                if current_num_images > last_num_images:
-                    # A new image has been captured
-                    logger.info(f"Captured image {current_num_images} of {self.image_amount}")
-                    # Capture robot pose and add to self.robot_pose_list
-                    rvecs, t_g2b = self.robot.capture_gripper_to_base()
-                    flat_rvecs = rvecs.flatten()
-                    tvecs = t_g2b.flatten()
-                    robot_pose = np.hstack((tvecs.reshape(1, 3), rvecs.reshape(1, 3)))
-                    self.robot_pose_list.append(robot_pose)
-                    last_num_images = current_num_images
-                time.sleep(0.1)
-            self.camera.stop_live_feedback()
-            # Set self.img_frames to the captured images
-            self.img_frames = self.camera.captured_images
-            logger.info("Image capture completed.")
-        elif self.input_method == 'load_from_folder':
-            self.load_images_from_folder()
+            with pose_save_path.open('w') as pose_file:
+                self.camera.start_live_feedback()
+                last_num_images = 0
+                while len(self.camera.captured_images) < self.image_amount:
+                    current_num_images = len(self.camera.captured_images)
+                    if current_num_images > last_num_images:
+                        idx = current_num_images - 1
+                        logger.info(f"Captured image {current_num_images} of {self.image_amount}")
+                        # Capture robot pose
+                        rvecs, t_g2b = self.robot.capture_gripper_to_base()
+                        flat_rvecs = rvecs.flatten()
+                        tvecs = t_g2b.flatten()
+                        robot_pose = np.hstack((tvecs.reshape(1, 3), rvecs.reshape(1, 3)))
+                        self.robot_pose_list.append(robot_pose)
+                        # Save image and pose
+                        img = self.camera.captured_images[-1]
+                        self._save_image_and_pose(img, robot_pose.reshape(1, 6), idx, img_save_path, pose_file)
+                        last_num_images = current_num_images
+                    time.sleep(0.1)
+                self.camera.stop_live_feedback()
+                # Set self.img_frames to the captured images
+                self.img_frames = self.camera.captured_images
+                logger.info("Image capture completed and saved to _tmp folder.")
+
         elif self.input_method == 'auto_calibrated_mode':
-            pose_file_path = self.pose_file_path
-            if not pose_file_path:
+            if not self.pose_file_path:
                 raise ValueError("Pose file path must be specified for 'auto_calibrated_mode'")
 
             img_save_path = Path(self.directory) / '_tmp'
             img_save_path.mkdir(parents=True, exist_ok=True)
             pose_save_path = img_save_path / 'pose.txt'
             # Read the pose file
-            with open(pose_file_path, 'r') as f:
+            with open(self.pose_file_path, 'r') as f:
                 lines = f.readlines()
             cartesian_poses_list = [line.strip().split() for line in lines]
             cartesian_poses_list = [np.array([float(x) for x in line], dtype=np.float32) for line in cartesian_poses_list]
             cartesian_poses_list = [np.hstack((line[0:3] / 1000, np.deg2rad(line[3:6]))) for line in cartesian_poses_list]
 
-            with pose_save_path.open('w') as pose_file:
-                for idx, cartesian_pose in enumerate(cartesian_poses_list):
-                    # Move robot to pose
-                    cartesian_pose_dict = self.robot.pose_array_to_dict(cartesian_pose)
-                    joint_pose = self.robot.lebai.kinematics_inverse(cartesian_pose_dict)
-                    self.robot.lebai.movej(joint_pose, self.robot.acceleration, self.robot.velocity, self.robot.time_running, self.robot.radius)
-                    self.robot.lebai.wait_move()
-                    time.sleep(0.5)
-                    # Capture image
-                    img = self.camera.capture_frame()
-                    if img is None:
-                        logger.warning(f"Failed to capture image at position {idx}")
-                        continue
-                    # Save image
-                    img_filename = img_save_path / f"{idx}.png"
-                    cv2.imwrite(str(img_filename), img)
-                    logger.info(f"Captured and saved image {idx + 1}")
-                    # Append image to img_frames
-                    self.img_frames.append(img)
-                    # Capture robot pose and save to pose file
-                    rvecs, t_g2b = self.robot.capture_gripper_to_base()
-                    flat_rvecs = rvecs.flatten()
-                    tvecs = t_g2b.flatten()
-                    robot_pose = np.hstack((tvecs.reshape(1, 3), rvecs.reshape(1, 3)))
-                    pose_file.write(f"{tvecs[0]*1000:.3f} {tvecs[1]*1000:.3f} {tvecs[2]*1000:.3f} "
-                                    f"{np.rad2deg(flat_rvecs[0]):.3f} {np.rad2deg(flat_rvecs[1]):.3f} {np.rad2deg(flat_rvecs[2]):.3f}\n")
-                    # Append robot pose to robot_pose_list
-                    self.robot_pose_list.append(robot_pose)
+            for idx, cartesian_pose in enumerate(cartesian_poses_list):
+                # Move robot to pose
+                cartesian_pose_dict = self.robot.pose_array_to_dict(cartesian_pose)
+                joint_pose = self.robot.lebai.kinematics_inverse(cartesian_pose_dict)
+                self.robot.lebai.movej(joint_pose, self.robot.acceleration, self.robot.velocity, self.robot.time_running, self.robot.radius)
+                self.robot.lebai.wait_move()
+                time.sleep(0.5)
+                # Capture image
+                img = self.camera.capture_frame()
+                if img is None:
+                    logger.warning(f"Failed to capture image at position {idx}")
+                    continue
+                # Append image to img_frames
+                self.img_frames.append(img)
+                # Capture robot pose and save to pose file
+                rvecs, t_g2b = self.robot.capture_gripper_to_base()
+                flat_rvecs = rvecs.flatten()
+                tvecs = t_g2b.flatten()
+                robot_pose = np.hstack((tvecs.reshape(1, 3), rvecs.reshape(1, 3)))
+                self.robot_pose_list.append(robot_pose)
+                # Save image and pose
+                self._save_image_and_pose(img, robot_pose.reshape(1, 6), idx, img_save_path)
 
-            logger.info("Image capture completed and saved to tmp folder.")
+            logger.info("Image capture completed and saved to _tmp folder.")
+
+        elif self.input_method == 'load_from_folder':
+            self.load_images_from_folder()
         else:
             raise ValueError(f"Unknown input method: {self.input_method}")
 
@@ -300,8 +316,6 @@ class CalibrationProcess:
                 img_with_corners = img.copy()
                 cv2.aruco.drawDetectedMarkers(img_with_corners, marker_corners, marker_ids)
                 cv2.aruco.drawDetectedCornersCharuco(img_with_corners, charuco_corners, charuco_ids)
-                # window_name = f'Corners Image {idx}'
-                # self.camera.show_image(img_with_corners, window_name=window_name, time_ms=150)
             else:
                 logger.warning(f"No valid Charuco corners detected in image {idx}")
 
@@ -413,7 +427,7 @@ class CalibrationProcess:
                 'transformation_matrix': transformation_matrix.tolist(),
             }
             logger.info(f"{method_name} Calibration Matrix:\n{transformation_matrix}\n")
-            logger.info(f"{method_name} Calibration Pose (x, y, z, rx, ry, rz):\n \x1b[33;20m{t_cam2base.ravel()} {cv2.Rodrigues(R_cam2base)[0].ravel()}\x1b[0m\n")
+            logger.info(f"{method_name} Calibration Pose (x, y, z, rx, ry, rz):\n {t_cam2base.ravel()} {cv2.Rodrigues(R_cam2base)[0].ravel()}\n")
 
         # Save the intrinsic parameters and poses to JSON
         calibration_data = {
@@ -446,14 +460,16 @@ class CalibrationProcess:
         self.hand_eye_calibration()
         logger.info("Hand-eye calibration completed.")
 
+
 def main():
     params = {
         'directory': '.',  # Change to your directory if needed
         'ImageAmount': 13,
-        'CheckerboardSquareSize': 0.015,
-        'Checkerboard': [11, 8],
+        'board_shape': (11, 6),
+        'board_square_size': 0.023,
+        'board_marker_size': 0.0175,
         'input_method': 'auto_calibrated_mode',  # 'capture', 'load_from_folder', or 'auto_calibrated_mode'
-        # 'folder_path': '/path/to/folder',  # Specify the folder path if using 'load_from_folder'
+        'folder_path': '_tmp',  # Specify the folder path if using 'load_from_folder'
         'pose_file_path': './poses.txt',  # Specify the pose file path for 'auto_calibrated_mode'
         'load_intrinsic': True,  # Set to True or False
         'intrinsic_path': './Calibration_results/calibration_results.json'  # Path to the intrinsic JSON file
@@ -464,7 +480,10 @@ def main():
     # Create ChArUco dictionary and board
     charuco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_100)
     charuco_board = cv2.aruco.CharucoBoard(
-        (11, 6), squareLength=0.0175, markerLength=0.0125, dictionary=charuco_dict
+        params['board_shape'],
+        squareLength=params['board_square_size'],
+        markerLength=params['board_marker_size'],
+        dictionary=charuco_dict
     )
 
     if input_method in ['capture', 'auto_calibrated_mode']:
@@ -485,6 +504,7 @@ def main():
 
     calibration_process = CalibrationProcess(params, camera_interface, robot_interface)
     calibration_process.run()
+
 
 if __name__ == '__main__':
     main()
