@@ -1,7 +1,5 @@
 # main.py
 import logging
-import argparse
-
 
 
 from pipeline import PipelineController
@@ -12,7 +10,7 @@ if __name__ == "__main__":
 
     params = {
         'directory': '.',  # Change to your directory if needed 
-        'ImageAmount': 13,
+        'Image_Amount': 13,
         'board_shape': (11, 6),
         'board_square_size': 23, # mm
         'board_marker_size': 17.5, # mm
@@ -23,7 +21,8 @@ if __name__ == "__main__":
         'intrinsic_path': './Calibration_results/calibration_results.json',  # Path to the intrinsic JSON file
         'device': 'cuda:0',
         'camera_config' : './default_config.json',
-        'rgbd_video' : None
+        'rgbd_video' : None,
+        'board_type': 'DICT_4X4_100'
     }
 
     PipelineController(params)

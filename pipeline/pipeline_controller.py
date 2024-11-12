@@ -12,6 +12,9 @@ from functools import wraps
 import logging
 import json
 
+from utils import ARUCO_BOARD
+
+
 logger = logging.getLogger(__name__)
 _callback_names = []
 
@@ -47,10 +50,7 @@ class PipelineController:
             device (str): Compute device (e.g.: 'cpu:0' or 'cuda:0').
         """
         self.params = params
-        self.pipeline_model = PipelineModel(self.update_view,
-                                            params.get('camera_config'), 
-                                            params.get('rgbd_video'),
-                                            params.get('device'))
+        self.pipeline_model = PipelineModel(self.update_view, params=params)
         self.calibration = None
         self.drawing_rectangle = False
         self.initial_point = None
@@ -65,7 +65,7 @@ class PipelineController:
             callbacks=self.callbacks
         )
 
-        
+        self.data_list = []
         self.init_settinngs_values()
         threading.Thread(name='PipelineModel',
                          target=self.pipeline_model.run).start()
@@ -77,6 +77,7 @@ class PipelineController:
         self.pipeline_view.scene_widgets.chessboard_row.int_value = self.chessboard_dims[1]
         self.pipeline_view.scene_widgets.board_square_size.double_value = self.params.get('board_square_size', 0.023)
         self.pipeline_view.scene_widgets.board_marker_size.double_value = self.params.get('board_marker_size', 0.0175)
+        self.pipeline_view.scene_widgets.board_type_combobox.selected_text = self.params.get('board_type', "DICT_4X4_100")
 
     def update_view(self, frame_elements):
         """Updates view with new data. May be called from any thread.
@@ -223,7 +224,7 @@ class PipelineController:
         return gui.Widget.EventCallbackResult.IGNORED
 
     @callback
-    def on_robot_button(self):
+    def on_robot_init_button(self):
         try:
             self.robot.find_device()
             self.robot.connect()
@@ -244,13 +245,18 @@ class PipelineController:
 
     @callback
     def on_camera_calibration(self):
+        import cv2
+        from utils import CameraInterface
         distortion  = self.pipeline_model.camera_json.get('distortion_coeffs', None)
+
+        robot_interface = RobotInterface()
+        
         if self.calibration is None:
             self.calibration = CalibrationProcess(self.robot, 
                                         self.pipeline_model.camera,
                                         intrinsic=self.pipeline_model.intrinsic_matrix, 
                                         dist_coeffs=distortion)
-        self.calibration.checkerboard_dims = self.chessboard_dims
+            
         self.pipeline_model.calib_exec.submit(self.calibration.calibrate_camera)
         self.pipeline_view.scene_widgets.calibration_msg.text = "CalibrationProcess: Camera calibration..."
         # self.pipeline_model.calib_exec.shutdown()
@@ -359,7 +365,8 @@ class PipelineController:
 
     @callback
     def on_calibration_mode(self, is_on):
-        self.pipeline_model.objp_update(self.chessboard_dims, self.pipeline_model.square_size)
+        self.pipeline_model.objp_update(self.params.get('board_shape'), 
+                                        self.params.get('board_square_size'))
         self.pipeline_model.flag_calibration_mode = is_on
         if not is_on:
             self.pipeline_view.geometry_remove('chessboard')
@@ -367,27 +374,69 @@ class PipelineController:
     @callback
     def on_chessboard_col_change(self, value):
         # self.calibration.chessboard_size[0] = int(value)
-        self.chessboard_dims = (int(value), self.chessboard_dims[1])
-        self.params['board_shape'] = self.chessboard_dims
-        self.pipeline_model.checkerboard_dims = (self.chessboard_dims[0], self.chessboard_dims[1])
-        self.pipeline_model.objp_update(self.chessboard_dims, self.pipeline_model.square_size)
-        log.debug(f'Chessboard type: {self.chessboard_dims}')
+        self.params['board_shape'] = (int(value), self.params['board_shape'][1])
+        self.pipeline_model.objp_update(self.params.get('board_shape'), 
+                                        self.params.get('board_square_size'))
+        log.debug(f"Chessboard type: {self.params.get('board_shape')}")
 
     @callback
     def on_chessboard_row_change(self, value):
         # self.calibration.chessboard_size[1] = int(value)
-        self.params['board_shape'] = self.chessboard_dims
-        self.chessboard_dims = (self.chessboard_dims[0], int(value))
-        self.pipeline_model.objp_update(self.chessboard_dims, self.pipeline_model.square_size)
-        log.debug(f'Chessboard type: {self.chessboard_dims}')
+        self.params['board_shape'] = (self.params.get('board_shape')[0], int(value))
+        self.pipeline_model.objp_update(self.params.get('board_shape'), 
+                                        self.params.get('board_square_size'))
+        log.debug(f"Chessboard type: {self.params.get('board_shape')}")
 
     @callback
     def on_board_square_size_change(self, value):
         self.params['board_square_size'] = value
-        self.pipeline_model.square_size = value
         logger.debug(f'board_square_size changed: {value} mm')
     
     @callback
     def on_board_marker_size_change(self, value):
         self.params['board_marker_size'] = value
         logger.debug(f'board_marker_size changed: {value} mm')
+
+    @callback
+    def on_data_folder_button(self):
+        filedlg = gui.FileDialog(gui.FileDialog.OPEN_DIR, 
+                                 "Select Folder",
+                                 self.pipeline_view.window.theme)
+        # filedlg.add_filter(".obj .ply .stl", "Triangle mesh (.obj, .ply, .stl)")
+        # filedlg.add_filter("", "All files")
+        filedlg.set_on_cancel(self._on_data_folder_cancel)
+        filedlg.set_on_done(self._on_data_folder_selcted)
+        self.pipeline_view.window.show_dialog(filedlg)
+
+    def _on_data_folder_selcted(self, path):
+        self.pipeline_view.scene_widgets.data_folder_text.text_value = path+"/data.recorder"
+        self.pipeline_view.window.close_dialog()
+
+    def _on_data_folder_cancel(self):
+        # self.pipeline_view.scene_widgets.data_folder_text.text = ""
+        self.pipeline_view.window.close_dialog()
+    
+    @callback
+    def on_collect_data(self):
+        self.data_list.append(f"New+{len(self.data_list)+1}")
+        self.pipeline_view.scene_widgets.data_list_view.set_items(self.data_list)
+
+
+    @callback
+    def on_data_list_remove(self):
+        index = self.pipeline_view.scene_widgets.data_list_view.selected_index
+        if len(self.data_list) > 0:
+            self.data_list.pop(index)
+            self.pipeline_view.scene_widgets.data_list_view.set_items(self.data_list)
+        else:
+            logger.debug("No data to remove")
+
+    @callback
+    def on_data_save_button(self):
+        logger.debug("Saving data")
+        pass
+
+    @callback
+    def on_board_type_combobox_change(self, text, index):
+        self.params['board_type'] = self.pipeline_view.scene_widgets.board_type_combobox.selected_text
+        # self.pipeline_model.T_cam_to_base

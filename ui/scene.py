@@ -1,6 +1,7 @@
 import open3d.visualization.gui as gui
 import open3d.visualization.rendering as rendering
 import logging
+from utils import ARUCO_BOARD
 
 logger = logging.getLogger(__name__)
 
@@ -37,26 +38,38 @@ class SceneWidgets:
     def __init_widgets(self):
         # Initialize all widgets by calling their respective initialization functions
         self.__init_fps_label(parent_layout=self.window)
+
+        # panel
         self.__init_status_message(parent_layout=self.panel)
         self.__init_tab_view(parent_layout=self.panel)
+
+        # view tab
         self.__init_toggle_view_set(parent_layout=self.view_tab)
         self.__init_toggle_aqui_mode(parent_layout=self.view_tab)
-        self.__init_chessboard_track_mode(parent_layout=self.view_tab)
+        self.__init_calibration_mode(parent_layout=self.view_tab)
         self.__init_display_mode_combobox(parent_layout=self.view_tab)
         self.__init_calibrate_set(parent_layout=self.view_tab)
-        self.__init_stream_set(parent_layout=self.general_tab)
-
-        self.__init_robot_button(parent_layout=self.hardware_tab)
-        self.__init_calibration_settings(parent_layout=self.hardware_tab)
-        self.__init_calibrate_button(parent_layout=self.hardware_tab)
-
         self.__init_view_buttons(parent_layout=self.view_tab)
+        self.__init_operate_info(parent_layout=self.view_tab)
+
+        # general tab
+        self.__init_stream_set(parent_layout=self.general_tab)
         self.__init_save_toggles(parent_layout=self.general_tab)
         self.__init_save_buttons(parent_layout=self.general_tab)
         self.__init_video_displays(parent_layout=self.general_tab)
-        self.__init_operate_info(parent_layout=self.view_tab)
         self.__init_scene_info(parent_layout=self.general_tab)
+
+        # hardware tab
+        self.__init_robot_button(parent_layout=self.calibration_tab)
+        self.__init_calibration_settings(parent_layout=self.calibration_tab)
+        self.__init_calibrate_button(parent_layout=self.calibration_tab)
+        self.__calib_color_image_display(parent_layout=self.calibration_tab)
+        # bbox tab
         self.__init_bbox_controls(parent_layout=self.bbox_tab)
+
+        # data tab
+        self.__data_collect_layout(parent_layout=self.data_tab)
+
         self.set_disable_before_stream_init()
 
     def __init_tab_view(self, parent_layout=None):
@@ -71,8 +84,50 @@ class SceneWidgets:
         self.bbox_tab = gui.Vert(self.em, gui.Margins(0, self.em, self.em // 2, self.em))
         self.tab_view.add_tab("Bbox", self.bbox_tab)
 
-        self.hardware_tab = gui.Vert(self.em, gui.Margins(0, self.em, self.em // 2, self.em))
-        self.tab_view.add_tab("Hardware", self.hardware_tab)
+        self.calibration_tab = gui.Vert(self.em, gui.Margins(0, self.em, self.em // 2, self.em))
+        self.tab_view.add_tab("Calib", self.calibration_tab)
+
+        self.data_tab = gui.Vert(self.em, gui.Margins(0, self.em, self.em // 2, self.em))
+        self.tab_view.add_tab("Data", self.data_tab)
+
+    def __data_collect_layout(self, parent_layout=None):
+        layout = gui.Vert(self.em, gui.Margins(0, self.em, self.em // 2, self.em))
+        parent_layout.add_child(layout)
+        self.data_collect_button = gui.Button("Collect Current Data")
+        self.data_collect_button.horizontal_padding_em = 1
+        self.data_collect_button.vertical_padding_em = 0
+        layout.add_child(self.data_collect_button)
+        
+        # self.record_list = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+
+        self.data_list_view = gui.ListView()
+        # self.data_list_view.set_items(self.record_list)
+        self.data_list_view.set_max_visible_items(5)
+        layout.add_child(self.data_list_view)
+        list_operation_layout = gui.Horiz()
+        layout.add_child(list_operation_layout)
+        self.data_list_remove_button = gui.Button("Remove")
+        self.data_list_remove_button.horizontal_padding_em = 0.5
+        self.data_list_remove_button.vertical_padding_em = 0
+        list_operation_layout.add_child(self.data_list_remove_button)
+
+        data_folder_layout = gui.Horiz()
+        data_folder_layout.add_child(gui.Label("Save to:"))
+        self.data_folder_text = gui.TextEdit()
+        data_folder_layout.add_child(self.data_folder_text)
+        data_folder_layout.add_fixed(0.25 * self.em)
+        self.data_folder_select = gui.Button("...")
+        self.data_folder_select.horizontal_padding_em = 0.5
+        self.data_folder_select.vertical_padding_em = 0
+        data_folder_layout.add_child(self.data_folder_select)
+        layout.add_child(data_folder_layout)
+
+
+        self.data_save_button = gui.Button("Save Data")
+        self.data_save_button.horizontal_padding_em = 1
+        self.data_save_button.vertical_padding_em = 0
+        layout.add_child(self.data_save_button)
+
 
     def __init_fps_label(self, parent_layout=None):
         self.fps_label = gui.Label("FPS: 99")
@@ -136,10 +191,19 @@ class SceneWidgets:
 
     def __init_calibration_settings(self, parent_layout=None):
 
-        setting_layout = gui.Vert()
+        setting_layout = gui.Vert(self.em)
         
-        calibration_msg = gui.Label("Chessboard type setting: ")
-        setting_layout.add_child(calibration_msg)
+        board_type_layout = gui.Horiz(self.em)
+        board_type_text = gui.Label("Aruco type: ")
+        self.board_type_combobox = gui.Combobox()
+        [self.board_type_combobox.add_item(b_type) 
+            for b_type in 
+            sorted(ARUCO_BOARD.keys(), key=lambda x: int(x.split('_')[1][0]))]
+        
+        board_type_layout.add_child(board_type_text)
+        board_type_layout.add_child(self.board_type_combobox)
+
+        setting_layout.add_child(board_type_layout)
 
         
         self.board_square_size = gui.NumberEdit(gui.NumberEdit.DOUBLE)
@@ -224,7 +288,7 @@ class SceneWidgets:
         self.toggle_acq_mode.is_on = False
         edit_mode_toggle_2.add_child(self.toggle_acq_mode)
 
-    def __init_chessboard_track_mode(self, parent_layout=None):
+    def __init_calibration_mode(self, parent_layout=None):
         edit_mode_toggle_2 = gui.Horiz(self.em)
         parent_layout.add_child(edit_mode_toggle_2)
 
@@ -321,6 +385,13 @@ class SceneWidgets:
         parent_layout.add_child(self.show_color)
         self.color_video = gui.ImageWidget()
         self.show_color.add_child(self.color_video)
+    
+    def __calib_color_image_display(self, parent_layout=None):
+        self.show_calib = gui.CollapsableVert("Calibration image")
+        self.show_calib.set_is_open(True)
+        parent_layout.add_child(self.show_calib)
+        self.calib_video = gui.ImageWidget()
+        self.show_calib.add_child(self.calib_video)
 
     def __init_depth_image_display(self, parent_layout=None):
         self.show_depth = gui.CollapsableVert("Depth image")
@@ -344,7 +415,8 @@ class SceneWidgets:
         self.scene_info.add_child(self.view_status)
 
     def __init_bbox_controls(self, parent_layout=None):
-        self.bbox_controls = gui.CollapsableVert("Bounding Box Controls", self.em, gui.Margins(self.em, 0, 0, 0))
+        self.bbox_controls = gui.CollapsableVert("Bounding Box Controls", 
+                                                 self.em, gui.Margins(self.em, 0, 0, 0))
         self.bbox_controls.set_is_open(True)
         parent_layout.add_child(self.bbox_controls)
 

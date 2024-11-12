@@ -13,21 +13,19 @@ import json
 from utils.segmentation import segment_pcd_from_2d
 from utils.robot import RobotInterface
 import logging
+from utils import ARUCO_BOARD
+
 
 logger = logging.getLogger(__name__)
 
-calib = json.load(open('Calibration_results/calibration_results.json'))
-T_cam_to_base = np.array(calib.get('calibration_results').get('Tsai').get('transformation_matrix'))
+# calib = json.load(open('Calibration_results/calibration_results.json'))
+# T_cam_to_base = np.array(calib.get('calibration_results').get('Tsai').get('transformation_matrix'))
 
 class PipelineModel:
     """Controls IO (camera, video file, recording, saving frames). Methods run
     in worker threads."""
 
-    def __init__(self,
-                     update_view,
-                 camera_config_file=None,
-                 rgbd_video=None,
-                 device=None):
+    def __init__(self, update_view, params: dict):
         """Initialize.
 
         Args:
@@ -39,20 +37,17 @@ class PipelineModel:
             device (str): Compute device (e.g.: 'cpu:0' or 'cuda:0').
         """
         self.update_view = update_view
-        if device:
-            self.device_str = device.lower()
-        else:
-            self.device_str = 'cuda:0' if o3d.core.cuda.is_available() else 'cpu:0'
-        self.o3d_device = o3d.core.Device(self.device_str)
-        self.torch_device = torch.device(self.device_str)
-        self.camera_config_file = camera_config_file
-        self.rgbd_video = rgbd_video
+        self.params = params
+        self.o3d_device = o3d.core.Device(params.get('device', 'cuda:0'))
+        self.torch_device = torch.device(params.get('device', 'cuda:0'))
+        self.camera_config_file = params.get('camera_config', None)
+        self.rgbd_video = params.get('rgbd_video', None)
         self.checkerboard_dims = (10, 7)
         self.video = None
         self.camera = None
         self.rgbd_frame = None
         self.close_stream = None
-        self.T_cam_to_base = T_cam_to_base
+        self.T_cam_to_base = None
         self.robot:RobotInterface = None
         # self.robot_trans_matrix = calibrated_camera_to_end_effector
 
@@ -165,8 +160,9 @@ class PipelineModel:
         # self.next_frame_func = self.video.next_frame
 
     def objp_update(self, chessboard_dims, square_size=0.02):
+        self.params['board_shape'], 
         self.checkerboard_dims = chessboard_dims
-        self.square_size = square_size
+        self.square_size = self.params['board_square_size']
         self.objp = np.zeros((self.checkerboard_dims[1] * self.checkerboard_dims[0], 3), np.float32)
         self.objp[:, :2] = np.mgrid[0:self.checkerboard_dims[0], 0:self.checkerboard_dims[1]].T.reshape(-1, 2) * self.square_size
 
@@ -299,7 +295,7 @@ class PipelineModel:
         """
         pass  # Recording functionality can be implemented if needed
     
-    def model_intialization(self):
+    def seg_model_intialization(self):
         self.flag_capture = False
         if not hasattr(self, 'pcd_seg_model'):
             from ultralytics import YOLO, SAM
@@ -344,8 +340,21 @@ class PipelineModel:
         self.status_message = (
             f"Saving RGBD images to {filename_color} and {filename_depth}.")
         
-    def calibration(self):
+    def handeye_calibration_init(self):
         pass
+
+    def camera_calibration_init(self):
+        import cv2
+        from utils import CameraInterface
+        charuco_dict = cv2.aruco.getPredefinedDictionary(ARUCO_BOARD[self.params['board_type']])
+        charuco_board = cv2.aruco.CharucoBoard(
+            self.params['board_shape'],
+            squareLength=self.params['board_square_size'] / 1000, # to meter
+            markerLength=self.params['board_marker_size'] / 1000, # to meter
+            dictionary=charuco_dict
+        )
+
+        self.camera_interface = CameraInterface(self.camera, charuco_dict, charuco_board)
 
     def robot_tracking(self):
         pose_robot = self.robot.get_position()

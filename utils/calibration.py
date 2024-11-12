@@ -18,6 +18,15 @@ from utils.camera import CameraInterface
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
 
+MARKER_SIZE = [50, 100, 250, 1000]
+MARKER_GRID = [4, 5, 6]
+
+ARUCO_BOARD = {
+    f'DICT_{grid}X{grid}_{size}': getattr(cv2.aruco, f'DICT_{grid}X{grid}_{size}')
+    for size in MARKER_SIZE
+    for grid in MARKER_GRID
+    if hasattr(cv2.aruco, f'DICT_{grid}X{grid}_{size}')
+}
 
 
 class CalibrationProcess:
@@ -349,7 +358,7 @@ def main(params):
     input_method = params.get('input_method', 'capture')
 
     # Create ChArUco dictionary and board
-    charuco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_100)
+    charuco_dict = cv2.aruco.getPredefinedDictionary(ARUCO_BOARD[params['board_type']])
     charuco_board = cv2.aruco.CharucoBoard(
         params['board_shape'],
         squareLength=params['board_square_size'] / 1000,
@@ -389,8 +398,10 @@ if __name__ == '__main__':
         'pose_file_path': './poses.txt',  # Specify the pose file path for 'auto_calibrated_mode'
         'load_intrinsic': True,  # Set to True or False
         'intrinsic_path': './Calibration_results/calibration_results.json',  # Path to the intrinsic JSON file
-        'cv_realtime_stream': False
+        'cv_realtime_stream': False,
+        'board_type': 'DICT_4X4_100'
     }
 
     main(params)
 
+    

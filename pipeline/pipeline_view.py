@@ -87,7 +87,7 @@ class PipelineView:
         self.scene_widgets.toggle_model_init.set_on_clicked(
             self.callbacks['on_toggle_model_init'])
         self.scene_widgets.robot_button.set_on_clicked(
-            self.callbacks['on_robot_button'])
+            self.callbacks['on_robot_init_button'])
         self.scene_widgets.stream_init_start.set_on_clicked(
             self.callbacks['on_stream_init_start'])
         self.scene_widgets.save_pcd_button.set_on_clicked(
@@ -112,7 +112,14 @@ class PipelineView:
             self.callbacks['on_board_square_size_change'])
         self.scene_widgets.board_marker_size.set_on_value_changed(
             self.callbacks['on_board_marker_size_change'])
-    
+        self.scene_widgets.data_folder_select.set_on_clicked(
+            self.callbacks['on_data_folder_button'])
+        self.scene_widgets.data_collect_button.set_on_clicked(
+            self.callbacks['on_collect_data'])
+        self.scene_widgets.data_list_remove_button.set_on_clicked(
+            self.callbacks['on_data_list_remove'])
+        self.scene_widgets.data_save_button.set_on_clicked(
+            self.callbacks['on_data_save_button'])
 
     def __init_bbox(self):
         # Initialize bounding box parameters
@@ -134,9 +141,11 @@ class PipelineView:
         bbox_params = ['xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax']
         for param in bbox_params:
             self.scene_widgets.bbox_sliders[param].double_value = self.bbox_params[param]
-            self.scene_widgets.bbox_sliders[param].set_on_value_changed(lambda value, p=param: self._on_bbox_slider_changed(value, p))
+            self.scene_widgets.bbox_sliders[param].set_on_value_changed(lambda value, 
+                                                                        p=param: self._on_bbox_slider_changed(value, p))
             self.scene_widgets.bbox_edits[param].double_value = self.bbox_params[param]
-            self.scene_widgets.bbox_edits[param].set_on_value_changed(lambda value, p=param: self._on_bbox_edit_changed(value, p))
+            self.scene_widgets.bbox_edits[param].set_on_value_changed(lambda value, 
+                                                                      p=param: self._on_bbox_edit_changed(value, p))
 
     def update(self, frame_elements: dict):
         """Update visualization with point cloud and images. Must run in main
@@ -159,16 +168,23 @@ class PipelineView:
         # Update the point cloud visualization
         self.update_pcd_geometry()
 
+        if self.scene_widgets.tab_view.selected_tab_index == 0: # general tab
         # Update color and depth images
-        if self.scene_widgets.show_color.get_is_open() and 'color' in frame_elements:
-            sampling_ratio = self.video_size[1] / frame_elements['color'].columns
-            self.scene_widgets.color_video.update_image(
-                frame_elements['color'].resize(sampling_ratio).to_legacy())
+            if self.scene_widgets.show_color.get_is_open() and 'color' in frame_elements:
+                sampling_ratio = self.video_size[1] / frame_elements['color'].columns
+                self.scene_widgets.color_video.update_image(
+                    frame_elements['color'].resize(sampling_ratio).to_legacy())
 
-        if self.scene_widgets.show_depth.get_is_open() and 'depth' in frame_elements:
-            sampling_ratio = self.video_size[1] / frame_elements['depth'].columns
-            self.scene_widgets.depth_video.update_image(
-                frame_elements['depth'].resize(sampling_ratio).to_legacy())
+            if self.scene_widgets.show_depth.get_is_open() and 'depth' in frame_elements:
+                sampling_ratio = self.video_size[1] / frame_elements['depth'].columns
+                self.scene_widgets.depth_video.update_image(
+                    frame_elements['depth'].resize(sampling_ratio).to_legacy())
+        
+        if self.scene_widgets.tab_view.selected_tab_index == 3: # calib tab
+            if self.scene_widgets.show_calib.get_is_open() and 'calib_color' in frame_elements:
+                sampling_ratio = self.video_size[1] / frame_elements['calib_color'].columns
+                self.scene_widgets.depth_video.update_image(
+                    frame_elements['calib_color'].resize(sampling_ratio).to_legacy())
 
 
         self.geometry_registry("camera", frame_elements, self.line_material)
