@@ -10,8 +10,8 @@ import open3d.core as o3c
 from scipy.spatial.transform import Rotation as R
 import cv2
 import json
-from segmentation import segment_pcd_from_2d
-from robot import RobotInterface
+from utils.segmentation import segment_pcd_from_2d
+from utils.robot import RobotInterface
 import logging
 
 logger = logging.getLogger(__name__)
@@ -24,7 +24,7 @@ class PipelineModel:
     in worker threads."""
 
     def __init__(self,
-                 update_view,
+                     update_view,
                  camera_config_file=None,
                  rgbd_video=None,
                  device=None):

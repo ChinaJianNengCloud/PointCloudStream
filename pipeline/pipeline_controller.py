@@ -4,10 +4,10 @@ import open3d.visualization.gui as gui
 import numpy as np
 import open3d.visualization.rendering as rendering
 import open3d as o3d
-from pipeline_model import PipelineModel
-from pipeline_view import PipelineView
-from calibration import CalibrationProcess
-from robot import RobotInterface
+from pipeline.pipeline_model import PipelineModel
+from pipeline.pipeline_view import PipelineView
+from utils.calibration import CalibrationProcess
+from utils.robot import RobotInterface
 from functools import wraps
 import logging
 import json
@@ -59,17 +59,24 @@ class PipelineController:
 
         # Collect bound methods into callbacks dictionary
         self.callbacks = {name: getattr(self, name) for name in _callback_names}
-
+        
         self.pipeline_view = PipelineView(
             self.pipeline_model.max_points,
             callbacks=self.callbacks
         )
 
-        self.chessboard_dims = [11, 8]
+        
+        self.init_settinngs_values()
         threading.Thread(name='PipelineModel',
                          target=self.pipeline_model.run).start()
         gui.Application.instance.run()
 
+    def init_settinngs_values(self):
+        self.chessboard_dims = self.params.get('board_shape', (11, 6))
+        self.pipeline_view.scene_widgets.chessboard_col.int_value = self.chessboard_dims[0]
+        self.pipeline_view.scene_widgets.chessboard_row.int_value = self.chessboard_dims[1]
+        self.pipeline_view.scene_widgets.board_square_size.double_value = self.params.get('board_square_size', 0.023)
+        self.pipeline_view.scene_widgets.board_marker_size.double_value = self.params.get('board_marker_size', 0.0175)
 
     def update_view(self, frame_elements):
         """Updates view with new data. May be called from any thread.
@@ -192,7 +199,7 @@ class PipelineController:
 
                     # Update label in the main UI thread
                     def update_label():
-                        self.pipeline_view.widget_all.mouse_coord.text = text
+                        self.pipeline_view.scene_widgets.mouse_coord.text = text
                         self.pipeline_view.window.set_needs_layout()
 
                     gui.Application.instance.post_to_main_thread(self.pipeline_view.window, update_label)
@@ -222,18 +229,18 @@ class PipelineController:
             self.robot.connect()
             ip = self.robot.ip_address
             msg = f'Robot: Connected [{ip}]'
-            self.pipeline_view.widget_all.robot_msg.text_color = gui.Color(0, 1, 0)
+            self.pipeline_view.scene_widgets.robot_msg.text_color = gui.Color(0, 1, 0)
             self.pipeline_model.robot_init = True
             if self.pipeline_model.robot_init and self.pipeline_model.camera_init:
-                self.pipeline_view.widget_all.he_calibreate_button.enabled = True
+                self.pipeline_view.scene_widgets.he_calibreate_button.enabled = True
             self.pipeline_model.robot_init = True
             self.pipeline_model.robot = self.robot
 
         except Exception as e:
             msg = f'Robot: Connection failed [{e}]'
-            self.pipeline_view.widget_all.robot_msg.text_color = gui.Color(1, 0, 0)
+            self.pipeline_view.scene_widgets.robot_msg.text_color = gui.Color(1, 0, 0)
 
-        self.pipeline_view.widget_all.robot_msg.text = msg
+        self.pipeline_view.scene_widgets.robot_msg.text = msg
 
     @callback
     def on_camera_calibration(self):
@@ -245,7 +252,7 @@ class PipelineController:
                                         dist_coeffs=distortion)
         self.calibration.checkerboard_dims = self.chessboard_dims
         self.pipeline_model.calib_exec.submit(self.calibration.calibrate_camera)
-        self.pipeline_view.widget_all.calibration_msg.text = "CalibrationProcess: Camera calibration..."
+        self.pipeline_view.scene_widgets.calibration_msg.text = "CalibrationProcess: Camera calibration..."
         # self.pipeline_model.calib_exec.shutdown()
         self.on_camera_view()
 
@@ -259,8 +266,8 @@ class PipelineController:
                                         dist_coeffs=distortion)
         self.calibration.checkerboard_dims = self.chessboard_dims
         self.pipeline_model.calib_exec.submit(self.calibration.calibrate_eye_hand_from_camera)
-        self.pipeline_view.widget_all.calibration_msg.text = "CalibrationProcess: HandEye calibration..."
-        self.pipeline_view.widget_all.he_calibreate_button.enabled = False
+        self.pipeline_view.scene_widgets.calibration_msg.text = "CalibrationProcess: HandEye calibration..."
+        self.pipeline_view.scene_widgets.he_calibreate_button.enabled = False
 
 
     @callback
@@ -281,19 +288,19 @@ class PipelineController:
     @callback
     def on_stream_init_start(self):
         log.debug('Stream init start')
-        match self.pipeline_view.widget_all.stream_combbox.selected_text:
+        match self.pipeline_view.scene_widgets.stream_combbox.selected_text:
             case 'Camera':
                 try:
                     self.pipeline_model.camera_mode_init()
                     self.pipeline_model.flag_stream_init = True
-                    self.pipeline_view.widget_all.status_message.text = "Azure Kinect camera connected."
-                    self.pipeline_view.widget_all.after_stream_init()
+                    self.pipeline_view.scene_widgets.status_message.text = "Azure Kinect camera connected."
+                    self.pipeline_view.scene_widgets.after_stream_init()
                     self.pipeline_model.camera_init = True
                     if self.pipeline_model.robot_init and self.pipeline_model.camera_init:
-                        self.pipeline_view.widget_all.he_calibreate_button.enabled = True
+                        self.pipeline_view.scene_widgets.he_calibreate_button.enabled = True
                     self.on_camera_view()
                 except Exception as e:
-                    self.pipeline_view.widget_all.status_message.text = "Camera initialization failed!"
+                    self.pipeline_view.scene_widgets.status_message.text = "Camera initialization failed!"
             case 'Video':
                 pass
 
@@ -331,18 +338,18 @@ class PipelineController:
                                                     intrinsic,
                                                     dtype=o3d.core.Dtype.Float32,
                                                     device=self.pipeline_model.o3d_device)
-            self.pipeline_view.widget_all.calib_combobox.clear_items()
+            self.pipeline_view.scene_widgets.calib_combobox.clear_items()
             
             for name in self.calib.get('calibration_results').keys():
-                self.pipeline_view.widget_all.calib_combobox.add_item(name)
+                self.pipeline_view.scene_widgets.calib_combobox.add_item(name)
             
-            self.pipeline_view.widget_all.calibration_mode.enabled = True
-            self.pipeline_view.widget_all.calib_combobox.enabled = True
+            self.pipeline_view.scene_widgets.calibration_mode.enabled = True
+            self.pipeline_view.scene_widgets.calib_combobox.enabled = True
             self.pipeline_model.hand_eye_calib = True
-            self.pipeline_view.widget_all.calib_combobox.selected_index = 0
+            self.pipeline_view.scene_widgets.calib_combobox.selected_index = 0
             
         except Exception as e:
-            self.pipeline_view.widget_all.calib_combobox.enabled = False
+            self.pipeline_view.scene_widgets.calib_combobox.enabled = False
             log.error(e)
 
     @callback
@@ -357,11 +364,11 @@ class PipelineController:
         if not is_on:
             self.pipeline_view.geometry_remove('chessboard')
         
-
     @callback
     def on_chessboard_col_change(self, value):
         # self.calibration.chessboard_size[0] = int(value)
         self.chessboard_dims = (int(value), self.chessboard_dims[1])
+        self.params['board_shape'] = self.chessboard_dims
         self.pipeline_model.checkerboard_dims = (self.chessboard_dims[0], self.chessboard_dims[1])
         self.pipeline_model.objp_update(self.chessboard_dims, self.pipeline_model.square_size)
         log.debug(f'Chessboard type: {self.chessboard_dims}')
@@ -369,6 +376,18 @@ class PipelineController:
     @callback
     def on_chessboard_row_change(self, value):
         # self.calibration.chessboard_size[1] = int(value)
+        self.params['board_shape'] = self.chessboard_dims
         self.chessboard_dims = (self.chessboard_dims[0], int(value))
         self.pipeline_model.objp_update(self.chessboard_dims, self.pipeline_model.square_size)
         log.debug(f'Chessboard type: {self.chessboard_dims}')
+
+    @callback
+    def on_board_square_size_change(self, value):
+        self.params['board_square_size'] = value
+        self.pipeline_model.square_size = value
+        logger.debug(f'board_square_size changed: {value} mm')
+    
+    @callback
+    def on_board_marker_size_change(self, value):
+        self.params['board_marker_size'] = value
+        logger.debug(f'board_marker_size changed: {value} mm')

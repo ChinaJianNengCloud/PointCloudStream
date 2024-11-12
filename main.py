@@ -2,18 +2,20 @@
 import logging
 import argparse
 
-from pipeline_controller import PipelineController
+
+
+from pipeline import PipelineController
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(levelname)s] %(message)s')
     logger = logging.getLogger(__name__)
 
     params = {
-        'directory': '.',  # Change to your directory if needed
+        'directory': '.',  # Change to your directory if needed 
         'ImageAmount': 13,
         'board_shape': (11, 6),
-        'board_square_size': 0.023,
-        'board_marker_size': 0.0175,
+        'board_square_size': 23, # mm
+        'board_marker_size': 17.5, # mm
         'input_method': 'auto_calibrated_mode',  # 'capture', 'load_from_folder', or 'auto_calibrated_mode'
         'folder_path': '_tmp',  # Specify the folder path if using 'load_from_folder'
         'pose_file_path': './poses.txt',  # Specify the pose file path for 'auto_calibrated_mode'
