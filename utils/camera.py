@@ -4,8 +4,12 @@ from scipy.spatial.transform import Rotation as R
 import logging
 import threading
 import open3d as o3d
-
+try:
+    from utils.calibration_data import CalibrationData
+except ImportError:
+    from calibration_data import CalibrationData
 # Configure logging
+
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -21,7 +25,7 @@ class CameraInterface:
 
         self.live_feedback_thread = None
         self.live_feedback_running = False
-        self.captured_images = []
+        self.calibration_data = CalibrationData(self.charuco_board)  # Use CalibrationData
         self.camera_matrix = None
         self.dist_coeffs = None
 
@@ -45,7 +49,8 @@ class CameraInterface:
             frame = self.capture_frame()
             if frame is None:
                 continue
-            self._process_and_display_frame(frame)
+            prsd_frame = self._process_and_display_frame(frame)
+            cv2.imshow('Live Feedback', prsd_frame, self.camera_matrix, self.dist_coeffs)
             key = cv2.waitKey(1)
             if key == ord('q'):
                 self.live_feedback_running = False
@@ -61,75 +66,55 @@ class CameraInterface:
         return cv2.cvtColor(color, cv2.COLOR_BGRA2BGR)
 
     def capture_image(self, image: np.ndarray):
-        self.captured_images.append(image)
-        logger.info(f"Image captured. Total images: {len(self.captured_images)}")
-        if len(self.captured_images) >= 3:
+        # Use CalibrationData to process the image
+        self.calibration_data.append(image)
+        logger.info(f"Image captured. Total images: {len(self.calibration_data)}")
+        if len(self.calibration_data) >= 3:
             self.calibrate_camera()
 
     def calibrate_camera(self):
         logger.info("Starting camera calibration...")
-        all_image_points = []
-        all_object_points = []
-        image_size = None
+        self.calibration_data.calibrate_camera()
+        self.camera_matrix = self.calibration_data.camera_matrix
+        self.dist_coeffs = self.calibration_data.dist_coeffs
 
-        for img in self.captured_images:
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            charuco_corners, charuco_ids, marker_corners, marker_ids = self.charuco_detector.detectBoard(gray)
-            
-            if charuco_ids is not None and charuco_corners is not None:
-                # Use matchImagePoints to get object points and image points
-                object_points, image_points = self.charuco_board.matchImagePoints(charuco_corners, charuco_ids)
-                
-                # Append the object and image points for calibration
-                all_object_points.append(object_points)
-                all_image_points.append(image_points)
-                
-                if image_size is None:
-                    image_size = gray.shape[::-1]
-
-        if len(all_image_points) > 0:
-            # Use cv2.calibrateCamera for camera calibration
-            ret, self.camera_matrix, self.dist_coeffs, _, _ = cv2.calibrateCamera(
-                all_object_points, all_image_points, image_size, None, None
-            )
-            if ret:
-                logger.info("Camera calibration successful")
-            else:
-                logger.warning("Camera calibration failed")
-        else:
-            logger.warning("No valid Charuco corners detected for calibration")
-
-    def _process_and_display_frame(self, frame):
+    def _process_and_display_frame(self, frame, camera_matrix=None, dist_coeffs=None):
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        charuco_corners, charuco_ids, marker_corners, marker_ids = self.charuco_detector.detectBoard(gray)
-        
-        if marker_ids is not None:
-            cv2.aruco.drawDetectedMarkers(frame_rgb, marker_corners, marker_ids)
+        ret, _, _ = self.calibration_data.board_dectect(frame_rgb)
+        if ret:
+            charuco_corners, charuco_ids, marker_corners, marker_ids = self.charuco_detector.detectBoard(frame_rgb)
+            if marker_ids is not None:
+                cv2.aruco.drawDetectedMarkers(frame_rgb, marker_corners, marker_ids)
             if charuco_corners is not None and charuco_ids is not None:
-                # logger.info(f"Detected Charuco IDs: {charuco_ids.ravel()}")
                 cv2.aruco.drawDetectedCornersCharuco(frame_rgb, charuco_corners, charuco_ids)
-                
+
                 if self.camera_matrix is not None and self.dist_coeffs is not None:
                     # Use matchImagePoints to get object and image points for pose estimation
                     object_points, image_points = self.charuco_board.matchImagePoints(charuco_corners, charuco_ids)
-                    
+
                     # Estimate pose using solvePnP
                     try:
                         success, rvec, tvec = cv2.solvePnP(
-                            object_points, image_points, self.camera_matrix, self.dist_coeffs
+                            object_points, image_points, camera_matrix, dist_coeffs
                         )
-                    except:
+                    except Exception as e:
+                        logger.warning(f"solvePnP failed: {e}")
                         success = False
                     if success:
                         cv2.drawFrameAxes(frame_rgb, self.camera_matrix, self.dist_coeffs, rvec, tvec, 0.1)
             else:
                 logger.warning("No valid Charuco corners detected for pose estimation")
+        else:
+            logger.warning("No board detected in the current frame.")
 
-        cv2.imshow('Live Feedback', frame_rgb)
+        return frame_rgb
+
+
 
     def clear(self):
-        self.captured_images.clear()
+        self.calibration_data.reset()
+        self.camera_matrix = None
+        self.dist_coeffs = None
 
 
 def camera_test(params):

@@ -11,10 +11,10 @@ from scipy.spatial.transform import Rotation as R
 import cv2
 import json
 from utils.segmentation import segment_pcd_from_2d
-from utils.robot import RobotInterface
+
 import logging
 from utils import ARUCO_BOARD
-
+import open3d.visualization.gui as gui
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ class PipelineModel:
         self.rgbd_frame = None
         self.close_stream = None
         self.T_cam_to_base = None
-        self.robot:RobotInterface = None
+        self.robot_interface:RobotInterface = None
         # self.robot_trans_matrix = calibrated_camera_to_end_effector
 
         self.cv_capture = threading.Condition()  # condition variable
@@ -87,7 +87,7 @@ class PipelineModel:
         self.pcd_frame = None
         self.rgbd_frame = None
         self.flag_stream_init = False
-        self.robot_init = False
+        self.flag_robot_init = False
         self.camera_init = False
         self.hand_eye_calib = False
         self.flag_calibration_mode = False
@@ -243,7 +243,7 @@ class PipelineModel:
                 self.color_std = np.std(frame_elements['pcd'].point.colors.cpu().numpy(), axis=0).tolist()  # frame_elements['pcd'].point.colors.std(dim=0)
                 logger.debug(f"color_mean = {self.color_mean}, color_std = {self.color_std}")
 
-            if self.robot_init and self.hand_eye_calib:
+            if self.flag_robot_init and self.hand_eye_calib:
                 # Draw an axis for the robot position pose in the scene
                 robot_end_frame, robot_base_frame = self.robot_tracking()
                 frame_elements['robot_end_frame'] = robot_end_frame
@@ -341,7 +341,27 @@ class PipelineModel:
             f"Saving RGBD images to {filename_color} and {filename_depth}.")
         
     def handeye_calibration_init(self):
-        pass
+        from utils import CalibrationProcess
+        self.calibration_process: CalibrationProcess = CalibrationProcess(self.params, 
+                                                                          self.camera_interface, 
+                                                                          self.robot_interface)
+
+    def robot_init(self):
+        from utils import RobotInterface
+        ip = None
+        self.robot_interface: RobotInterface = RobotInterface()
+        try:
+            self.robot_interface.find_device()
+            self.robot_interface.connect()
+            ip = self.robot_interface.ip_address
+            msg = f'Robot: Connected [{ip}]'
+            msg_color = gui.Color(0, 1, 0)
+            self.flag_robot_init = True
+        except Exception as e:
+            msg = f'Robot: Connection failed [{e}]'
+            msg_color = gui.Color(1, 0, 0)
+
+        return msg, msg_color, ip
 
     def camera_calibration_init(self):
         import cv2
@@ -353,12 +373,13 @@ class PipelineModel:
             markerLength=self.params['board_marker_size'] / 1000, # to meter
             dictionary=charuco_dict
         )
-
-        self.camera_interface = CameraInterface(self.camera, charuco_dict, charuco_board)
-
+        self.camera_interface: CameraInterface = CameraInterface(self.camera, charuco_dict, charuco_board)
+        msg = "Calibration: Camera calibration initialized"
+        return msg, gui.Color(0, 1, 0)
+    
     def robot_tracking(self):
-        pose_robot = self.robot.get_position()
-        rvecs, tvects = self.robot.capture_gripper_to_base()
+        pose_robot = self.robot_interface.get_position()
+        rvecs, tvects = self.robot_interface.capture_gripper_to_base()
         # Extract position and rotation from pose
         # rotation_robot = R.from_euler('xyz', [rx, ry, rz])
         # # rotation_robot = cv2.Rodrigues(np.array([rx, ry, rz]))

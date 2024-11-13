@@ -95,7 +95,7 @@ class PipelineView:
         self.scene_widgets.save_rgbd_button.set_on_clicked(
             self.callbacks['on_save_rgbd'])
         self.scene_widgets.cam_calibreate_button.set_on_clicked(
-            self.callbacks['on_camera_calibration'])
+            self.callbacks['on_camera_calibration_init'])
         self.scene_widgets.he_calibreate_button.set_on_clicked(
             self.callbacks['on_he_calibration'])
         self.scene_widgets.chessboard_col.set_on_value_changed(
@@ -120,6 +120,8 @@ class PipelineView:
             self.callbacks['on_data_list_remove'])
         self.scene_widgets.data_save_button.set_on_clicked(
             self.callbacks['on_data_save_button'])
+        self.scene_widgets.board_type_combobox.set_on_selection_changed(
+            self.callbacks['on_board_type_combobox_change'])
 
     def __init_bbox(self):
         # Initialize bounding box parameters

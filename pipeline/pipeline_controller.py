@@ -6,7 +6,7 @@ import open3d.visualization.rendering as rendering
 import open3d as o3d
 from pipeline.pipeline_model import PipelineModel
 from pipeline.pipeline_view import PipelineView
-from utils.calibration import CalibrationProcess
+from utils.calibration_process import CalibrationProcess
 from utils.robot import RobotInterface
 from functools import wraps
 import logging
@@ -225,42 +225,23 @@ class PipelineController:
 
     @callback
     def on_robot_init_button(self):
-        try:
-            self.robot.find_device()
-            self.robot.connect()
-            ip = self.robot.ip_address
-            msg = f'Robot: Connected [{ip}]'
-            self.pipeline_view.scene_widgets.robot_msg.text_color = gui.Color(0, 1, 0)
-            self.pipeline_model.robot_init = True
-            if self.pipeline_model.robot_init and self.pipeline_model.camera_init:
-                self.pipeline_view.scene_widgets.he_calibreate_button.enabled = True
-            self.pipeline_model.robot_init = True
-            self.pipeline_model.robot = self.robot
+        msg, msg_color = self.pipeline_model.robot_init()
 
-        except Exception as e:
-            msg = f'Robot: Connection failed [{e}]'
-            self.pipeline_view.scene_widgets.robot_msg.text_color = gui.Color(1, 0, 0)
-
-        self.pipeline_view.scene_widgets.robot_msg.text = msg
-
-    @callback
-    def on_camera_calibration(self):
-        import cv2
-        from utils import CameraInterface
-        distortion  = self.pipeline_model.camera_json.get('distortion_coeffs', None)
-
-        robot_interface = RobotInterface()
+        if self.pipeline_model.flag_robot_init and self.pipeline_model.camera_init:
+            self.pipeline_view.scene_widgets.he_calibreate_button.enabled = True
         
-        if self.calibration is None:
-            self.calibration = CalibrationProcess(self.robot, 
-                                        self.pipeline_model.camera,
-                                        intrinsic=self.pipeline_model.intrinsic_matrix, 
-                                        dist_coeffs=distortion)
-            
-        self.pipeline_model.calib_exec.submit(self.calibration.calibrate_camera)
-        self.pipeline_view.scene_widgets.calibration_msg.text = "CalibrationProcess: Camera calibration..."
-        # self.pipeline_model.calib_exec.shutdown()
-        self.on_camera_view()
+        self.pipeline_view.scene_widgets.robot_msg.text = msg
+        self.pipeline_view.scene_widgets.robot_msg.text_color = msg_color
+        
+    @callback
+    def on_camera_calibration_init(self):
+        msg, msg_color = self.pipeline_model.camera_calibration_init()
+        
+        if self.pipeline_model.flag_robot_init and self.pipeline_model.camera_init:
+            self.pipeline_view.scene_widgets.he_calibreate_button.enabled = True
+
+        self.pipeline_view.scene_widgets.calibration_msg.text = msg
+        self.pipeline_view.scene_widgets.calibration_msg.text_color = msg_color
 
     @callback
     def on_he_calibration(self):
@@ -302,7 +283,7 @@ class PipelineController:
                     self.pipeline_view.scene_widgets.status_message.text = "Azure Kinect camera connected."
                     self.pipeline_view.scene_widgets.after_stream_init()
                     self.pipeline_model.camera_init = True
-                    if self.pipeline_model.robot_init and self.pipeline_model.camera_init:
+                    if self.pipeline_model.flag_robot_init and self.pipeline_model.camera_init:
                         self.pipeline_view.scene_widgets.he_calibreate_button.enabled = True
                     self.on_camera_view()
                 except Exception as e:
@@ -439,4 +420,4 @@ class PipelineController:
     @callback
     def on_board_type_combobox_change(self, text, index):
         self.params['board_type'] = self.pipeline_view.scene_widgets.board_type_combobox.selected_text
-        # self.pipeline_model.T_cam_to_base
+        logger.debug(f"Board type: {self.params.get('board_type')}")

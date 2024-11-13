@@ -59,10 +59,9 @@ class SceneWidgets:
         self.__init_video_displays(parent_layout=self.general_tab)
         self.__init_scene_info(parent_layout=self.general_tab)
 
-        # hardware tab
-        self.__init_robot_button(parent_layout=self.calibration_tab)
-        self.__init_calibration_settings(parent_layout=self.calibration_tab)
+        # Calibration tab
         self.__init_calibrate_button(parent_layout=self.calibration_tab)
+        self.__init_calibration_settings(parent_layout=self.calibration_tab)
         self.__calib_color_image_display(parent_layout=self.calibration_tab)
         # bbox tab
         self.__init_bbox_controls(parent_layout=self.bbox_tab)
@@ -167,25 +166,16 @@ class SceneWidgets:
         layout.add_child(self.calib_check)
 
 
-    def __init_robot_button(self, parent_layout=None):
-        button_layout = gui.Horiz(self.em)
-        parent_layout.add_child(button_layout)
-        # button_layout.add_stretch()
-        self.robot_button = gui.Button("Robot Init")
-        self.robot_button.horizontal_padding_em = 0.5
-        self.robot_button.vertical_padding_em = 0
-    
-        button_layout.add_child(self.robot_button)
         # button_layout.add_stretch()
         
     def __init_status_message(self, parent_layout=None):
         self.status_message = gui.Label("System: No Stream is Initialized                 ")
         parent_layout.add_child(self.status_message)
 
-        self.robot_msg = gui.Label("Robot: Not Connected                             ")
+        self.robot_msg = gui.Label("Robot: Not Connected                                  ")
         parent_layout.add_child(self.robot_msg)
 
-        self.calibration_msg = gui.Label("Calibration: None                           ")
+        self.calibration_msg = gui.Label("Calibration: None                               ")
         parent_layout.add_child(self.calibration_msg)
 
 
@@ -225,8 +215,6 @@ class SceneWidgets:
         numlayout.add_fixed(self.em)
         setting_layout.add_child(numlayout)
 
-        setting_layout.add_fixed(self.em)
-
         self.chessboard_col = gui.NumberEdit(gui.NumberEdit.INT)
         self.chessboard_col.int_value = 11
         self.chessboard_col.set_limits(5, 15)  # value coerced to 1
@@ -246,17 +234,30 @@ class SceneWidgets:
 
         parent_layout.add_child(setting_layout)
 
+    def __calibration_collect_panel(self, parent_layout=None):
+        pass
+
     def __init_calibrate_button(self, parent_layout=None):
+
         button_layout = gui.Horiz(self.em)
         parent_layout.add_child(button_layout)
+
+        hardware_button_layout = gui.Vert(self.em)
+        button_layout.add_child(hardware_button_layout)
+
+        self.robot_button = gui.Button("Robot Init")
+        self.robot_button.horizontal_padding_em = 0.5
+        self.robot_button.vertical_padding_em = 0
+        hardware_button_layout.add_child(self.robot_button)
+
         # button_layout.add_stretch()
-        self.cam_calibreate_button = gui.Button("Camera Calibration")
+        self.cam_calibreate_button = gui.Button("Cam Calib Init")
         self.cam_calibreate_button.tooltip = "Start Camera Calibration"
         self.cam_calibreate_button.horizontal_padding_em = 0.5
         self.cam_calibreate_button.vertical_padding_em = 0
-        button_layout.add_child(self.cam_calibreate_button)
+        hardware_button_layout.add_child(self.cam_calibreate_button)
 
-        self.he_calibreate_button = gui.Button("H-E Calibration")
+        self.he_calibreate_button = gui.Button("HandEye Calib Init")
         self.he_calibreate_button.tooltip = "Start Hand-Eye Calibration"
         self.he_calibreate_button.horizontal_padding_em = 0.5
         self.he_calibreate_button.vertical_padding_em = 0
@@ -460,7 +461,6 @@ class SceneWidgets:
     def set_disable_before_stream_init(self):
         self.toggle_capture.enabled = False
         self.toggle_model_init.enabled = False
-        self.cam_calibreate_button.enabled = False
         self.he_calibreate_button.enabled = False
         self.save_pcd_button.enabled = False
         self.save_rgbd_button.enabled = False
@@ -468,7 +468,6 @@ class SceneWidgets:
     def after_stream_init(self):
         self.toggle_capture.enabled = True
         self.toggle_model_init.enabled = True
-        self.cam_calibreate_button.enabled = True
         self.save_pcd_button.enabled = True
         self.save_rgbd_button.enabled = True
 
