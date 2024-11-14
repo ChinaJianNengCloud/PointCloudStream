@@ -11,7 +11,7 @@ from utils.robot import RobotInterface
 from functools import wraps
 import logging
 import json
-
+import open3d.core as o3c
 from utils import ARUCO_BOARD
 
 
@@ -51,6 +51,7 @@ class PipelineController:
         """
         self.params = params
         self.pipeline_model = PipelineModel(self.update_view, params=params)
+        self.calibration_data = self.pipeline_model.calibration_data
         self.calibration = None
         self.drawing_rectangle = False
         self.initial_point = None
@@ -73,11 +74,12 @@ class PipelineController:
 
     def init_settinngs_values(self):
         self.chessboard_dims = self.params.get('board_shape', (11, 6))
-        self.pipeline_view.scene_widgets.chessboard_col.int_value = self.chessboard_dims[0]
-        self.pipeline_view.scene_widgets.chessboard_row.int_value = self.chessboard_dims[1]
-        self.pipeline_view.scene_widgets.board_square_size.double_value = self.params.get('board_square_size', 0.023)
-        self.pipeline_view.scene_widgets.board_marker_size.double_value = self.params.get('board_marker_size', 0.0175)
+        self.pipeline_view.scene_widgets.board_col_num_edit.int_value = self.chessboard_dims[0]
+        self.pipeline_view.scene_widgets.board_row_num_edit.int_value = self.chessboard_dims[1]
+        self.pipeline_view.scene_widgets.board_square_size_num_edit.double_value = self.params.get('board_square_size', 0.023)
+        self.pipeline_view.scene_widgets.board_marker_size_num_edit.double_value = self.params.get('board_marker_size', 0.0175)
         self.pipeline_view.scene_widgets.board_type_combobox.selected_text = self.params.get('board_type', "DICT_4X4_100")
+        self.pipeline_view.scene_widgets.calib_save_text.text_value = self.params.get('calib_path', "")
 
     def update_view(self, frame_elements):
         """Updates view with new data. May be called from any thread.
@@ -91,7 +93,7 @@ class PipelineController:
             lambda: self.pipeline_view.update(frame_elements))
 
     @callback
-    def on_toggle_capture(self, is_on):
+    def on_capture_toggle(self, is_on):
         """Callback to toggle capture."""
         self.pipeline_view.capturing = is_on
         self.pipeline_view.vfov =  1.25 * self.pipeline_model.vfov
@@ -118,7 +120,7 @@ class PipelineController:
         self.pipeline_model.flag_record = is_enabled
 
     @callback
-    def on_display_mode_changed(self, text, index):
+    def on_display_mode_combobox_changed(self, text, index):
         """Callback to change display mode."""
         self.pipeline_model.flag_normals = False
         self.pipeline_view.display_mode = text
@@ -132,14 +134,15 @@ class PipelineController:
                 self.pipeline_view.flag_gui_init = False
             case 'Segmentation':
                 log.debug('Display mode: Segmentation')
-                self.pipeline_view.show_segmentation = True
+                self.pipeline_model.flag_segemtation_mode = True
                 self.pipeline_view.update_pcd_geometry()
 
-    @callback
-    def on_toggle_normals(self, is_enabled):
-        """Callback to toggle display of normals"""
-        self.pipeline_model.flag_normals = is_enabled
-        self.pipeline_view.flag_gui_init = False
+    # @callback
+    # def on_toggle_normals(self, is_enabled):
+    #     """Callback to toggle display of normals"""
+    #     self.pipeline_model.flag_normals = is_enabled
+    #     self.pipeline_view.flag_gui_init = False
+    
 
     @callback
     def on_window_close(self):
@@ -150,17 +153,17 @@ class PipelineController:
         return True  # OK to close window
 
     @callback
-    def on_save_pcd(self):
+    def on_save_pcd_button(self):
         """Callback to save current point cloud."""
         self.pipeline_model.flag_save_pcd = True
 
     @callback
-    def on_toggle_model_init(self, is_enabled):
-        self.pipeline_model.model_intialization()
+    def on_seg_model_init_toggle(self, is_enabled):
+        self.pipeline_model.seg_model_intialization()
         self.pipeline_model.flag_segemtation_mode = is_enabled
 
     @callback
-    def on_save_rgbd(self):
+    def on_save_rgbd_button(self):
         """Callback to save current RGBD image pair."""
         self.pipeline_model.flag_save_rgbd = True
         logger.debug('Saving RGBD image pair')
@@ -225,40 +228,43 @@ class PipelineController:
 
     @callback
     def on_robot_init_button(self):
-        msg, msg_color = self.pipeline_model.robot_init()
+        ret, msg, msg_color = self.pipeline_model.robot_init()
 
-        if self.pipeline_model.flag_robot_init and self.pipeline_model.camera_init:
-            self.pipeline_view.scene_widgets.he_calibreate_button.enabled = True
+        if self.pipeline_model.flag_robot_init and self.pipeline_model.flag_camera_init:
+            self.pipeline_view.scene_widgets.handeye_calib_init_button.enabled = True
         
         self.pipeline_view.scene_widgets.robot_msg.text = msg
         self.pipeline_view.scene_widgets.robot_msg.text_color = msg_color
-        
-    @callback
-    def on_camera_calibration_init(self):
-        msg, msg_color = self.pipeline_model.camera_calibration_init()
-        
-        if self.pipeline_model.flag_robot_init and self.pipeline_model.camera_init:
-            self.pipeline_view.scene_widgets.he_calibreate_button.enabled = True
+        self.calibration_data.reset()
+        self.pipeline_view.scene_widgets.frame_list_view.set_items(['Click "Collect Current Frame" to start'])
 
+    @callback
+    def on_cam_calib_init_button(self):
+        ret, msg, msg_color = self.pipeline_model.camera_calibration_init()
+        
+        if self.pipeline_model.flag_robot_init and self.pipeline_model.flag_camera_init:
+            self.pipeline_view.scene_widgets.handeye_calib_init_button.enabled = True
+        
         self.pipeline_view.scene_widgets.calibration_msg.text = msg
         self.pipeline_view.scene_widgets.calibration_msg.text_color = msg_color
+        self.pipeline_view.scene_widgets.detect_board_toggle.enabled = True
+        self.calibration_data.reset()
+        self.pipeline_view.scene_widgets.frame_list_view.set_items(['Click "Collect Current Frame" to start'])
 
     @callback
-    def on_he_calibration(self):
-        distortion  = self.pipeline_model.camera_json.get('distortion_coeffs', None)
-        if self.calibration is None:
-            self.calibration = CalibrationProcess(self.robot, 
-                                        self.pipeline_model.camera,
-                                        intrinsic=self.pipeline_model.intrinsic_matrix, 
-                                        dist_coeffs=distortion)
-        self.calibration.checkerboard_dims = self.chessboard_dims
-        self.pipeline_model.calib_exec.submit(self.calibration.calibrate_eye_hand_from_camera)
-        self.pipeline_view.scene_widgets.calibration_msg.text = "CalibrationProcess: HandEye calibration..."
-        self.pipeline_view.scene_widgets.he_calibreate_button.enabled = False
+    def on_handeye_calib_init_button(self):
+        ret, msg, msg_color = self.pipeline_model.handeye_calibration_init()
+        if ret:
+            self.pipeline_model.flag_handeye_calib_init = True
+            self.pipeline_view.scene_widgets.calibration_msg.text = msg
+            self.pipeline_view.scene_widgets.calibration_msg.text_color = msg_color
+            self.calibration_data.reset()
+            self.pipeline_view.scene_widgets.frame_list_view.set_items(['Click "Collect Current Frame" to start'])
+            # self.pipeline_view.scene_widgets.he_calibreate_button.enabled = False
 
 
     @callback
-    def on_camera_view(self):
+    def on_camera_view_button(self):
         self.pipeline_view.pcdview.setup_camera(self.pipeline_view.vfov, 
                                                 self.pipeline_view.pcd_bounds, [0, 0, 0])
         lookat = [0, 0, 0]
@@ -267,13 +273,13 @@ class PipelineController:
         self.pipeline_view.pcdview.scene.camera.look_at(lookat, placeat, pointat)
 
     @callback
-    def on_birds_eye_view(self):
+    def on_birds_eye_view_button(self):
         """Callback to reset point cloud view to birds eye (overhead) view"""
         self.pipeline_view.pcdview.setup_camera(self.vfov, self.pcd_bounds, [0, 0, 0])
         self.pipeline_view.pcdview.scene.camera.look_at([0, 0, 1.5], [0, 3, 1.5], [0, -1, 0])
 
     @callback
-    def on_stream_init_start(self):
+    def on_stream_init_button(self):
         log.debug('Stream init start')
         match self.pipeline_view.scene_widgets.stream_combbox.selected_text:
             case 'Camera':
@@ -282,17 +288,17 @@ class PipelineController:
                     self.pipeline_model.flag_stream_init = True
                     self.pipeline_view.scene_widgets.status_message.text = "Azure Kinect camera connected."
                     self.pipeline_view.scene_widgets.after_stream_init()
-                    self.pipeline_model.camera_init = True
-                    if self.pipeline_model.flag_robot_init and self.pipeline_model.camera_init:
-                        self.pipeline_view.scene_widgets.he_calibreate_button.enabled = True
-                    self.on_camera_view()
+                    self.pipeline_model.flag_camera_init = True
+                    if self.pipeline_model.flag_robot_init and self.pipeline_model.flag_camera_init:
+                        self.pipeline_view.scene_widgets.handeye_calib_init_button.enabled = True
+                    self.on_camera_view_button()
                 except Exception as e:
                     self.pipeline_view.scene_widgets.status_message.text = "Camera initialization failed!"
             case 'Video':
                 pass
 
     @callback
-    def on_toggle_acq_mode(self, is_on):
+    def on_acq_mode_toggle(self, is_on):
         self.pipeline_view.acq_mode = is_on
         if is_on:
             self.pipeline_view.pcdview.set_view_controls(gui.SceneWidget.Controls.PICK_POINTS)
@@ -314,25 +320,22 @@ class PipelineController:
             self.pipeline_view.pcdview.force_redraw()
 
     @callback
-    def on_check_calibrate_result(self):
+    def on_calib_check_button(self):
         try:
-            path = './Calibration_results/calibration_results.json'
+            path = self.params['calib_path']
             with open(path, 'r') as f:
-                self.calib = json.load(f)
+                self.calib:dict = json.load(f)
             intrinsic = np.array(self.calib.get('camera_matrix'))
-            self.pipeline_model.dist_coeffs = np.array(self.calib.get('dist_coeffs'))
-            self.pipeline_model.intrinsic_matrix =  o3d.core.Tensor(
-                                                    intrinsic,
-                                                    dtype=o3d.core.Dtype.Float32,
-                                                    device=self.pipeline_model.o3d_device)
+            dist_coeffs = np.array(self.calib.get('dist_coeffs'))
+            self.pipeline_model.update_camera_matrix(intrinsic, dist_coeffs)
             self.pipeline_view.scene_widgets.calib_combobox.clear_items()
-            
+
             for name in self.calib.get('calibration_results').keys():
                 self.pipeline_view.scene_widgets.calib_combobox.add_item(name)
             
-            self.pipeline_view.scene_widgets.calibration_mode.enabled = True
+            self.pipeline_view.scene_widgets.calibration_mode_toggle.enabled = True
             self.pipeline_view.scene_widgets.calib_combobox.enabled = True
-            self.pipeline_model.hand_eye_calib = True
+            self.pipeline_model.flag_handeye_calib_success = True
             self.pipeline_view.scene_widgets.calib_combobox.selected_index = 0
             
         except Exception as e:
@@ -343,43 +346,31 @@ class PipelineController:
     def on_calib_combobox_change(self, text, index):
         self.pipeline_model.T_cam_to_base = np.array(self.calib.get('calibration_results').get(text).get('transformation_matrix'))
         # self.pipeline_model.T_cam_to_base
-
-    @callback
-    def on_calibration_mode(self, is_on):
-        self.pipeline_model.objp_update(self.params.get('board_shape'), 
-                                        self.params.get('board_square_size'))
-        self.pipeline_model.flag_calibration_mode = is_on
-        if not is_on:
-            self.pipeline_view.geometry_remove('chessboard')
         
     @callback
-    def on_chessboard_col_change(self, value):
+    def on_board_col_num_edit_change(self, value):
         # self.calibration.chessboard_size[0] = int(value)
         self.params['board_shape'] = (int(value), self.params['board_shape'][1])
-        self.pipeline_model.objp_update(self.params.get('board_shape'), 
-                                        self.params.get('board_square_size'))
         log.debug(f"Chessboard type: {self.params.get('board_shape')}")
 
     @callback
-    def on_chessboard_row_change(self, value):
+    def on_board_row_num_edit_change(self, value):
         # self.calibration.chessboard_size[1] = int(value)
         self.params['board_shape'] = (self.params.get('board_shape')[0], int(value))
-        self.pipeline_model.objp_update(self.params.get('board_shape'), 
-                                        self.params.get('board_square_size'))
         log.debug(f"Chessboard type: {self.params.get('board_shape')}")
 
     @callback
-    def on_board_square_size_change(self, value):
+    def on_board_square_size_num_edit_change(self, value):
         self.params['board_square_size'] = value
         logger.debug(f'board_square_size changed: {value} mm')
     
     @callback
-    def on_board_marker_size_change(self, value):
+    def on_board_marker_size_num_edit_change(self, value):
         self.params['board_marker_size'] = value
         logger.debug(f'board_marker_size changed: {value} mm')
 
     @callback
-    def on_data_folder_button(self):
+    def on_data_folder_select_button(self):
         filedlg = gui.FileDialog(gui.FileDialog.OPEN_DIR, 
                                  "Select Folder",
                                  self.pipeline_view.window.theme)
@@ -398,13 +389,13 @@ class PipelineController:
         self.pipeline_view.window.close_dialog()
     
     @callback
-    def on_collect_data(self):
+    def on_data_collect_button(self):
         self.data_list.append(f"New+{len(self.data_list)+1}")
         self.pipeline_view.scene_widgets.data_list_view.set_items(self.data_list)
 
 
     @callback
-    def on_data_list_remove(self):
+    def on_data_list_remove_button(self):
         index = self.pipeline_view.scene_widgets.data_list_view.selected_index
         if len(self.data_list) > 0:
             self.data_list.pop(index)
@@ -421,3 +412,84 @@ class PipelineController:
     def on_board_type_combobox_change(self, text, index):
         self.params['board_type'] = self.pipeline_view.scene_widgets.board_type_combobox.selected_text
         logger.debug(f"Board type: {self.params.get('board_type')}")
+    
+    @callback
+    def on_calib_collect_button(self):
+        self.pipeline_model.flag_calib_collect = True
+        self.pipeline_view.scene_widgets.frame_list_view.set_items(
+            self.calibration_data.display_str_list)
+        logger.debug("Collecting calibration data")
+
+    @callback
+    def on_calib_list_remove_button(self):
+        self.calibration_data.pop(self.pipeline_view.scene_widgets.frame_list_view.selected_index)
+        self.pipeline_view.scene_widgets.frame_list_view.set_items(
+            self.calibration_data.display_str_list)
+        logger.debug("Removing calibration data")
+
+    @callback
+    def on_robot_move_button(self):
+        logger.debug("Moving robot")
+        
+    @callback
+    def on_calib_save_button(self):
+        self.calibration_data.save_calibration_data(
+            self.pipeline_view.scene_widgets.calib_save_text.text_value
+        )
+        self.on_calib_check_button()
+        logger.debug("Saving calibration data and check data")
+    
+    @callback
+    def on_calib_button(self):
+        self.calibration_data.calibrate_all()
+        self.pipeline_view.scene_widgets.frame_list_view.set_items(
+            self.calibration_data.display_str_list)
+        self.pipeline_model.update_camera_matrix(self.calibration_data.camera_matrix, 
+                                                 self.calibration_data.dist_coeffs)
+        logger.debug("calibration button")
+
+    @callback 
+    def on_detect_board_toggle(self, is_on):
+        self.pipeline_model.flag_tracking_board = is_on
+        logger.debug(f"Detecting board: {is_on}")
+
+    @callback 
+    def on_show_axis_in_scene_toggle(self, is_on):
+        self.pipeline_model.flag_calib_axis_to_scene = is_on
+        self.pipeline_view.pcdview.scene.show_geometry('board_pose', True)
+        self.pipeline_view.pcdview.scene.show_geometry('robot_base_frame', True)
+        self.pipeline_view.pcdview.scene.show_geometry('robot_end_frame', True)
+
+        logger.debug(f"Show axis in scene: {is_on}")
+
+    @callback
+    def on_frame_list_view_changed(self, new_val, is_dbl_click):
+        # TODO: update still buggy, need to be fixed
+        self.pipeline_model.flag_tracking_board = False
+        self.pipeline_view.scene_widgets.detect_board_toggle.is_on = False
+        if len(self.calibration_data) > 0:
+            img = self.calibration_data.images[self.pipeline_view.scene_widgets.frame_list_view.selected_index]
+            img = o3d.t.geometry.Image(img).cpu()
+            if self.pipeline_view.scene_widgets.show_calib.get_is_open():
+                sampling_ratio = self.pipeline_view.video_size[1] / img.columns
+                self.pipeline_view.scene_widgets.calib_video.update_image(img.resize(sampling_ratio))
+                logger.debug("Showing calibration pic")
+
+    @callback
+    def on_calib_save_text_changed(self, text):
+        self.params['calib_path'] = text
+        logger.debug(f"calib_path changed: {text}")
+
+    @callback
+    def on_key_pressed(self, event):
+        if self.pipeline_view.scene_widgets.tab_view.selected_tab_index == 3 and \
+                    self.pipeline_model.flag_camera_init:
+            if event.type == gui.KeyEvent.Type.DOWN:
+                if event.key == gui.KeyName.SPACE:
+                # self.pipeline_model.flag_tracking_board = not self.pipeline_model.flag_tracking_board
+                    self.on_calib_collect_button()
+                elif event.key == gui.KeyName.C:
+                    self.on_calib_button()
+                logger.info(f"key pressed {event.key}")
+            return True
+        return False

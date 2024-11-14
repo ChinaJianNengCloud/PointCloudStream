@@ -38,8 +38,6 @@ class PipelineView:
         # Set the callbacks for widgets that require methods of PipelineView
         
         
-        # self.widget_all.robot_msg
-        self.toggle_record = self.scene_widgets.toggle_record
         # Now, we can access the widgets via self.widget_all
         self.pcdview = self.scene_widgets.get_pcd_view()
         self.em = self.scene_widgets.em
@@ -72,56 +70,29 @@ class PipelineView:
         self.__init_bbox()
 
     def callback_bindings(self):
-        self.scene_widgets.toggle_capture.set_on_clicked(
-            self.callbacks['on_toggle_capture'])
-        self.scene_widgets.toggle_acq_mode.set_on_clicked(
-            self.callbacks['on_toggle_acq_mode'])
-        self.scene_widgets.display_mode_combobox.set_on_selection_changed(
-            self.callbacks['on_display_mode_changed'])
-        self.scene_widgets.camera_view_button.set_on_clicked(
-            self.callbacks['on_camera_view'])
-        self.scene_widgets.birds_eye_view_button.set_on_clicked(
-            self.callbacks['on_birds_eye_view'])
+        for each in self.callbacks.keys():
+            
+            if "button" in each or 'toggle' in each:
+                getattr(self.scene_widgets, "_".join(each.split('_')[1:])).set_on_clicked(self.callbacks[each])
+                logger.info(f"Registered callback for {each}")
+            elif "num_edit" in each:
+                getattr(self.scene_widgets, "_".join(each.split('_')[1:-1])).set_on_value_changed(self.callbacks[each])
+                logger.info(f"Registered callback for {each}")
+            elif "combobox" in each:
+                getattr(self.scene_widgets, "_".join(each.split('_')[1:-1])).set_on_selection_changed(self.callbacks[each])
+                logger.info(f"Registered callback for {each}")
+            elif "list_view" in each:
+                getattr(self.scene_widgets, "_".join(each.split('_')[1:-1])).set_on_selection_changed(self.callbacks[each])
+                logger.info(f"Registered callback for {each}")
+            elif "text" in each:
+                getattr(self.scene_widgets, "_".join(each.split('_')[1:-1])).set_on_text_changed(self.callbacks[each])
+                logger.info(f"Registered callback for {each}")
+        # print(getattr(self.scene_widgets))
         self.scene_widgets.pcdview.set_on_mouse(
             self.callbacks['on_mouse_widget3d'])  # Set initial mouse callback
-        self.scene_widgets.toggle_model_init.set_on_clicked(
-            self.callbacks['on_toggle_model_init'])
-        self.scene_widgets.robot_button.set_on_clicked(
-            self.callbacks['on_robot_init_button'])
-        self.scene_widgets.stream_init_start.set_on_clicked(
-            self.callbacks['on_stream_init_start'])
-        self.scene_widgets.save_pcd_button.set_on_clicked(
-            self.callbacks['on_save_pcd'])
-        self.scene_widgets.save_rgbd_button.set_on_clicked(
-            self.callbacks['on_save_rgbd'])
-        self.scene_widgets.cam_calibreate_button.set_on_clicked(
-            self.callbacks['on_camera_calibration_init'])
-        self.scene_widgets.he_calibreate_button.set_on_clicked(
-            self.callbacks['on_he_calibration'])
-        self.scene_widgets.chessboard_col.set_on_value_changed(
-            self.callbacks['on_chessboard_col_change'])
-        self.scene_widgets.chessboard_row.set_on_value_changed(
-            self.callbacks['on_chessboard_row_change'])
-        self.scene_widgets.calib_check.set_on_clicked(
-            self.callbacks['on_check_calibrate_result'])
-        self.scene_widgets.calib_combobox.set_on_selection_changed(
-            self.callbacks['on_calib_combobox_change'])
-        self.scene_widgets.calibration_mode.set_on_clicked(
-            self.callbacks['on_calibration_mode'])
-        self.scene_widgets.board_square_size.set_on_value_changed(
-            self.callbacks['on_board_square_size_change'])
-        self.scene_widgets.board_marker_size.set_on_value_changed(
-            self.callbacks['on_board_marker_size_change'])
-        self.scene_widgets.data_folder_select.set_on_clicked(
-            self.callbacks['on_data_folder_button'])
-        self.scene_widgets.data_collect_button.set_on_clicked(
-            self.callbacks['on_collect_data'])
-        self.scene_widgets.data_list_remove_button.set_on_clicked(
-            self.callbacks['on_data_list_remove'])
-        self.scene_widgets.data_save_button.set_on_clicked(
-            self.callbacks['on_data_save_button'])
-        self.scene_widgets.board_type_combobox.set_on_selection_changed(
-            self.callbacks['on_board_type_combobox_change'])
+
+        self.window.set_on_key(self.callbacks['on_key_pressed'])
+
 
     def __init_bbox(self):
         # Initialize bounding box parameters
@@ -185,14 +156,14 @@ class PipelineView:
         if self.scene_widgets.tab_view.selected_tab_index == 3: # calib tab
             if self.scene_widgets.show_calib.get_is_open() and 'calib_color' in frame_elements:
                 sampling_ratio = self.video_size[1] / frame_elements['calib_color'].columns
-                self.scene_widgets.depth_video.update_image(
+                self.scene_widgets.calib_video.update_image(
                     frame_elements['calib_color'].resize(sampling_ratio).to_legacy())
 
 
         self.geometry_registry("camera", frame_elements, self.line_material)
         self.geometry_registry("robot_base_frame", frame_elements, self.pcd_material)
         self.geometry_registry("robot_end_frame", frame_elements, self.pcd_material)
-        self.geometry_registry("chessboard", frame_elements, self.pcd_material)
+        self.geometry_registry("board_pose", frame_elements, self.pcd_material)
 
 
         if 'status_message' in frame_elements:
@@ -208,10 +179,6 @@ class PipelineView:
         if name in frame_elements:
             self.pcdview.scene.remove_geometry(name)
             self.pcdview.scene.add_geometry(name, frame_elements[name], material)
-
-    def geometry_remove(self, object_name):
-        if self.pcdview.scene.has_geometry(object_name):
-            self.pcdview.scene.remove_geometry(object_name)
 
     def update_pcd_geometry(self):
         if not self.flag_gui_init:
@@ -307,7 +274,7 @@ class PipelineView:
     def on_layout(self, layout_context):
         """Callback on window initialize / resize"""
         frame = self.window.content_rect
-        panel_width = self.em * 20
+        panel_width = self.em * 21
         # Set the frame for the panel on the right side
         self.scene_widgets.panel.frame = gui.Rect(frame.get_right() - panel_width,
                                                frame.y, panel_width,

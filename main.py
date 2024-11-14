@@ -18,7 +18,7 @@ if __name__ == "__main__":
         'folder_path': '_tmp',  # Specify the folder path if using 'load_from_folder'
         'pose_file_path': './poses.txt',  # Specify the pose file path for 'auto_calibrated_mode'
         'load_intrinsic': True,  # Set to True or False
-        'intrinsic_path': './Calibration_results/calibration_results.json',  # Path to the intrinsic JSON file
+        'calib_path': './Calibration_results/calibration_results.json',  # Path to the intrinsic JSON file
         'device': 'cuda:0',
         'camera_config' : './default_config.json',
         'rgbd_video' : None,

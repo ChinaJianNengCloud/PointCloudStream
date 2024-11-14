@@ -69,16 +69,24 @@ class RobotInterface:
         except Exception as e:
             logging.info(f"Failed to send command: {e}")
 
-    def capture_gripper_to_base(self):
-        """Capture transformation from gripper to base using forward kinematics."""
+    def capture_gripper_to_base(self, sep=True):
+        """
+        Capture the transformation from the gripper to the base using forward kinematics.
+
+        Args:
+            sep (bool): If True, separate the rotation and translation components.
+
+        Returns:
+            tuple or np.ndarray: If sep is True, returns a tuple containing the rotation (R_g2b) and translation (t_g2b) components.
+                                 If sep is False, returns the complete pose as a numpy array.
+        """
         cpose = self.pose_dict_to_array(self.lebai.get_kin_data()['actual_tcp_pose'])
-        # x, y, z = cpose['x'], cpose['y'], cpose['z']
-        # Rz, Ry, Rx = cpose['rz'], cpose['ry'], cpose['rx']
-        # rotation = R.from_euler('xyz', [Rx, Ry, Rz], degrees=False)
-        # R_g2b = rotation.as_matrix()
-        R_g2b = cpose[3:6]
-        t_g2b = cpose[0:3]
-        return R_g2b, t_g2b
+        if sep:
+            R_g2b = cpose[3:6]
+            t_g2b = cpose[0:3]
+            return R_g2b, t_g2b
+        else:    
+            return cpose
     
     def pose_dict_to_array(self, pose_quaternion_dict):
         # logger.debug("original pose: ", pose_quaternion_dict)

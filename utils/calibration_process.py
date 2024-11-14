@@ -21,7 +21,7 @@ except ImportError:
     from calibration_data import CalibrationData
 
 # Configure logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(levelname)s] %(message)s')
+# logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
 
 MARKER_SIZE = [50, 100, 250, 1000]
@@ -36,7 +36,7 @@ ARUCO_BOARD = {
 
 
 class CalibrationProcess:
-    def __init__(self, params: dict, camera_interface: CameraInterface, robot_interface: RobotInterface):
+    def __init__(self, params: dict, camera_interface: CameraInterface, robot_interface: RobotInterface, calibration_data: CalibrationData):
         self.params = params
         self.directory = params.get('directory', os.getcwd())
         self.image_amount = params.get('ImageAmount', None)
@@ -50,9 +50,8 @@ class CalibrationProcess:
         self.robot = robot_interface
         self.calibration_dir = os.path.join(self.directory, f'Calibration_results')
         os.makedirs(self.calibration_dir, exist_ok=True)
-
         # Initialize CalibrationData
-        self.calibration_data = CalibrationData(self.camera.charuco_board, self.calibration_dir)
+        self.calibration_data = calibration_data
 
     def capture_images(self):
         if self.input_method == 'capture':
@@ -198,24 +197,25 @@ def main(params):
         markerLength=params['board_marker_size'] / 1000,
         dictionary=charuco_dict
     )
-
+    calibration_data = CalibrationData(charuco_board)
+    
     if input_method in ['capture', 'auto_calibrated_mode']:
         camera_config = './default_config.json'
         sensor_config = o3d.io.read_azure_kinect_sensor_config(camera_config)
         camera = o3d.io.AzureKinectSensor(sensor_config)
         if not camera.connect(0):
             raise RuntimeError('Failed to connect to Azure Kinect sensor')
-        camera_interface = CameraInterface(camera, charuco_dict, charuco_board)
+        camera_interface = CameraInterface(camera, calibration_data)
         robot_interface = RobotInterface()
         robot_interface.find_device()
         robot_interface.connect()
     elif input_method == 'load_from_folder':
-        camera_interface = CameraInterface(None, charuco_dict, charuco_board)  # No camera needed
+        camera_interface = CameraInterface(None, calibration_data)  # No camera needed
         robot_interface = None  # No robot interface needed
     else:
         raise ValueError(f"Unknown input method: {input_method}")
 
-    calibration_process = CalibrationProcess(params, camera_interface, robot_interface)
+    calibration_process = CalibrationProcess(params, camera_interface, robot_interface, calibration_data)
     calibration_process.run()
 
 

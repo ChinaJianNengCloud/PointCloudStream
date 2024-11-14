@@ -45,24 +45,26 @@ class SceneWidgets:
 
         # view tab
         self.__init_toggle_view_set(parent_layout=self.view_tab)
-        self.__init_toggle_aqui_mode(parent_layout=self.view_tab)
+        self.__init_aqui_mode(parent_layout=self.view_tab)
         self.__init_calibration_mode(parent_layout=self.view_tab)
-        self.__init_display_mode_combobox(parent_layout=self.view_tab)
-        self.__init_calibrate_set(parent_layout=self.view_tab)
-        self.__init_view_buttons(parent_layout=self.view_tab)
+        self.__init_display_mode(parent_layout=self.view_tab)
+
+        self.__init_view_layout(parent_layout=self.view_tab)
         self.__init_operate_info(parent_layout=self.view_tab)
 
         # general tab
         self.__init_stream_set(parent_layout=self.general_tab)
-        self.__init_save_toggles(parent_layout=self.general_tab)
-        self.__init_save_buttons(parent_layout=self.general_tab)
+        self.__init_record_save(parent_layout=self.general_tab)
+        self.__init_save_layout(parent_layout=self.general_tab)
         self.__init_video_displays(parent_layout=self.general_tab)
         self.__init_scene_info(parent_layout=self.general_tab)
 
         # Calibration tab
-        self.__init_calibrate_button(parent_layout=self.calibration_tab)
+        self.__init_calibrate_layout(parent_layout=self.calibration_tab)
         self.__init_calibration_settings(parent_layout=self.calibration_tab)
         self.__calib_color_image_display(parent_layout=self.calibration_tab)
+        self.__calibration_collect_layout(parent_layout=self.calibration_tab)
+        self.__init_calibrate_set(parent_layout=self.calibration_tab)
         # bbox tab
         self.__init_bbox_controls(parent_layout=self.bbox_tab)
 
@@ -100,7 +102,7 @@ class SceneWidgets:
         # self.record_list = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
 
         self.data_list_view = gui.ListView()
-        # self.data_list_view.set_items(self.record_list)
+        self.data_list_view.set_items(['Click to add data'])
         self.data_list_view.set_max_visible_items(5)
         layout.add_child(self.data_list_view)
         list_operation_layout = gui.Horiz()
@@ -115,10 +117,10 @@ class SceneWidgets:
         self.data_folder_text = gui.TextEdit()
         data_folder_layout.add_child(self.data_folder_text)
         data_folder_layout.add_fixed(0.25 * self.em)
-        self.data_folder_select = gui.Button("...")
-        self.data_folder_select.horizontal_padding_em = 0.5
-        self.data_folder_select.vertical_padding_em = 0
-        data_folder_layout.add_child(self.data_folder_select)
+        self.data_folder_select_button = gui.Button("...")
+        self.data_folder_select_button.horizontal_padding_em = 0.5
+        self.data_folder_select_button.vertical_padding_em = 0
+        data_folder_layout.add_child(self.data_folder_select_button)
         layout.add_child(data_folder_layout)
 
 
@@ -127,9 +129,73 @@ class SceneWidgets:
         self.data_save_button.vertical_padding_em = 0
         layout.add_child(self.data_save_button)
 
+    def __calibration_collect_layout(self, parent_layout=None):
+        # layout
+        layout = gui.Vert(self.em, gui.Margins(0, self.em, self.em // 2, self.em))
+        parent_layout.add_child(layout)
+        self.calib_collect_button = gui.Button("Collect Current Frame (Space)")
+        self.calib_collect_button.horizontal_padding_em = 1
+        self.calib_collect_button.vertical_padding_em = 0
+        layout.add_child(self.calib_collect_button)
+        
+        # List View
+        self.frame_list_view = gui.ListView()
+        self.frame_list_view.set_items(['Click "Collect Current Frame" to start'])
+        self.frame_list_view.set_max_visible_items(5)
+        layout.add_child(self.frame_list_view)
+        list_operation_layout = gui.Horiz(0.25 * self.em)
+        layout.add_child(list_operation_layout)
+        self.calib_list_remove_button = gui.Button("Remove")
+        self.calib_list_remove_button.horizontal_padding_em = 0.5
+        self.calib_list_remove_button.vertical_padding_em = 0
+        list_operation_layout.add_child(self.calib_list_remove_button)
+
+        self.robot_move_button = gui.Button("Move Robot")
+        self.robot_move_button.horizontal_padding_em = 0.5
+        self.robot_move_button.vertical_padding_em = 0
+        list_operation_layout.add_child(self.robot_move_button)
+
+        self.calib_button = gui.Button("Calib (C)")
+        self.calib_button.horizontal_padding_em = 0.5
+        self.calib_button.vertical_padding_em = 0
+        list_operation_layout.add_child(self.calib_button)
+
+        frame_folder_layout = gui.Horiz()
+        frame_folder_layout.add_child(gui.Label("Calib Path:"))
+        self.calib_save_text = gui.TextEdit()
+        frame_folder_layout.add_child(self.calib_save_text)
+        frame_folder_layout.add_fixed(0.25 * self.em)
+
+        layout.add_child(frame_folder_layout)
+
+
+        self.calib_save_button = gui.Button("Save Calibration and Check")
+        self.calib_save_button.horizontal_padding_em = 1
+        self.calib_save_button.vertical_padding_em = 0
+        layout.add_child(self.calib_save_button)
+
+    def __init_calibrate_set(self, parent_layout=None):
+        layout = gui.Horiz(self.em)
+        parent_layout.add_child(layout)
+        stream_label = gui.Label("Load calib: ")
+        layout.add_child(stream_label)
+        self.calib_combobox = gui.Combobox()
+        self.calib_combobox.add_item("None      ")
+        self.calib_combobox.enabled = False
+        # self.stream_combbox.add_item("Video")
+        layout.add_child(self.calib_combobox)
+
+        # self.stream_combbox.selected_text = "Camera"
+        self.calib_check_button = gui.Button("check")
+        self.calib_check_button.horizontal_padding_em = 1
+        self.calib_check_button.vertical_padding_em = 0
+        layout.add_child(self.calib_check_button)
+
+
+        # button_layout.add_stretch()
 
     def __init_fps_label(self, parent_layout=None):
-        self.fps_label = gui.Label("FPS: 99")
+        self.fps_label = gui.Label("FPS: 99 ")
         parent_layout.add_child(self.fps_label)
 
     def __init_stream_set(self, parent_layout=None):
@@ -142,31 +208,12 @@ class SceneWidgets:
         self.stream_combbox.add_item("Video")
         layout.add_child(self.stream_combbox)
         self.stream_combbox.selected_text = "Camera"
-        self.stream_init_start = gui.Button("Start")
-        self.stream_init_start.horizontal_padding_em = 1
-        self.stream_init_start.vertical_padding_em = 0
-        layout.add_child(self.stream_init_start)
+        self.stream_init_button = gui.Button("Start")
+        self.stream_init_button.horizontal_padding_em = 1
+        self.stream_init_button.vertical_padding_em = 0
+        layout.add_child(self.stream_init_button)
 
 
-    def __init_calibrate_set(self, parent_layout=None):
-        layout = gui.Horiz(self.em)
-        parent_layout.add_child(layout)
-        stream_label = gui.Label("Check calib: ")
-        layout.add_child(stream_label)
-        self.calib_combobox = gui.Combobox()
-        self.calib_combobox.add_item("None      ")
-        self.calib_combobox.enabled = False
-        # self.stream_combbox.add_item("Video")
-        layout.add_child(self.calib_combobox)
-
-        # self.stream_combbox.selected_text = "Camera"
-        self.calib_check = gui.Button("check")
-        self.calib_check.horizontal_padding_em = 1
-        self.calib_check.vertical_padding_em = 0
-        layout.add_child(self.calib_check)
-
-
-        # button_layout.add_stretch()
         
     def __init_status_message(self, parent_layout=None):
         self.status_message = gui.Label("System: No Stream is Initialized                 ")
@@ -184,60 +231,58 @@ class SceneWidgets:
         setting_layout = gui.Vert(self.em)
         
         board_type_layout = gui.Horiz(self.em)
-        board_type_text = gui.Label("Aruco type: ")
+        board_type_label = gui.Label("Aruco type: ")
         self.board_type_combobox = gui.Combobox()
         [self.board_type_combobox.add_item(b_type) 
             for b_type in 
             sorted(ARUCO_BOARD.keys(), key=lambda x: int(x.split('_')[1][0]))]
         
-        board_type_layout.add_child(board_type_text)
+        board_type_layout.add_child(board_type_label)
         board_type_layout.add_child(self.board_type_combobox)
 
         setting_layout.add_child(board_type_layout)
 
         
-        self.board_square_size = gui.NumberEdit(gui.NumberEdit.DOUBLE)
-        self.board_square_size.double_value = 23
-        self.board_square_size.set_limits(0.01, 30)
-        self.board_marker_size = gui.NumberEdit(gui.NumberEdit.DOUBLE)
-        self.board_marker_size.double_value = 17.5
-        self.board_marker_size.set_limits(0.01, 30)
+        self.board_square_size_num_edit = gui.NumberEdit(gui.NumberEdit.DOUBLE)
+        self.board_square_size_num_edit.double_value = 23
+        self.board_square_size_num_edit.set_limits(0.01, 30)
+        self.board_marker_size_num_edit = gui.NumberEdit(gui.NumberEdit.DOUBLE)
+        self.board_marker_size_num_edit.double_value = 17.5
+        self.board_marker_size_num_edit.set_limits(0.01, 30)
 
         numlayout = gui.Horiz(self.em // 2)
         numlayout.add_child(gui.Label("Square Size:"))
-        numlayout.add_child(self.board_square_size)
+        numlayout.add_child(self.board_square_size_num_edit)
         numlayout.add_child(gui.Label("mm"))
         setting_layout.add_child(numlayout)
         numlayout = gui.Horiz(self.em // 2)
         numlayout.add_child(gui.Label("Marker Size:"))
-        numlayout.add_child(self.board_marker_size)
+        numlayout.add_child(self.board_marker_size_num_edit)
         numlayout.add_child(gui.Label("mm"))
         numlayout.add_fixed(self.em)
         setting_layout.add_child(numlayout)
 
-        self.chessboard_col = gui.NumberEdit(gui.NumberEdit.INT)
-        self.chessboard_col.int_value = 11
-        self.chessboard_col.set_limits(5, 15)  # value coerced to 1
+        self.board_col_num_edit = gui.NumberEdit(gui.NumberEdit.INT)
+        self.board_col_num_edit.int_value = 11
+        self.board_col_num_edit.set_limits(5, 15)  # value coerced to 1
         numlayout = gui.Horiz()
         numlayout.add_child(gui.Label("Col"))
-        numlayout.add_child(self.chessboard_col)
+        numlayout.add_child(self.board_col_num_edit)
         numlayout.add_fixed(self.em)
     
-        self.chessboard_row = gui.NumberEdit(gui.NumberEdit.INT)
-        self.chessboard_row.int_value = 6
-        self.chessboard_row.set_limits(5, 15)  # value coerced to 1
+        self.board_row_num_edit = gui.NumberEdit(gui.NumberEdit.INT)
+        self.board_row_num_edit.int_value = 6
+        self.board_row_num_edit.set_limits(5, 15)  # value coerced to 1
         numlayout.add_child(gui.Label("Row"))
-        numlayout.add_child(self.chessboard_row)
+        numlayout.add_child(self.board_row_num_edit)
         numlayout.add_fixed(self.em)
         
         setting_layout.add_child(numlayout)
 
         parent_layout.add_child(setting_layout)
 
-    def __calibration_collect_panel(self, parent_layout=None):
-        pass
 
-    def __init_calibrate_button(self, parent_layout=None):
+    def __init_calibrate_layout(self, parent_layout=None):
 
         button_layout = gui.Horiz(self.em)
         parent_layout.add_child(button_layout)
@@ -245,23 +290,23 @@ class SceneWidgets:
         hardware_button_layout = gui.Vert(self.em)
         button_layout.add_child(hardware_button_layout)
 
-        self.robot_button = gui.Button("Robot Init")
-        self.robot_button.horizontal_padding_em = 0.5
-        self.robot_button.vertical_padding_em = 0
-        hardware_button_layout.add_child(self.robot_button)
+        self.robot_init_button = gui.Button("Robot Init")
+        self.robot_init_button.horizontal_padding_em = 0.5
+        self.robot_init_button.vertical_padding_em = 0
+        hardware_button_layout.add_child(self.robot_init_button)
 
         # button_layout.add_stretch()
-        self.cam_calibreate_button = gui.Button("Cam Calib Init")
-        self.cam_calibreate_button.tooltip = "Start Camera Calibration"
-        self.cam_calibreate_button.horizontal_padding_em = 0.5
-        self.cam_calibreate_button.vertical_padding_em = 0
-        hardware_button_layout.add_child(self.cam_calibreate_button)
+        self.cam_calib_init_button = gui.Button("Cam Calib Init")
+        self.cam_calib_init_button.tooltip = "Start Camera Calibration"
+        self.cam_calib_init_button.horizontal_padding_em = 0.5
+        self.cam_calib_init_button.vertical_padding_em = 0
+        hardware_button_layout.add_child(self.cam_calib_init_button)
 
-        self.he_calibreate_button = gui.Button("HandEye Calib Init")
-        self.he_calibreate_button.tooltip = "Start Hand-Eye Calibration"
-        self.he_calibreate_button.horizontal_padding_em = 0.5
-        self.he_calibreate_button.vertical_padding_em = 0
-        button_layout.add_child(self.he_calibreate_button)
+        self.handeye_calib_init_button = gui.Button("HandEye Calib Init")
+        self.handeye_calib_init_button.tooltip = "Start Hand-Eye Calibration"
+        self.handeye_calib_init_button.horizontal_padding_em = 0.5
+        self.handeye_calib_init_button.vertical_padding_em = 0
+        button_layout.add_child(self.handeye_calib_init_button)
         # button_layout.add_stretch()
         
 
@@ -270,36 +315,36 @@ class SceneWidgets:
         parent_layout.add_child(toggle_layout)
         # toggle_layout.add_stretch()
 
-        self.toggle_capture = gui.ToggleSwitch("Capture / Play")
-        self.toggle_capture.is_on = False
-        toggle_layout.add_child(self.toggle_capture)
+        self.capture_toggle = gui.ToggleSwitch("Capture / Play")
+        self.capture_toggle.is_on = False
+        toggle_layout.add_child(self.capture_toggle)
 
-        self.toggle_model_init = gui.ToggleSwitch("Seg Mode")
-        self.toggle_model_init.is_on = False
-        toggle_layout.add_child(self.toggle_model_init)
+        self.seg_model_init_toggle = gui.ToggleSwitch("Seg Mode")
+        self.seg_model_init_toggle.is_on = False
+        toggle_layout.add_child(self.seg_model_init_toggle)
 
         # toggle_layout.add_stretch()
 
 
-    def __init_toggle_aqui_mode(self, parent_layout=None):
+    def __init_aqui_mode(self, parent_layout=None):
         edit_mode_toggle_2 = gui.Horiz(self.em)
         parent_layout.add_child(edit_mode_toggle_2)
 
-        self.toggle_acq_mode = gui.ToggleSwitch("Acquisition Mode")
-        self.toggle_acq_mode.is_on = False
-        edit_mode_toggle_2.add_child(self.toggle_acq_mode)
+        self.acq_mode_toggle = gui.ToggleSwitch("Acquisition Mode")
+        self.acq_mode_toggle.is_on = False
+        edit_mode_toggle_2.add_child(self.acq_mode_toggle)
 
     def __init_calibration_mode(self, parent_layout=None):
         edit_mode_toggle_2 = gui.Horiz(self.em)
         parent_layout.add_child(edit_mode_toggle_2)
 
-        self.calibration_mode = gui.ToggleSwitch("Calibration Mode")
-        self.calibration_mode.is_on = False
-        self.calibration_mode.enabled = False
-        edit_mode_toggle_2.add_child(self.calibration_mode)
+        self.calibration_mode_toggle = gui.ToggleSwitch("Calibration Mode")
+        self.calibration_mode_toggle.is_on = False
+        self.calibration_mode_toggle.enabled = False
+        edit_mode_toggle_2.add_child(self.calibration_mode_toggle)
 
 
-    def __init_display_mode_combobox(self, parent_layout=None):
+    def __init_display_mode(self, parent_layout=None):
         display_mode_layout = gui.Horiz(self.em)
         parent_layout.add_child(display_mode_layout)
 
@@ -314,29 +359,29 @@ class SceneWidgets:
         # Callback to be set later in PipelineView
         display_mode_layout.add_child(self.display_mode_combobox)
 
-    def __init_view_buttons(self, parent_layout=None):
-        view_buttons = gui.Horiz(self.em)
-        parent_layout.add_child(view_buttons)
-        view_buttons.add_stretch()  # for centering
-        self.__init_camera_view_button(view_buttons)
-        self.__init_birds_eye_view_button(view_buttons)
-        view_buttons.add_stretch()  # for centering
+    def __init_view_layout(self, parent_layout=None):
+        view_layout = gui.Horiz(self.em)
+        parent_layout.add_child(view_layout)
+        view_layout.add_stretch()  # for centering
+        self.__init_camera_view_layout(view_layout)
+        self.__init_birds_eye_view_layout(view_layout)
+        view_layout.add_stretch()  # for centering
 
-    def __init_camera_view_button(self, parent_layout):
+    def __init_camera_view_layout(self, parent_layout):
         self.camera_view_button = gui.Button("Camera view")
         self.camera_view_button.horizontal_padding_em = 0.5
         self.camera_view_button.vertical_padding_em = 0
         # Callback to be set later in PipelineView
         parent_layout.add_child(self.camera_view_button)
 
-    def __init_birds_eye_view_button(self, parent_layout):
+    def __init_birds_eye_view_layout(self, parent_layout):
         self.birds_eye_view_button = gui.Button("Bird's eye view")
         self.birds_eye_view_button.horizontal_padding_em = 0.5
         self.birds_eye_view_button.vertical_padding_em = 0
         # Callback to be set later in PipelineView
         parent_layout.add_child(self.birds_eye_view_button)
 
-    def __init_save_toggles(self, parent_layout=None):
+    def __init_record_save(self, parent_layout=None):
         save_toggle = gui.Horiz(self.em)
         parent_layout.add_child(save_toggle)
         save_toggle.add_child(gui.Label("Record / Save"))
@@ -348,22 +393,22 @@ class SceneWidgets:
             self.toggle_record.set_on_clicked(self.callbacks['on_toggle_record'])
             save_toggle.add_child(self.toggle_record)
 
-    def __init_save_buttons(self, parent_layout=None):
-        save_buttons = gui.Horiz(self.em)
-        parent_layout.add_child(save_buttons)
+    def __init_save_layout(self, parent_layout=None):
+        save_layout = gui.Horiz(self.em)
+        parent_layout.add_child(save_layout)
         # save_buttons.add_stretch()  # for centering
-        self.__init_save_pcd_button(save_buttons)
-        self.__init_save_rgbd_button(save_buttons)
+        self.__init_save_pcd_layout(save_layout)
+        self.__init_save_rgbd_layout(save_layout)
 
         # save_buttons.add_stretch()  # for centering
 
-    def __init_save_pcd_button(self, parent_layout):
+    def __init_save_pcd_layout(self, parent_layout):
         self.save_pcd_button = gui.Button("Save Point cloud")
         self.save_pcd_button.horizontal_padding_em = 0.5
         self.save_pcd_button.vertical_padding_em = 0
         parent_layout.add_child(self.save_pcd_button)
 
-    def __init_save_rgbd_button(self, parent_layout):
+    def __init_save_rgbd_layout(self, parent_layout):
         self.save_rgbd_button = gui.Button("Save RGBD frame")
         self.save_rgbd_button.horizontal_padding_em = 0.5
         self.save_rgbd_button.vertical_padding_em = 0
@@ -393,6 +438,14 @@ class SceneWidgets:
         parent_layout.add_child(self.show_calib)
         self.calib_video = gui.ImageWidget()
         self.show_calib.add_child(self.calib_video)
+        self.show_calib.add_fixed(0.5 * self.em)
+
+        horiz_layout = gui.Horiz(self.em)
+        self.detect_board_toggle = gui.ToggleSwitch("Detect Board")
+        horiz_layout.add_child(self.detect_board_toggle)
+        self.show_axis_in_scene_toggle = gui.ToggleSwitch("Show Axis in Scene")
+        horiz_layout.add_child(self.show_axis_in_scene_toggle)
+        self.show_calib.add_child(horiz_layout)
 
     def __init_depth_image_display(self, parent_layout=None):
         self.show_depth = gui.CollapsableVert("Depth image")
@@ -442,32 +495,33 @@ class SceneWidgets:
             self.bbox_sliders[param] = slider
             self.bbox_edits[param] = number_edit
 
-        control_buttons = gui.Horiz(self.em)
-        control_buttons.add_stretch()
-        self.bbox_controls.add_child(control_buttons)
+        control_layout = gui.Horiz(self.em)
+        control_layout.add_stretch()
+        self.bbox_controls.add_child(control_layout)
         self.save_bbox_button = gui.Button("Save")
         # self.save_bbox_button.set_on_clicked(self.callbacks['on_save_bbox'])
         self.save_bbox_button.horizontal_padding_em = 0.5
         self.save_bbox_button.vertical_padding_em = 0
-        control_buttons.add_child(self.save_bbox_button)
+        control_layout.add_child(self.save_bbox_button)
 
         self.load_bbox_button = gui.Button("Load")
         # self.load_bbox_button.set_on_clicked(self.callbacks['on_load_bbox'])
         self.load_bbox_button.horizontal_padding_em = 0.5
         self.load_bbox_button.vertical_padding_em = 0
-        control_buttons.add_child(self.load_bbox_button)
-        control_buttons.add_stretch()
+        control_layout.add_child(self.load_bbox_button)
+        control_layout.add_stretch()
 
     def set_disable_before_stream_init(self):
-        self.toggle_capture.enabled = False
-        self.toggle_model_init.enabled = False
-        self.he_calibreate_button.enabled = False
+        self.capture_toggle.enabled = False
+        self.seg_model_init_toggle.enabled = False
+        self.handeye_calib_init_button.enabled = False
         self.save_pcd_button.enabled = False
         self.save_rgbd_button.enabled = False
+        self.detect_board_toggle.enabled = False
     
     def after_stream_init(self):
-        self.toggle_capture.enabled = True
-        self.toggle_model_init.enabled = True
+        self.capture_toggle.enabled = True
+        self.seg_model_init_toggle.enabled = True
         self.save_pcd_button.enabled = True
         self.save_rgbd_button.enabled = True
 

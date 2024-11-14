@@ -48,7 +48,7 @@ class PipelineModel:
         self.rgbd_frame = None
         self.close_stream = None
         self.T_cam_to_base = None
-        self.robot_interface:RobotInterface = None
+
         # self.robot_trans_matrix = calibrated_camera_to_end_effector
 
         self.cv_capture = threading.Condition()  # condition variable
@@ -66,6 +66,7 @@ class PipelineModel:
         self.square_size = 0.015
         self.T_cam_to_board = np.eye(4)
         self.__init_gui_signals()
+        self.__calibration_data_init()
         self.executor = ThreadPoolExecutor(max_workers=3,
                                            thread_name_prefix='Capture-Save')
         
@@ -82,17 +83,34 @@ class PipelineModel:
         self.flag_save_pcd = False
         self.flag_segemtation_mode = False
         self.flag_exit = False
+        self.flag_stream_init = False
+        self.flag_robot_init = False
+        self.flag_calibration_mode = False
+        self.flag_tracking_board = False
+        self.flag_camera_init = False
+        self.flag_handeye_calib_init = False
+        self.flag_handeye_calib_success = False
+        self.flag_calib_collect = False
+        self.flag_calib_axis_to_scene = False
+
         self.color_mean = None
         self.color_std = None
         self.pcd_frame = None
         self.rgbd_frame = None
-        self.flag_stream_init = False
-        self.flag_robot_init = False
-        self.camera_init = False
-        self.hand_eye_calib = False
-        self.flag_calibration_mode = False
-        self.objp = None
+        # self.objp = None
         self.dist_coeffs = None
+
+
+    def __calibration_data_init(self):
+        from utils import CalibrationData
+        charuco_dict = cv2.aruco.getPredefinedDictionary(ARUCO_BOARD[self.params['board_type']])
+        charuco_board = cv2.aruco.CharucoBoard(
+            self.params['board_shape'],
+            squareLength=self.params['board_square_size'] / 1000, # to meter
+            markerLength=self.params['board_marker_size'] / 1000, # to meter
+            dictionary=charuco_dict
+        )
+        self.calibration_data = CalibrationData(charuco_board)
 
     @property
     def max_points(self):
@@ -157,14 +175,7 @@ class PipelineModel:
         logger.info(self.intrinsic_matrix)
         self.rgbd_frame = self.video.next_frame()
         self.close_stream = self.video.close
-        # self.next_frame_func = self.video.next_frame
 
-    def objp_update(self, chessboard_dims, square_size=0.02):
-        self.params['board_shape'], 
-        self.checkerboard_dims = chessboard_dims
-        self.square_size = self.params['board_square_size']
-        self.objp = np.zeros((self.checkerboard_dims[1] * self.checkerboard_dims[0], 3), np.float32)
-        self.objp[:, :2] = np.mgrid[0:self.checkerboard_dims[0], 0:self.checkerboard_dims[1]].T.reshape(-1, 2) * self.square_size
 
 
     def run(self):
@@ -172,7 +183,7 @@ class PipelineModel:
         n_pts = 0
         frame_id = 0
         t1 = time.perf_counter()
-        self.objp_update(self.checkerboard_dims, self.square_size)
+
 
         pcd_errors = 0
         while (not self.flag_exit and
@@ -233,9 +244,6 @@ class PipelineModel:
             n_pts += self.pcd_frame.point.positions.shape[0]
             if frame_id % 30 == 0 and frame_id > 0:
                 t0, t1 = t1, time.perf_counter()
-            #     logger.debug(f"\nframe_id = {frame_id}, \t {(t1-t0)*1000./60:0.2f}"
-            #               f"ms/frame \t {(t1-t0)*1e9/n_pts:.2f} ms/Mp\t")
-            #     n_pts = 0
                 frame_elements['fps'] =  30 * (1.0 / (t1 - t0))
 
             if frame_id % 120 == 0:
@@ -243,17 +251,14 @@ class PipelineModel:
                 self.color_std = np.std(frame_elements['pcd'].point.colors.cpu().numpy(), axis=0).tolist()  # frame_elements['pcd'].point.colors.std(dim=0)
                 logger.debug(f"color_mean = {self.color_mean}, color_std = {self.color_std}")
 
-            if self.flag_robot_init and self.hand_eye_calib:
+            if self.flag_robot_init and self.flag_handeye_calib_success:
                 # Draw an axis for the robot position pose in the scene
                 robot_end_frame, robot_base_frame = self.robot_tracking()
-                frame_elements['robot_end_frame'] = robot_end_frame
-                frame_elements['robot_base_frame'] = robot_base_frame
-
-            if self.flag_calibration_mode:
-                chessboard_pose = self.chessboard_tracking(
-                    color_image=self.rgbd_frame.color)
-                if chessboard_pose is not None:
-                    frame_elements['chessboard'] = chessboard_pose
+                if robot_end_frame is None:
+                    pass
+                else:
+                    frame_elements['robot_end_frame'] = robot_end_frame
+                    frame_elements['robot_base_frame'] = robot_base_frame
 
             if self.flag_segemtation_mode:
                 labels = segment_pcd_from_2d(self.pcd_seg_model, 
@@ -261,6 +266,17 @@ class PipelineModel:
                                              self.pcd_frame, np.asarray(self.rgbd_frame.color))
                 frame_elements['seg'] = labels
 
+            if self.flag_tracking_board:
+                # logger.debug("Tracking board")
+                calib_color, board_pose = self.camera_board_dectecting(axis_to_scene=self.flag_calib_axis_to_scene)
+                frame_elements['calib_color'] = o3d.t.geometry.Image(o3c.Tensor(calib_color, 
+                                                                                device=o3d.core.Device('cpu:0')))
+                if board_pose is not None:
+                    frame_elements['board_pose'] = board_pose
+                    
+                # logger.debug("Tracking board done")
+
+            # push data
             self.update_view(frame_elements)
 
             if self.flag_save_rgbd:
@@ -270,6 +286,10 @@ class PipelineModel:
             if self.flag_save_pcd:
                 self.save_pcd()
                 self.flag_save_pcd = False
+            
+            if self.flag_calib_collect:
+                self.calib_collect(np.asarray(self.rgbd_frame.color), self.flag_handeye_calib_init)
+                self.flag_calib_collect = False
 
             self.rgbd_frame = future_rgbd_frame.result()
             while self.rgbd_frame is None:
@@ -342,9 +362,22 @@ class PipelineModel:
         
     def handeye_calibration_init(self):
         from utils import CalibrationProcess
-        self.calibration_process: CalibrationProcess = CalibrationProcess(self.params, 
+        try:
+            
+            self.calibration_process: CalibrationProcess = CalibrationProcess(self.params, 
                                                                           self.camera_interface, 
-                                                                          self.robot_interface)
+                                                                          self.robot_interface, 
+                                                                          self.calibration_data)
+            self.flag_handeye_init = True
+            msg = 'Handeye: Initialized'
+            msg_color = gui.Color(0, 1, 0)
+        except Exception as e:
+            msg = f'Handeye: Initialized failed'
+            logger.error(msg+f' [{e}]')
+            msg_color = gui.Color(1, 0, 0)
+            self.flag_handeye_init = False
+
+        return self.flag_handeye_init, msg, msg_color
 
     def robot_init(self):
         from utils import RobotInterface
@@ -357,77 +390,68 @@ class PipelineModel:
             msg = f'Robot: Connected [{ip}]'
             msg_color = gui.Color(0, 1, 0)
             self.flag_robot_init = True
+            self.calibration_data.reset()
         except Exception as e:
-            msg = f'Robot: Connection failed [{e}]'
+            msg = f'Robot: Connection failed'
+            logger.error(msg+f' [{e}]')
             msg_color = gui.Color(1, 0, 0)
+            self.flag_robot_init = False
 
-        return msg, msg_color, ip
+        return self.flag_robot_init, msg, msg_color
 
     def camera_calibration_init(self):
-        import cv2
         from utils import CameraInterface
-        charuco_dict = cv2.aruco.getPredefinedDictionary(ARUCO_BOARD[self.params['board_type']])
-        charuco_board = cv2.aruco.CharucoBoard(
-            self.params['board_shape'],
-            squareLength=self.params['board_square_size'] / 1000, # to meter
-            markerLength=self.params['board_marker_size'] / 1000, # to meter
-            dictionary=charuco_dict
-        )
-        self.camera_interface: CameraInterface = CameraInterface(self.camera, charuco_dict, charuco_board)
+        self.calibration_data.reset()
+        self.camera_interface: CameraInterface = CameraInterface(self.camera, self.calibration_data)
         msg = "Calibration: Camera calibration initialized"
-        return msg, gui.Color(0, 1, 0)
+        return True, msg, gui.Color(0, 1, 0)
     
-    def robot_tracking(self):
-        pose_robot = self.robot_interface.get_position()
-        rvecs, tvects = self.robot_interface.capture_gripper_to_base()
-        # Extract position and rotation from pose
-        # rotation_robot = R.from_euler('xyz', [rx, ry, rz])
-        # # rotation_robot = cv2.Rodrigues(np.array([rx, ry, rz]))
-        # robot_R = rotation_robot.as_matrix()
-        # rotation_matrix = R.from_euler('xyz', [rx, ry, rz], degrees=False).as_matrix()
-        # rotation_vector, _ = cv2.Rodrigues(rotation_matrix)
-        rotation_matrix, _ = cv2.Rodrigues(rvecs)
+    def camera_board_dectecting(self, axis_to_scene: True):
+        img = cv2.cvtColor(np.asarray(self.rgbd_frame.color), cv2.COLOR_RGB2BGR)
+        processed_img, rvec, tvec = self.camera_interface._process_and_display_frame(img, 
+                                                                                     self.calibration_data.camera_matrix, 
+                                                                                     self.calibration_data.dist_coeffs, 
+                                                                                     ret_vecs=True)
+        if rvec is None or tvec is None or axis_to_scene is False:
+            return processed_img, None
         
 
+        self.T_cam_to_board[:3, :3] = cv2.Rodrigues(rvec)[0] #R.from_euler('xyz', rvec.reshape(1, 3), degrees=False).as_matrix().reshape(3, 3)
+        self.T_cam_to_board[:3, 3] = tvec.ravel()
+        chessboard_pose_instance = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
+        chessboard_pose_instance.transform(self.T_cam_to_board)
+        return processed_img, chessboard_pose_instance
+    
+    def robot_tracking(self):
+        if self.T_cam_to_base is None:
+            return None, None
+        rvecs, tvects = self.robot_interface.capture_gripper_to_base()
+        rotation_matrix, _ = cv2.Rodrigues(rvecs)
         T_end_to_base = np.eye(4)
         T_end_to_base[:3, :3] = rotation_matrix
         T_end_to_base[:3, 3] = tvects.ravel()
-        # T_base_to_cam = self.T_cam_to_base
         T_base_to_cam =  np.linalg.inv(self.T_cam_to_base)
-        # logger.debug(f"Robot pose: {x}, {y}, {z}, {rx}, {ry}, {rz}")
-        # T_end_to_base = np.linalg.inv(T_base_to_end)
-        # T_ee_to_cam = np.eye(4)
-        # T_ee_to_cam[0:3, 0:3] = R_calibrated
-        # T_ee_to_cam[0:3, 3] = T_calibrated.ravel()
         T_cam_to_end = T_base_to_cam @ T_end_to_base
-        # cur_x, cur_y, cur_z = T_base_to_cam[0, 3], T_base_to_cam[1, 3], T_base_to_cam[2, 3]
-        # logger.debug(f"Robot pose: {cur_x}, {cur_y}, {cur_z}")
-        # Create a coordinate frame at the robot's position in the scene
         robot_end_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
         robot_base_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
         robot_end_frame.transform(T_cam_to_end)
         robot_base_frame.transform(T_base_to_cam)
         # Add the robot frame to the frame elements for visualization
         return robot_end_frame, robot_base_frame
-
-    def chessboard_tracking(self, color_image):
-        color = np.asarray(color_image)
-        gray = cv2.cvtColor(color, cv2.COLOR_BGR2GRAY)
-
-        ret, corners = cv2.findChessboardCorners(gray, self.checkerboard_dims, None, flags=cv2.CALIB_CB_FAST_CHECK | cv2.CALIB_CB_ADAPTIVE_THRESH | cv2.CALIB_CB_NORMALIZE_IMAGE)
-        if ret:
-            corners2 = cv2.cornerSubPix(gray, corners, (11, 11), (-1,-1), 
-                                        (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001))
-            ret2, board_to_camera_rvecs, board_to_camera_tvecs = cv2.solvePnP(
-                    self.objp, corners2, self.intrinsic_matrix.cpu().numpy(), 
-                    self.dist_coeffs)
-            if ret2:
-                
-                self.T_cam_to_board [:3, :3] = R.from_euler('xyz', board_to_camera_rvecs.reshape(1, 3), degrees=False).as_matrix().reshape(3, 3)
-                self.T_cam_to_board [:3, 3] = board_to_camera_tvecs.ravel()
-                chessboard_pose_instance = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
-                chessboard_pose_instance.transform(self.T_cam_to_board )
-                logger.debug("chessboard_detected")
-                return chessboard_pose_instance
-
-        return None
+    
+    def calib_collect(self, img: np.ndarray, with_robot_pose=False):
+        if with_robot_pose:
+            logger.info("Capturing robot pose...")
+            robot_pose = self.robot_interface.capture_gripper_to_base(sep=False)
+        else:
+            robot_pose = None
+        self.calibration_data.append(img, robot_pose=robot_pose)
+    
+    def update_camera_matrix(self, intrinsic:np.ndarray, dist_coeffs:np.ndarray):
+        # intrinsic = np.array(self.calib.get('camera_matrix'))
+        self.dist_coeffs = dist_coeffs
+        self.intrinsic_matrix =  o3d.core.Tensor(
+                                    intrinsic,
+                                    dtype=o3d.core.Dtype.Float32,
+                                    device=self.o3d_device)
+    

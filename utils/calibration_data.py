@@ -21,12 +21,35 @@ class CalibrationData:
         self.imgpoints: list[np.ndarray] = []
         self.camera_to_board_rvecs: list[np.ndarray] = []
         self.camera_to_board_tvecs: list[np.ndarray] = []
+        self.__manage_list: list[str] = []
         self.save_dir = save_dir
 
         self.camera_matrix = None
         self.dist_coeffs = None
         self.calibration_results = {}
         self.image_size = None
+
+    @property
+    def display_str_list(self) -> list[str]:
+        if self.camera_matrix is None:
+            if any(x is None for x in self.robot_poses):
+               return ["p_cam:"+str(i) for i in range(len(self.images))]
+            else:
+                return ["p_cam:"+str(i) + " p_arm:"+str(i) for i in range(len(self.images))]
+        if len(self.camera_to_board_tvecs) > 0:
+            cam_tvec_string =  [np.array2string(value.ravel(), 
+                                        formatter={'float_kind': lambda x: f"{x:.2f}"}) 
+                                        for value in self.camera_to_board_tvecs ] 
+            if any(x is None for x in self.robot_poses):
+                robot_tvec_string = [''] * len(self.robot_poses)
+            else:
+                robot_tvec_string = [np.array2string(value[0:3], 
+                                        formatter={'float_kind': lambda x: f"{x:.2f}"}) 
+                                        for value in self.robot_poses]
+                
+            return ["p_cam:" + cam + " p_arm:" + robot for cam, robot in zip(cam_tvec_string, robot_tvec_string)]
+
+        return []
 
     def reset(self):
         self.images = []
@@ -48,13 +71,10 @@ class CalibrationData:
             self.images.append(image)
             self.imgpoints.append(cur_image_points)
             self.objpoints.append(cur_object_points)
-            if robot_pose is not None:
-                self.robot_poses.append(robot_pose)
+            self.robot_poses.append(robot_pose)
 
             if recalib:
-                self.calibrate_camera()
-                self.compute_reprojection_error(self)
-                self.board_pose_calculation()
+                self.calibrate_all()
         else:
             logger.warning("Failed to detect board in image, image not added.")
 
@@ -78,15 +98,16 @@ class CalibrationData:
         return ret, cur_object_points, cur_image_points
 
     def calibrate_camera(self):
-        if len(self.imgpoints) > 3:
+        print(len(self.imgpoints))
+        if len(self.imgpoints) >= 3:
             # Use cv2.calibrateCamera for camera calibration
             ret, self.camera_matrix, self.dist_coeffs, _, _ = cv2.calibrateCamera(
                 self.objpoints, self.imgpoints, self.image_size, None, None
             )
             if ret:
                 logger.info("Camera calibration successful")
-                logger.info(f"Camera matrix:\n{self.camera_matrix}")
-                logger.info(f"Distortion coefficients:\n{self.dist_coeffs}")
+                # logger.info(f"Camera matrix:\n{self.camera_matrix}")
+                # logger.info(f"Distortion coefficients:\n{self.dist_coeffs}")
             else:
                 logger.warning("Camera calibration failed")
         else:
@@ -94,9 +115,10 @@ class CalibrationData:
 
     def board_pose_calculation(self):
         if self.camera_matrix is not None and self.dist_coeffs is not None:
+            invalid_index = []
             self.camera_to_board_rvecs = []
             self.camera_to_board_tvecs = []
-            for cur_object_points, cur_image_points in zip(self.objpoints, self.imgpoints):
+            for idx, (cur_object_points, cur_image_points) in enumerate(zip(self.objpoints, self.imgpoints)):
                 ret, rvec, tvec = cv2.solvePnP(
                     cur_object_points, cur_image_points, self.camera_matrix, self.dist_coeffs
                 )
@@ -104,7 +126,10 @@ class CalibrationData:
                     self.camera_to_board_rvecs.append(rvec)
                     self.camera_to_board_tvecs.append(tvec)
                 else:
+                    invalid_index.append(idx)
                     logger.warning(f"Could not solvePnP for image points {cur_image_points}")
+            invalid_index = invalid_index[::-1]
+            [self.pop(idx) for idx in invalid_index]
         else:
             logger.warning("Camera matrix and distortion coefficients are not available.")
 
@@ -131,7 +156,7 @@ class CalibrationData:
         return new_rmatrices, new_tvecs
 
     def calibrate_hand_eye(self):
-        if np.any(self.robot_poses) is None:
+        if any(x is None for x in self.robot_poses):
             logger.warning("No robot poses available for hand-eye calibration.")
             return
         
@@ -139,8 +164,8 @@ class CalibrationData:
         base_to_end_tvecs: list[np.ndarray] = []
         for robot_pose in self.robot_poses:
             # Assuming robot_pose is an array of shape (6,), [x, y, z, rx, ry, rz], rotations in radians
-            base_to_end_rmatrices.append(
-                R.from_euler('xyz', robot_pose[3:6], degrees=False).as_matrix())
+            base_to_end_rmatrices.append(cv2.Rodrigues(robot_pose[3:6])[0])
+                # R.from_euler('xyz', robot_pose[3:6], degrees=False).as_matrix())
             base_to_end_tvecs.append(robot_pose[0:3])
 
         # Convert to end_to_base
@@ -168,6 +193,9 @@ class CalibrationData:
             except Exception as e:
                 logger.error(e)
                 continue
+            if np.nan in R_cam2base:
+                logger.warning(f"Hand-eye calibration failed for method {method_name}")
+                continue
             transformation_matrix = np.eye(4)
             transformation_matrix[:3, :3] = R_cam2base
             transformation_matrix[:3, 3] = t_cam2base.flatten()
@@ -182,13 +210,16 @@ class CalibrationData:
         self.calibration_results = calibration_results
 
     def save_calibration_data(self, path: str):
+        if self.camera_matrix is None or self.dist_coeffs is None or len(self.calibration_results) == 0:
+            logger.warning("Camera matrix and distortion coefficients are not available.")
+            return
         calibration_data = {
             'camera_matrix': self.camera_matrix.tolist(),
             'dist_coeffs': self.dist_coeffs.tolist(),
             'calibration_results': self.calibration_results
         }
         with open(path, 'w') as json_file:
-            json.dump(calibration_data, json_file, indent=4)
+            json.dump(calibration_data, json_file, indent=2)
         logger.info(f"Calibration results saved to {path}")
 
     def save_img_and_pose(self):
@@ -214,9 +245,15 @@ class CalibrationData:
         self.imgpoints.pop(index)
         self.camera_to_board_rvecs.pop(index)
         self.camera_to_board_tvecs.pop(index)
-        self.calibrate_camera()
-        self.compute_reprojection_error(self)
-        self.board_pose_calculation()
+        self.calibrate_all()
+
+
+    def calibrate_all(self):
+        if len(self.images) > 3:
+            self.calibrate_camera()
+            self.board_pose_calculation()
+            self.compute_reprojection_error()
+            self.calibrate_hand_eye()
 
     def load_camera_intrinsics(self, intrinsic_path):
         with open(intrinsic_path, 'r') as json_file:
