@@ -113,32 +113,25 @@ class RobotInterface:
     def move_with_pose_file(self, file_path):
         with open(file_path, 'r') as f:
             lines = f.readlines()
-        cartesian_poses_dict = [line.strip().split() for line in lines]
-        cartesian_poses_dict = [np.array([float(x) for x in line], dtype=np.float32) for line in cartesian_poses_dict]
-        cartesian_poses_dict =[np.hstack((line[0:3] / 1000, np.deg2rad(line[3:6]))) for line in cartesian_poses_dict] #[line[0:3] / 1000 + line[3:6] * np.pi / 180 for line in joint_poses]
+        cartesian_poses_array_list = [line.strip().split() for line in lines]
+        cartesian_poses_array_list = [np.array([float(x) for x in line], dtype=np.float32) for line in cartesian_poses_array_list]
+        cartesian_poses_array_list =[np.hstack((line[0:3] / 1000, np.deg2rad(line[3:6]))) for line in cartesian_poses_array_list]
 
-        cartesian_poses_dict_list = [self.pose_array_to_dict(pose) for pose in cartesian_poses_dict]
-
-        for cartesian_poses_dict in cartesian_poses_dict_list:
+        for cartesian_poses_array in cartesian_poses_array_list:
             self.motion_flag = False
-            cartesian_poses_array = self.pose_dict_to_array(cartesian_poses_dict)
-            print("move pose", cartesian_poses_array.tolist())
-
-            # print("pose", np.degrees(pose[3:6]))
-            # joint_pose = self.lebai.kinematics_inverse(cartesian_poses_array.tolist())
-            # print("joint_pose", joint_pose)
-
-            joint_pose = self.lebai.kinematics_inverse(cartesian_poses_dict)
-            print("move joint_pose", joint_pose)
-            self.lebai.movej(joint_pose, self.acceleration, self.velocity, self.time_running, self.radius)
-            self.lebai.wait_move()
-            # motion_id = self.lebai.movel(cartesian_poses_dict, self.acceleration, self.velocity, self.time_running, self.radius)
-            # self.lebai.wait_move()
+            self.move_to_pose(cartesian_poses_array)
+            
             print("current pose", self.pose_unit_change_to_store(
                 self.pose_dict_to_array(self.lebai.get_kin_data()['actual_tcp_pose'])))
             self.motion_flag = True
-            time.sleep(0.5)
+            # time.sleep(0.5)
 
+    def move_to_pose(self, pose_array: np.ndarray, wait=True):
+        joint_pose = self.lebai.kinematics_inverse(self.pose_array_to_dict(pose_array))
+        logger.info(f"Moving to joint position: {joint_pose}")
+        self.lebai.movej(joint_pose, self.acceleration, self.velocity, self.time_running, self.radius)
+        if wait:
+            self.lebai.wait_move()
 
 
 if __name__ == "__main__":

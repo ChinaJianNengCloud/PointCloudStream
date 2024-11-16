@@ -1,4 +1,4 @@
 from .scene import SceneWidgets
-from .TreeView import ModifiedTreeView
+from .modified_view import ModifiedTreeView
 
 __all__ = ["SceneWidgets", "ModifiedTreeView"]

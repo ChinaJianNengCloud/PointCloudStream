@@ -497,16 +497,45 @@ class PipelineController:
 
     @callback
     def on_robot_move_button(self):
-        logger.debug("Moving robot")
+        idx = self.pipeline_view.scene_widgets.frame_list_view.selected_index
+        try:
+            self.pipeline_model.robot_interface.move_to_pose(
+                self.calibration_data.robot_poses[idx])
+            self.calibration_data.modify(idx, np.asarray(self.pipeline_model.rgbd_frame.color),
+                                        self.pipeline_model.robot_interface.capture_gripper_to_base(sep=False))
+            logger.debug("Moving robot and collecting data")
+        except:
+            logger.error("Failed to move robot")
         
     @callback
     def on_calib_save_button(self):
         self.calibration_data.save_calibration_data(
-            self.pipeline_view.scene_widgets.calib_save_text.text_value
-        )
+            self.pipeline_view.scene_widgets.calib_save_text.text_value)
         self.on_calib_check_button()
         logger.debug("Saving calibration data and check data")
     
+    @callback
+    def on_calib_op_save_button(self):
+        self.calibration_data.save_img_and_pose()
+        logger.debug("Saving images and poses")
+
+    @callback
+    def on_calib_op_load_button(self):
+        self.calibration_data.load_img_and_pose()
+        self.pipeline_view.scene_widgets.frame_list_view.set_items(
+            self.calibration_data.display_str_list)
+        logger.debug("Checking calibration data")
+    
+    @callback
+    def on_calib_op_run_button(self):
+        logger.debug("Running calibration data")
+        for each_pose in self.calibration_data.robot_poses:
+            self.pipeline_model.robot_interface.move_to_pose(each_pose)
+            self.calibration_data.modify(self.calibration_data.robot_poses.index(each_pose), 
+                                        np.asarray(self.pipeline_model.rgbd_frame.color),
+                                        self.pipeline_model.robot_interface.capture_gripper_to_base(sep=False))
+        
+
     @callback
     def on_calib_button(self):
         self.calibration_data.calibrate_all()

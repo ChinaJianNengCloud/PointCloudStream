@@ -3,8 +3,8 @@ import cv2
 from scipy.spatial.transform import Rotation as R
 import logging
 import json
-import os
-
+from pathlib import Path
+import shutil
 
 # Configure logging
 # logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(levelname)s] %(message)s')
@@ -22,7 +22,7 @@ class CalibrationData:
         self.camera_to_board_rvecs: list[np.ndarray] = []
         self.camera_to_board_tvecs: list[np.ndarray] = []
         self.__manage_list: list[str] = []
-        self.save_dir = save_dir
+        self.save_dir = Path(save_dir) if save_dir else None
 
         self.camera_matrix = None
         self.dist_coeffs = None
@@ -33,7 +33,7 @@ class CalibrationData:
     def display_str_list(self) -> list[str]:
         if self.camera_matrix is None:
             if any(x is None for x in self.robot_poses):
-               return ["p_cam:"+str(i) for i in range(len(self.images))]
+                return ["p_cam:"+str(i) for i in range(len(self.images))]
             else:
                 return ["p_cam:"+str(i) + " p_arm:"+str(i) for i in range(len(self.images))]
         if len(self.camera_to_board_tvecs) > 0:
@@ -77,6 +77,17 @@ class CalibrationData:
                 self.calibrate_all()
         else:
             logger.warning("Failed to detect board in image, image not added.")
+
+    def modify(self, index: int, image: np.ndarray, robot_pose: np.ndarray = None):
+        ret, cur_object_points, cur_image_points = self.board_dectect(image)
+        if ret:
+            self.images[index] = image
+            self.robot_poses[index] = robot_pose
+            self.imgpoints[index] = cur_image_points
+            self.objpoints[index] = cur_object_points
+
+        else:
+            logger.warning("Failed to detect board in image, image not modified.")
 
     def board_dectect(self, img):
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -218,25 +229,51 @@ class CalibrationData:
             'dist_coeffs': self.dist_coeffs.tolist(),
             'calibration_results': self.calibration_results
         }
+        path = Path(path)
         with open(path, 'w') as json_file:
             json.dump(calibration_data, json_file, indent=2)
         logger.info(f"Calibration results saved to {path}")
 
     def save_img_and_pose(self):
         # Save images and robot poses to self.save_dir
-        images_dir = os.path.join(self.save_dir, 'images')
-        os.makedirs(images_dir, exist_ok=True)
-        pose_file_path = os.path.join(self.save_dir, 'pose.txt')
-        with open(pose_file_path, 'w') as pose_file:
-            for idx, (image, robot_pose) in enumerate(zip(self.images, self.robot_poses)):
-                img_path = os.path.join(images_dir, f'{idx}.png')
-                cv2.imwrite(img_path, image)
-                # Save robot pose
-                tvecs = robot_pose[0:3]
-                rvecs = robot_pose[3:6]
-                pose_file.write(f"{tvecs[0]*1000:.3f} {tvecs[1]*1000:.3f} {tvecs[2]*1000:.3f} "
-                                f"{np.rad2deg(rvecs[0]):.3f} {np.rad2deg(rvecs[1]):.3f} {np.rad2deg(rvecs[2]):.3f}\n")
-        logger.info(f"Saved images and poses to {self.save_dir}")
+        if self.save_dir:
+            self.save_dir.mkdir(parents=True, exist_ok=True)
+            shutil.rmtree(str(self.save_dir))
+            images_dir = self.save_dir / 'images'
+            images_dir.mkdir(parents=True, exist_ok=True)
+            pose_file_path = self.save_dir / 'pose.txt'
+            with open(pose_file_path, 'w') as pose_file:
+                for idx, (image, robot_pose) in enumerate(zip(self.images, self.robot_poses)):
+                    img_path = images_dir / f'{idx}.png'
+                    cv2.imwrite(str(img_path), image)
+                    # Save robot pose
+                    tvecs = robot_pose[0:3]
+                    rvecs = robot_pose[3:6]
+                    pose_file.write(f"{tvecs[0]*1000:.3f} {tvecs[1]*1000:.3f} {tvecs[2]*1000:.3f} "
+                                    f"{np.rad2deg(rvecs[0]):.3f} {np.rad2deg(rvecs[1]):.3f} {np.rad2deg(rvecs[2]):.3f}\n")
+            logger.info(f"Saved images and poses to {self.save_dir}")
+
+    def load_img_and_pose(self):
+        # Load images and robot poses from self.save_dir
+        if self.save_dir:
+            images_dir = self.save_dir / 'images'
+            pose_file_path = self.save_dir / 'pose.txt'
+            if not images_dir.exists() or not pose_file_path.exists():
+                logger.error(f"Images or poses not found in {self.save_dir}")
+                return
+            robot_poses = []
+            with open(pose_file_path, 'r') as pose_file:
+                lines = pose_file.readlines()
+                for line in lines:
+                    tvecs_str, rvecs_str = line.strip().split()
+                    tvecs = np.array([float(t) / 1000 for t in tvecs_str.split()])
+                    rvecs = np.array([np.deg2rad(float(r)) for r in rvecs_str.split()])
+                    robot_poses.append(np.hstack((tvecs, rvecs)))
+            images = sorted(images_dir.glob('*.png'))
+            images = [cv2.imread(str(image)) for image in images]
+            self.reset()
+            for image, robot_pose in zip(images, robot_poses):
+                self.append(image, robot_pose)
 
     def pop(self, index: int):
         self.images.pop(index)
@@ -256,6 +293,7 @@ class CalibrationData:
             self.calibrate_hand_eye()
 
     def load_camera_intrinsics(self, intrinsic_path):
+        intrinsic_path = Path(intrinsic_path)
         with open(intrinsic_path, 'r') as json_file:
             data = json.load(json_file)
         self.camera_matrix = np.array(data['camera_matrix'])
