@@ -110,8 +110,8 @@ class PipelineController:
         self.pipeline_model.flag_capture = is_on
         if not is_on:
             self.on_toggle_record(False)
-            if self.pipeline_view.toggle_record is not None:
-                self.pipeline_view.toggle_record.is_on = False
+            # if self.pipeline_view.toggle_record is not None:
+            #     self.pipeline_view.toggle_record.is_on = False
         else:
             with self.pipeline_model.cv_capture:
                 self.pipeline_model.cv_capture.notify()
@@ -250,7 +250,7 @@ class PipelineController:
         self.pipeline_view.scene_widgets.calibration_msg.text = msg
         self.pipeline_view.scene_widgets.calibration_msg.text_color = msg_color
         self.pipeline_view.scene_widgets.detect_board_toggle.enabled = True
-        self.pipeline_model.calibration_data_init()
+        self.calibration_data = self.pipeline_model.calibration_data_init()
         self.pipeline_view.scene_widgets.frame_list_view.set_items(['Click "Collect Current Frame" to start'])
 
     @callback
@@ -260,7 +260,7 @@ class PipelineController:
             self.pipeline_model.flag_handeye_calib_init = True
             self.pipeline_view.scene_widgets.calibration_msg.text = msg
             self.pipeline_view.scene_widgets.calibration_msg.text_color = msg_color
-            self.pipeline_model.calibration_data_init()
+            self.calibration_data = self.pipeline_model.calibration_data_init()
             self.pipeline_view.scene_widgets.frame_list_view.set_items(['Click "Collect Current Frame" to start'])
             # self.pipeline_view.scene_widgets.he_calibreate_button.enabled = False
 
@@ -530,12 +530,8 @@ class PipelineController:
     @callback
     def on_calib_op_run_button(self):
         logger.debug("Running calibration data")
-        for each_pose in self.calibration_data.robot_poses:
-            self.pipeline_model.robot_interface.move_to_pose(each_pose)
-            self.calibration_data.modify(self.calibration_data.robot_poses.index(each_pose), 
-                                        np.asarray(self.pipeline_model.rgbd_frame.color),
-                                        self.pipeline_model.robot_interface.capture_gripper_to_base(sep=False))
-        
+        self.pipeline_model.calib_exec.submit(self.pipeline_model.auto_calibration)
+
 
     @callback
     def on_calib_button(self):

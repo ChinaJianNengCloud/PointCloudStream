@@ -163,10 +163,10 @@ class CalibrationData:
         new_rmatrices = []
         new_tvecs = []
         for r_matrix, tvec in zip(R_matrices, T_vecs):
-            R_b2e = r_matrix.T
-            t_b2e = -R_b2e @ tvec
-            new_rmatrices.append(R_b2e)
-            new_tvecs.append(t_b2e)
+            R_Transposed = r_matrix.T
+            t_Transformed = -R_Transposed @ tvec
+            new_rmatrices.append(R_Transposed)
+            new_tvecs.append(t_Transformed)
         return new_rmatrices, new_tvecs
 
     def calibrate_hand_eye(self):
@@ -178,8 +178,8 @@ class CalibrationData:
         base_to_end_tvecs: list[np.ndarray] = []
         for robot_pose in self.robot_poses:
             # Assuming robot_pose is an array of shape (6,), [x, y, z, rx, ry, rz], rotations in radians
-            base_to_end_rmatrices.append(cv2.Rodrigues(robot_pose[3:6])[0])
-                # R.from_euler('xyz', robot_pose[3:6], degrees=False).as_matrix())
+            # base_to_end_rmatrices.append(cv2.Rodrigues(robot_pose[3:6].reshape(3, 1))[0])
+            base_to_end_rmatrices.append(R.from_euler('xyz', robot_pose[3:6], degrees=False).as_matrix())
             base_to_end_tvecs.append(robot_pose[0:3])
 
         # Convert to end_to_base
@@ -268,9 +268,10 @@ class CalibrationData:
             with open(pose_file_path, 'r') as pose_file:
                 lines = pose_file.readlines()
                 for line in lines:
-                    tvecs_str, rvecs_str = line.strip().split()
-                    tvecs = np.array([float(t) / 1000 for t in tvecs_str.split()])
-                    rvecs = np.array([np.deg2rad(float(r)) for r in rvecs_str.split()])
+                    pose = line.strip().split()
+                    tvecs_str, rvecs_str = pose[0:3], pose[3:6]
+                    tvecs = np.array([float(t) / 1000 for t in tvecs_str])
+                    rvecs = np.array([np.deg2rad(float(r)) for r in rvecs_str])
                     robot_poses.append(np.hstack((tvecs, rvecs)))
             images = sorted(images_dir.glob('*.png'))
             images = [cv2.imread(str(image)) for image in images]
@@ -283,8 +284,6 @@ class CalibrationData:
         self.robot_poses.pop(index)
         self.objpoints.pop(index)
         self.imgpoints.pop(index)
-        self.camera_to_board_rvecs.pop(index)
-        self.camera_to_board_tvecs.pop(index)
         self.calibrate_all()
 
 

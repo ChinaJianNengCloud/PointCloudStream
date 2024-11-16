@@ -111,7 +111,8 @@ class PipelineModel:
             markerLength=self.params['board_marker_size'] / 1000, # to meter
             dictionary=charuco_dict
         )
-        self.calibration_data = CalibrationData(charuco_board)
+        self.calibration_data = CalibrationData(charuco_board, save_dir=self.params['folder_path'])
+        return self.calibration_data
 
     @property
     def max_points(self):
@@ -428,7 +429,8 @@ class PipelineModel:
         if self.T_cam_to_base is None:
             return None, None
         rvecs, tvects = self.robot_interface.capture_gripper_to_base()
-        rotation_matrix, _ = cv2.Rodrigues(rvecs)
+        # rotation_matrix, _ = cv2.Rodrigues(rvecs)
+        rotation_matrix = R.from_euler('xyz', rvecs.reshape(1, 3), degrees=False).as_matrix().reshape(3, 3)
         T_end_to_base = np.eye(4)
         T_end_to_base[:3, :3] = rotation_matrix
         T_end_to_base[:3, 3] = tvects.ravel()
@@ -457,4 +459,10 @@ class PipelineModel:
                                     dtype=o3d.core.Dtype.Float32,
                                     device=self.o3d_device)
     
-    
+    def auto_calibration(self):
+        for idx, each_pose in enumerate(self.calibration_data.robot_poses):
+            logger.info(f"Moving to pose {idx}")
+            self.robot_interface.move_to_pose(each_pose)
+            pose = self.robot_interface.capture_gripper_to_base(sep=False)
+            img = np.asarray(self.rgbd_frame.color)
+            self.calibration_data.modify(idx, img, pose)
