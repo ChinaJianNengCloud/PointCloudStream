@@ -176,9 +176,7 @@ class SceneWidgets:
         self.calib_save_text = gui.TextEdit()
         frame_folder_layout.add_child(self.calib_save_text)
         frame_folder_layout.add_fixed(0.25 * self.em)
-
         layout.add_child(frame_folder_layout)
-
 
         self.calib_save_button = gui.Button("Save Calibration and Check")
         self.calib_save_button.horizontal_padding_em = 1
