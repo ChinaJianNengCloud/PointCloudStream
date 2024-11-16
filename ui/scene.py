@@ -2,7 +2,7 @@ import open3d.visualization.gui as gui
 import open3d.visualization.rendering as rendering
 import logging
 from utils import ARUCO_BOARD
-
+from ui.TreeView import ModifiedTreeView
 logger = logging.getLogger(__name__)
 
 
@@ -82,11 +82,13 @@ class SceneWidgets:
         self.view_tab = gui.Vert(self.em, gui.Margins(0, self.em, self.em // 2, self.em))
         self.tab_view.add_tab("View", self.view_tab)
 
-        self.bbox_tab = gui.Vert(self.em, gui.Margins(0, self.em, self.em // 2, self.em))
-        self.tab_view.add_tab("Bbox", self.bbox_tab)
+
 
         self.calibration_tab = gui.Vert(self.em, gui.Margins(0, self.em, self.em // 2, self.em))
         self.tab_view.add_tab("Calib", self.calibration_tab)
+
+        self.bbox_tab = gui.Vert(self.em, gui.Margins(0, self.em, self.em // 2, self.em))
+        self.tab_view.add_tab("Bbox", self.bbox_tab)
 
         self.data_tab = gui.Vert(self.em, gui.Margins(0, self.em, self.em // 2, self.em))
         self.tab_view.add_tab("Data", self.data_tab)
@@ -101,16 +103,25 @@ class SceneWidgets:
         
         # self.record_list = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
 
-        self.data_list_view = gui.ListView()
-        self.data_list_view.set_items(['Click to add data'])
-        self.data_list_view.set_max_visible_items(5)
-        layout.add_child(self.data_list_view)
+        prompt_layout = gui.Horiz()
+        prompt_layout.add_child(gui.Label("Prompt:"))
+        self.prompt_text = gui.TextEdit()
+        self.prompt_text.placeholder_text = "Input prompt here..."
+        # self.prompt_text.Constraints.width = 2
+        prompt_layout.add_child(self.prompt_text)
+        layout.add_child(prompt_layout)
+        self.data_tree_view = ModifiedTreeView()
+        layout.add_child(self.data_tree_view.get_tree_widget())
+        # self.data_list_view = gui.ListView()
+        # self.data_list_view.set_items(['Click to add data'])
+        # self.data_list_view.set_max_visible_items(5)
+        # layout.add_child(self.data_list_view)
         list_operation_layout = gui.Horiz()
         layout.add_child(list_operation_layout)
-        self.data_list_remove_button = gui.Button("Remove")
-        self.data_list_remove_button.horizontal_padding_em = 0.5
-        self.data_list_remove_button.vertical_padding_em = 0
-        list_operation_layout.add_child(self.data_list_remove_button)
+        self.data_tree_view_remove_button = gui.Button("Remove")
+        self.data_tree_view_remove_button.horizontal_padding_em = 0.5
+        self.data_tree_view_remove_button.vertical_padding_em = 0
+        list_operation_layout.add_child(self.data_tree_view_remove_button)
 
         data_folder_layout = gui.Horiz()
         data_folder_layout.add_child(gui.Label("Save to:"))
@@ -518,6 +529,8 @@ class SceneWidgets:
         self.save_pcd_button.enabled = False
         self.save_rgbd_button.enabled = False
         self.detect_board_toggle.enabled = False
+        self.data_collect_button.enabled = False
+        # self.data_tab.visible = False
     
     def after_stream_init(self):
         self.capture_toggle.enabled = True
@@ -527,3 +540,4 @@ class SceneWidgets:
 
     def get_pcd_view(self):
         return self.pcdview
+

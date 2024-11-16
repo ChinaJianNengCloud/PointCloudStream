@@ -11,9 +11,9 @@ if __name__ == "__main__":
     params = {
         'directory': '.',  # Change to your directory if needed 
         'Image_Amount': 13,
-        'board_shape': (11, 6),
-        'board_square_size': 23, # mm
-        'board_marker_size': 17.5, # mm
+        'board_shape': (7, 10),
+        'board_square_size': 23.5, # mm
+        'board_marker_size': 19, # mm
         'input_method': 'auto_calibrated_mode',  # 'capture', 'load_from_folder', or 'auto_calibrated_mode'
         'folder_path': '_tmp',  # Specify the folder path if using 'load_from_folder'
         'pose_file_path': './poses.txt',  # Specify the pose file path for 'auto_calibrated_mode'

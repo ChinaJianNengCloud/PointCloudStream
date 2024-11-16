@@ -15,7 +15,7 @@ from utils.segmentation import segment_pcd_from_2d
 import logging
 from utils import ARUCO_BOARD
 import open3d.visualization.gui as gui
-
+from utils import CollectedData
 logger = logging.getLogger(__name__)
 
 # calib = json.load(open('Calibration_results/calibration_results.json'))
@@ -66,7 +66,8 @@ class PipelineModel:
         self.square_size = 0.015
         self.T_cam_to_board = np.eye(4)
         self.__init_gui_signals()
-        self.__calibration_data_init()
+        self.calibration_data_init()
+        self.collected_data = CollectedData()
         self.executor = ThreadPoolExecutor(max_workers=3,
                                            thread_name_prefix='Capture-Save')
         
@@ -101,7 +102,7 @@ class PipelineModel:
         self.dist_coeffs = None
 
 
-    def __calibration_data_init(self):
+    def calibration_data_init(self):
         from utils import CalibrationData
         charuco_dict = cv2.aruco.getPredefinedDictionary(ARUCO_BOARD[self.params['board_type']])
         charuco_board = cv2.aruco.CharucoBoard(
@@ -289,7 +290,8 @@ class PipelineModel:
             
             if self.flag_calib_collect:
                 self.calib_collect(np.asarray(self.rgbd_frame.color), self.flag_handeye_calib_init)
-                self.flag_calib_collect = False
+                if len(self.calibration_data) > 0:
+                    self.flag_calib_collect = False
 
             self.rgbd_frame = future_rgbd_frame.result()
             while self.rgbd_frame is None:
@@ -454,4 +456,5 @@ class PipelineModel:
                                     intrinsic,
                                     dtype=o3d.core.Dtype.Float32,
                                     device=self.o3d_device)
+    
     

@@ -52,6 +52,7 @@ class PipelineController:
         self.params = params
         self.pipeline_model = PipelineModel(self.update_view, params=params)
         self.calibration_data = self.pipeline_model.calibration_data
+        self.collected_data = self.pipeline_model.collected_data
         self.calibration = None
         self.drawing_rectangle = False
         self.initial_point = None
@@ -66,7 +67,7 @@ class PipelineController:
             callbacks=self.callbacks
         )
 
-        self.data_list = []
+        
         self.init_settinngs_values()
         threading.Thread(name='PipelineModel',
                          target=self.pipeline_model.run).start()
@@ -80,6 +81,7 @@ class PipelineController:
         self.pipeline_view.scene_widgets.board_marker_size_num_edit.double_value = self.params.get('board_marker_size', 0.0175)
         self.pipeline_view.scene_widgets.board_type_combobox.selected_text = self.params.get('board_type', "DICT_4X4_100")
         self.pipeline_view.scene_widgets.calib_save_text.text_value = self.params.get('calib_path', "")
+        
 
     def update_view(self, frame_elements):
         """Updates view with new data. May be called from any thread.
@@ -248,7 +250,7 @@ class PipelineController:
         self.pipeline_view.scene_widgets.calibration_msg.text = msg
         self.pipeline_view.scene_widgets.calibration_msg.text_color = msg_color
         self.pipeline_view.scene_widgets.detect_board_toggle.enabled = True
-        self.calibration_data.reset()
+        self.pipeline_model.calibration_data_init()
         self.pipeline_view.scene_widgets.frame_list_view.set_items(['Click "Collect Current Frame" to start'])
 
     @callback
@@ -258,7 +260,7 @@ class PipelineController:
             self.pipeline_model.flag_handeye_calib_init = True
             self.pipeline_view.scene_widgets.calibration_msg.text = msg
             self.pipeline_view.scene_widgets.calibration_msg.text_color = msg_color
-            self.calibration_data.reset()
+            self.pipeline_model.calibration_data_init()
             self.pipeline_view.scene_widgets.frame_list_view.set_items(['Click "Collect Current Frame" to start'])
             # self.pipeline_view.scene_widgets.he_calibreate_button.enabled = False
 
@@ -337,6 +339,7 @@ class PipelineController:
             self.pipeline_view.scene_widgets.calib_combobox.enabled = True
             self.pipeline_model.flag_handeye_calib_success = True
             self.pipeline_view.scene_widgets.calib_combobox.selected_index = 0
+            self.pipeline_view.scene_widgets.data_tab.visible = True
             
         except Exception as e:
             self.pipeline_view.scene_widgets.calib_combobox.enabled = False
@@ -389,22 +392,87 @@ class PipelineController:
         self.pipeline_view.window.close_dialog()
     
     @callback
-    def on_data_collect_button(self):
-        self.data_list.append(f"New+{len(self.data_list)+1}")
-        self.pipeline_view.scene_widgets.data_list_view.set_items(self.data_list)
+    def on_prompt_text_change(self, text):
+        if text == "":
+            self.pipeline_view.scene_widgets.data_collect_button.enabled = False
+        else:
+            self.pipeline_view.scene_widgets.data_collect_button.enabled = True
+        logger.debug(f"Prompt text changed: {text}")
 
+    def _data_tree_view_update(self):
+        self.pipeline_view.scene_widgets.data_tree_view.tree.clear()
+        for key, value in self.collected_data.data_json.items():
+            root_id = self.pipeline_view.scene_widgets.data_tree_view.add_item(
+                self.pipeline_view.scene_widgets.data_tree_view.tree.get_root_item(), key, level=1)
+
+            # Add 'prompt' field
+            prompt_id = self.pipeline_view.scene_widgets.data_tree_view.add_item(root_id, "Prompt", level=2, root_text=key)
+            self.pipeline_view.scene_widgets.data_tree_view.add_item(prompt_id, value["prompt"], level=3, root_text=key)
+
+            # Add 'bbox' field
+            prompt_id = self.pipeline_view.scene_widgets.data_tree_view.add_item(root_id, "Bbox", level=2, root_text=key)
+            self.pipeline_view.scene_widgets.data_tree_view.add_item(prompt_id, value["bboxes"], level=3, root_text=key)
+
+            # Add 'pose' field
+            pose_id = self.pipeline_view.scene_widgets.data_tree_view.add_item(root_id, "Pose", level=2, root_text=key)
+            for i, pose in enumerate(value["pose"]):
+                pose_text = f"{i + 1}: [{','.join(f'{v:.2f}' for v in pose)}]"
+                self.pipeline_view.scene_widgets.data_tree_view.add_item(pose_id, pose_text, level=3, root_text=key)
+
+        self.pipeline_view.scene_widgets.data_tree_view.selected_item.reset()
 
     @callback
-    def on_data_list_remove_button(self):
-        index = self.pipeline_view.scene_widgets.data_list_view.selected_index
-        if len(self.data_list) > 0:
-            self.data_list.pop(index)
-            self.pipeline_view.scene_widgets.data_list_view.set_items(self.data_list)
-        else:
-            logger.debug("No data to remove")
+    def on_data_collect_button(self):
+        # tmp_pose = np.array([1,2,3,4,5,6])
+        try:
+            tmp_pose = self.pipeline_model.robot_interface.capture_gripper_to_base(sep=False)
+            self.collected_data.append(self.pipeline_view.scene_widgets.prompt_text.text_value, tmp_pose)
+            self._data_tree_view_update()
+            logger.debug(f"On data collect Click")
+        except:
+            logger.error("Failed to capture gripper pose")
+
+        # self.pipeline_view.scene_widgets.data_list_view.set_items(self.collected_data)
+
+    @callback
+    def on_data_tree_view_changed(self, item):
+        logger.debug(
+            f"Root Parent Text: {item.root_text}, "
+            f"Custom Callback -> Selected Item ID: {item.item_id}, "
+            f"Level: {item.level}, Index in Level: {item.index_in_level}, "
+            f"Parent Text: {item.parent_text}"
+        )
+        self.pipeline_view.scene_widgets.prompt_text.text_value = self.collected_data.data_json.get(
+                self.pipeline_view.scene_widgets.data_tree_view.selected_item.root_text
+                ).get('prompt')
+
+    @callback
+    def on_data_tree_view_remove_button(self):
+        select_item = self.pipeline_view.scene_widgets.data_tree_view.selected_item
+        # self.on_data_tree_view_changed(select_item)
+        if select_item != None:
+            match select_item.level:
+                case 1:
+                    logger.debug(f"Removing {select_item.root_text}")
+                    self.collected_data.pop(self.collected_data.dataids.index(select_item.root_text))
+                    self._data_tree_view_update()
+                case 2:
+                    pass
+                case 3:
+                    logger.debug(f"Removing pose")
+                    if select_item.parent_text == "Pose":
+                        self.collected_data.pop_pose(self.collected_data.dataids.index(select_item.root_text), 
+                                                     select_item.index_in_level)
+                    self._data_tree_view_update()
+        # logger.debug("Removing data")
+
 
     @callback
     def on_data_save_button(self):
+        if self.collected_data == '':
+            pass
+        else:
+            self.collected_data.save(self.pipeline_view.scene_widgets.data_folder_text.text_value)
         logger.debug("Saving data")
         pass
 
@@ -456,9 +524,9 @@ class PipelineController:
     @callback 
     def on_show_axis_in_scene_toggle(self, is_on):
         self.pipeline_model.flag_calib_axis_to_scene = is_on
-        self.pipeline_view.pcdview.scene.show_geometry('board_pose', True)
-        self.pipeline_view.pcdview.scene.show_geometry('robot_base_frame', True)
-        self.pipeline_view.pcdview.scene.show_geometry('robot_end_frame', True)
+        self.pipeline_view.pcdview.scene.show_geometry('board_pose', is_on)
+        self.pipeline_view.pcdview.scene.show_geometry('robot_base_frame', is_on)
+        self.pipeline_view.pcdview.scene.show_geometry('robot_end_frame', is_on)
 
         logger.debug(f"Show axis in scene: {is_on}")
 
@@ -493,3 +561,4 @@ class PipelineController:
                 logger.info(f"key pressed {event.key}")
             return True
         return False
+    

@@ -32,6 +32,7 @@ class PipelineView:
         # Called on window layout (e.g., resize)
         self.window.set_on_layout(self.on_layout)
         self.window.set_on_close(callbacks['on_window_close'])
+        # self.window.show_settings = True
 
         self.scene_widgets = SceneWidgets(self.window, callbacks)
         self.callback_bindings()
@@ -86,7 +87,12 @@ class PipelineView:
                 logger.info(f"Registered callback for {each}")
             elif "text" in each:
                 getattr(self.scene_widgets, "_".join(each.split('_')[1:-1])).set_on_text_changed(self.callbacks[each])
+                # set_on_text_changed
                 logger.info(f"Registered callback for {each}")
+            elif "tree_view" in each:
+                getattr(self.scene_widgets, "_".join(each.split('_')[1:-1])).set_on_selection_changed(self.callbacks[each])
+                logger.info(f"Registered callback for {each}")
+
         # print(getattr(self.scene_widgets))
         self.scene_widgets.pcdview.set_on_mouse(
             self.callbacks['on_mouse_widget3d'])  # Set initial mouse callback
@@ -274,7 +280,7 @@ class PipelineView:
     def on_layout(self, layout_context):
         """Callback on window initialize / resize"""
         frame = self.window.content_rect
-        panel_width = self.em * 21
+        panel_width = self.em * 22
         # Set the frame for the panel on the right side
         self.scene_widgets.panel.frame = gui.Rect(frame.get_right() - panel_width,
                                                frame.y, panel_width,

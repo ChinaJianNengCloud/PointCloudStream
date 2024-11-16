@@ -1,3 +1,6 @@
 *.pt
 *.pyc
 _*
+*.png
+*.pdf
+*data.json
