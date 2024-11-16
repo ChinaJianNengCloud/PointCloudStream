@@ -32,11 +32,14 @@ class CalibrationData:
     @property
     def display_str_list(self) -> list[str]:
         if self.camera_matrix is None:
+            logger.warning("Camera matrix is not available.")
             if any(x is None for x in self.robot_poses):
                 return ["p_cam:"+str(i) for i in range(len(self.images))]
             else:
                 return ["p_cam:"+str(i) + " p_arm:"+str(i) for i in range(len(self.images))]
+            
         if len(self.camera_to_board_tvecs) > 0:
+            logger.info("Camera matrix is available.")
             cam_tvec_string =  [np.array2string(value.ravel(), 
                                         formatter={'float_kind': lambda x: f"{x:.2f}"}) 
                                         for value in self.camera_to_board_tvecs ] 
@@ -72,7 +75,7 @@ class CalibrationData:
             self.imgpoints.append(cur_image_points)
             self.objpoints.append(cur_object_points)
             self.robot_poses.append(robot_pose)
-
+            logger.info(f"Board detected in image, image added. count:{len(self.images)}")
             if recalib:
                 self.calibrate_all()
         else:

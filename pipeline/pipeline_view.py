@@ -159,7 +159,7 @@ class PipelineView:
                 self.scene_widgets.depth_video.update_image(
                     frame_elements['depth'].resize(sampling_ratio).to_legacy())
         
-        if self.scene_widgets.tab_view.selected_tab_index == 3: # calib tab
+        if self.scene_widgets.tab_view.selected_tab_index == 2: # calib tab
             if self.scene_widgets.show_calib.get_is_open() and 'calib_color' in frame_elements:
                 sampling_ratio = self.video_size[1] / frame_elements['calib_color'].columns
                 self.scene_widgets.calib_video.update_image(

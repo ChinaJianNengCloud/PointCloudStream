@@ -154,39 +154,22 @@ class SceneWidgets:
         self.frame_list_view.set_items(['Click "Collect Current Frame" to start'])
         self.frame_list_view.set_max_visible_items(5)
         layout.add_child(self.frame_list_view)
-        list_operation_layout_1 = gui.Horiz(0.25 * self.em)
-        layout.add_child(list_operation_layout_1)
+        list_operation_layout = gui.Horiz(0.25 * self.em)
+        layout.add_child(list_operation_layout)
         self.calib_list_remove_button = gui.Button("Remove")
         self.calib_list_remove_button.horizontal_padding_em = 0.5
         self.calib_list_remove_button.vertical_padding_em = 0
-        list_operation_layout_1.add_child(self.calib_list_remove_button)
+        list_operation_layout.add_child(self.calib_list_remove_button)
 
         self.robot_move_button = gui.Button("Move Robot")
         self.robot_move_button.horizontal_padding_em = 0.5
         self.robot_move_button.vertical_padding_em = 0
-        list_operation_layout_1.add_child(self.robot_move_button)
+        list_operation_layout.add_child(self.robot_move_button)
 
         self.calib_button = gui.Button("Calib (C)")
         self.calib_button.horizontal_padding_em = 0.5
         self.calib_button.vertical_padding_em = 0
-        list_operation_layout_1.add_child(self.calib_button)
-
-        list_operation_layout_2 = gui.Horiz(0.25 * self.em)
-        layout.add_child(list_operation_layout_2)
-        self.calib_op_save_button = gui.Button("Calib_op Save")
-        self.calib_op_save_button.horizontal_padding_em = 0.5
-        self.calib_op_save_button.vertical_padding_em = 0
-        list_operation_layout_2.add_child(self.calib_op_save_button)
-
-        self.calib_op_load_button = gui.Button("Calib_op Load")
-        self.calib_op_load_button.horizontal_padding_em = 0.5
-        self.calib_op_load_button.vertical_padding_em = 0
-        list_operation_layout_2.add_child(self.calib_op_load_button)
-
-        self.calib_op_run_button = gui.Button("Calib_op Run")
-        self.calib_op_run_button.horizontal_padding_em = 0.5
-        self.calib_op_run_button.vertical_padding_em = 0
-        list_operation_layout_2.add_child(self.calib_op_run_button)
+        list_operation_layout.add_child(self.calib_button)
 
         frame_folder_layout = gui.Horiz()
         frame_folder_layout.add_child(gui.Label("Calib Path:"))

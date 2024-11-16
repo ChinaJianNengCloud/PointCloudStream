@@ -483,6 +483,7 @@ class PipelineController:
     
     @callback
     def on_calib_collect_button(self):
+        logger.debug(self.calibration_data.display_str_list)
         self.pipeline_model.flag_calib_collect = True
         self.pipeline_view.scene_widgets.frame_list_view.set_items(
             self.calibration_data.display_str_list)
@@ -579,7 +580,7 @@ class PipelineController:
 
     @callback
     def on_key_pressed(self, event):
-        if self.pipeline_view.scene_widgets.tab_view.selected_tab_index == 3 and \
+        if self.pipeline_view.scene_widgets.tab_view.selected_tab_index == 2 and \
                     self.pipeline_model.flag_camera_init:
             if event.type == gui.KeyEvent.Type.DOWN:
                 if event.key == gui.KeyName.SPACE:
