@@ -173,17 +173,17 @@ class SceneWidgets:
 
         list_operation_layout_2 = gui.Horiz(0.25 * self.em)
         layout.add_child(list_operation_layout_2)
-        self.calib_op_save_button = gui.Button("Calib_op Save")
+        self.calib_op_save_button = gui.Button("List Save")
         self.calib_op_save_button.horizontal_padding_em = 0.5
         self.calib_op_save_button.vertical_padding_em = 0
         list_operation_layout_2.add_child(self.calib_op_save_button)
 
-        self.calib_op_load_button = gui.Button("Calib_op Load")
+        self.calib_op_load_button = gui.Button("List Load")
         self.calib_op_load_button.horizontal_padding_em = 0.5
         self.calib_op_load_button.vertical_padding_em = 0
         list_operation_layout_2.add_child(self.calib_op_load_button)
 
-        self.calib_op_run_button = gui.Button("Calib_op Run")
+        self.calib_op_run_button = gui.Button("List Rerun")
         self.calib_op_run_button.horizontal_padding_em = 0.5
         self.calib_op_run_button.vertical_padding_em = 0
         list_operation_layout_2.add_child(self.calib_op_run_button)

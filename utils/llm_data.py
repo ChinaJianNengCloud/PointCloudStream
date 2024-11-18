@@ -30,16 +30,16 @@ class CollectedData():
     def pop_pose(self, prompt_idx, pose_idx = -1):
         self.data_list[prompt_idx]["pose"].pop(pose_idx)
 
-    def append(self, prompt, pose, bbox = ""):
+    def append(self, prompt, pose, bbox_dict: Dict[AnyStr, float] = None):
+        if pose is np.ndarray:
+            pose = pose.tolist()
         if self.data_list == None:
             self.dataids.append(uuid.uuid4().hex)
-            self.data_list = [{"prompt":prompt, "pose":[pose], 'bboxes':bbox}]
+            self.data_list = [{"prompt":prompt, "pose":[pose], 'bboxes':self.box_from_dict(bbox_dict)}]
             return True
         if prompt not in self.prompts:
-            if pose is np.ndarray:
-                pose = pose.tolist()
             self.dataids.append(uuid.uuid4().hex)
-            self.data_list.append({"prompt":prompt, "pose":[pose], 'bboxes':bbox})
+            self.data_list.append({"prompt":prompt, "pose":[pose], 'bboxes':self.box_from_dict(bbox_dict)})
         else:
             self.data_list[self.prompts.index(prompt)]["pose"].append(pose)
         return True
@@ -52,13 +52,17 @@ class CollectedData():
         # print(self.data_json)
         js = {
             'data': self.data_json
-            # ''
         }
         json.dump(js, open(path, "w"),indent=2)
-        # with open(path, "w") as f:
-        #     f.write(self.data_json)
-    def set_bbox(self, bbox):
-        self.bboxes = bbox
+
+    def box_from_dict(self, bbox_dict: Dict[AnyStr, float]):
+        key_set = ('xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax')
+        bbox = [bbox_dict[key] for key in key_set]
+        return bbox
+
+    def bbox_to_dict(self):
+        key_set = ('xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax')
+        return {key: self.bboxes[idx] for idx, key in enumerate(key_set)}
 
 if __name__ == "__main__":
     data_collection = CollectedData()

@@ -13,7 +13,7 @@ import logging
 import json
 import open3d.core as o3c
 from utils import ARUCO_BOARD
-
+import copy
 
 logger = logging.getLogger(__name__)
 _callback_names = []
@@ -67,10 +67,14 @@ class PipelineController:
             callbacks=self.callbacks
         )
 
-        
+
         self.init_settinngs_values()
         threading.Thread(name='PipelineModel',
                          target=self.pipeline_model.run).start()
+        try:
+            self.on_stream_init_button()
+        except Exception as e:
+            logger.error(f"Stream init failed: {e}")
         gui.Application.instance.run()
 
     def init_settinngs_values(self):
@@ -81,6 +85,7 @@ class PipelineController:
         self.pipeline_view.scene_widgets.board_marker_size_num_edit.double_value = self.params.get('board_marker_size', 0.0175)
         self.pipeline_view.scene_widgets.board_type_combobox.selected_text = self.params.get('board_type', "DICT_4X4_100")
         self.pipeline_view.scene_widgets.calib_save_text.text_value = self.params.get('calib_path', "")
+        self.pipeline_view.scene_widgets.data_folder_text.text_value = self.params.get('data_path', "") + '/data.json'
         
 
     def update_view(self, frame_elements):
@@ -410,8 +415,9 @@ class PipelineController:
             self.pipeline_view.scene_widgets.data_tree_view.add_item(prompt_id, value["prompt"], level=3, root_text=key)
 
             # Add 'bbox' field
-            prompt_id = self.pipeline_view.scene_widgets.data_tree_view.add_item(root_id, "Bbox", level=2, root_text=key)
-            self.pipeline_view.scene_widgets.data_tree_view.add_item(prompt_id, value["bboxes"], level=3, root_text=key)
+            bbox_id = self.pipeline_view.scene_widgets.data_tree_view.add_item(root_id, "Bbox", level=2, root_text=key)
+            bbox_text = f"[{','.join(f'{v:.2f}' for v in value['bboxes'])}]"
+            self.pipeline_view.scene_widgets.data_tree_view.add_item(bbox_id, bbox_text, level=3, root_text=key)
 
             # Add 'pose' field
             pose_id = self.pipeline_view.scene_widgets.data_tree_view.add_item(root_id, "Pose", level=2, root_text=key)
@@ -426,7 +432,9 @@ class PipelineController:
         # tmp_pose = np.array([1,2,3,4,5,6])
         try:
             tmp_pose = self.pipeline_model.robot_interface.capture_gripper_to_base(sep=False)
-            self.collected_data.append(self.pipeline_view.scene_widgets.prompt_text.text_value, tmp_pose)
+            self.collected_data.append(self.pipeline_view.scene_widgets.prompt_text.text_value, 
+                                       tmp_pose, 
+                                       copy.deepcopy(self.pipeline_view.bbox_params))
             self._data_tree_view_update()
             logger.debug(f"On data collect Click")
         except:
@@ -503,7 +511,8 @@ class PipelineController:
             self.pipeline_model.robot_interface.move_to_pose(
                 self.calibration_data.robot_poses[idx])
             self.calibration_data.modify(idx, np.asarray(self.pipeline_model.rgbd_frame.color),
-                                        self.pipeline_model.robot_interface.capture_gripper_to_base(sep=False))
+                                        self.pipeline_model.robot_interface.capture_gripper_to_base(sep=False),
+                                        copy.deepcopy(self.pipeline_view.bbox_params))
             logger.debug("Moving robot and collecting data")
         except:
             logger.error("Failed to move robot")

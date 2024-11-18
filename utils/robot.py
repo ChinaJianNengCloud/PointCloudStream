@@ -186,7 +186,7 @@ if __name__ == "__main__":
     # print(test_pose_dict)
     # print(test_machine_pose)
     # arm.lebai.movej(test_pose_dict, arm.acceleration, arm.velocity, arm.time_running, arm.radius)
-    arm.move_with_pose_file(path)
+    # arm.move_with_pose_file(path)
     # print(arm.get_position())
     # # print(arm.lebai.get_kin_data().keys())
     # print(arm.lebai.get_kin_data()['actual_tcp_pose'])

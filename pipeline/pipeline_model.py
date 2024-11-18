@@ -73,6 +73,7 @@ class PipelineModel:
         
         self.calib_exec = ThreadPoolExecutor(max_workers=3,
                                            thread_name_prefix='Calibreation')
+
         
     
     def __init_gui_signals(self):

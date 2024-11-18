@@ -22,7 +22,8 @@ if __name__ == "__main__":
         'device': 'cuda:0',
         'camera_config' : './default_config.json',
         'rgbd_video' : None,
-        'board_type': 'DICT_4X4_100'
+        'board_type': 'DICT_4X4_100',
+        'data_path': './data'
     }
 
     PipelineController(params)
