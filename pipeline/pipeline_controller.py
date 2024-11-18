@@ -530,6 +530,7 @@ class PipelineController:
     @callback
     def on_calib_op_run_button(self):
         logger.debug("Running calibration data")
+        self.pipeline_model.robot_interface.set_teach_mode(False)
         self.pipeline_model.calib_exec.submit(self.pipeline_model.auto_calibration)
 
 
@@ -559,11 +560,13 @@ class PipelineController:
     @callback
     def on_frame_list_view_changed(self, new_val, is_dbl_click):
         # TODO: update still buggy, need to be fixed
+        logger.debug(new_val)
         self.pipeline_model.flag_tracking_board = False
         self.pipeline_view.scene_widgets.detect_board_toggle.is_on = False
         if len(self.calibration_data) > 0:
             img = self.calibration_data.images[self.pipeline_view.scene_widgets.frame_list_view.selected_index]
-            img = o3d.t.geometry.Image(img).cpu()
+            # img = np.random.randint(0, 255, (img.shape[0], img.shape[1], 3), dtype=np.uint8)
+            img = o3d.t.geometry.Image(img)
             if self.pipeline_view.scene_widgets.show_calib.get_is_open():
                 sampling_ratio = self.pipeline_view.video_size[1] / img.columns
                 self.pipeline_view.scene_widgets.calib_video.update_image(img.resize(sampling_ratio))

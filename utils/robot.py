@@ -132,7 +132,28 @@ class RobotInterface:
         self.lebai.movej(joint_pose, self.acceleration, self.velocity, self.time_running, self.radius)
         if wait:
             self.lebai.wait_move()
+    
+    def set_joint_limits(self, limit):
+        if not limit:
+            self.lebai.disable_joint_limits()
+        else:
+            self.lebai.enable_joint_limits()
 
+    def on_robot_state(self, robot_state):
+        print("robot_state", robot_state)
+        
+    def set_teach_mode(self, teach_mode):
+        if teach_mode:
+            try:
+                self.lebai.teach_mode()
+            except Exception as e:
+                logging.info(f"Already in teach mode: {e}")
+        else:
+            try:
+                self.lebai.end_teach_mode()
+            except Exception as e:
+                logging.info(f"Failed to end teach mode: {e}")
+    
 
 if __name__ == "__main__":
     arm = RobotInterface()
@@ -142,6 +163,7 @@ if __name__ == "__main__":
     path = "pose.txt"
     test_pose = np.array([-644, 30, 81, -36, -12, 137], dtype=np.float32)
     test_joint_pose = np.array([-19, -4, 27, -118, -46, 114], dtype=np.float32)
+    arm.set_teach_mode(True)
     test_machine_joint_pose = np.deg2rad(test_joint_pose).tolist()
     print("test_forward_pose", arm.lebai.kinematics_forward(test_machine_joint_pose))
     test_machine_pose = arm.pose_unit_change_to_machine(test_pose)

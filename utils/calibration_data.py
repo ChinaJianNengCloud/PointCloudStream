@@ -71,7 +71,7 @@ class CalibrationData:
     def append(self, image: np.ndarray, robot_pose: np.ndarray = None, recalib=False):
         ret, cur_object_points, cur_image_points = self.board_dectect(image)
         if ret:
-            self.images.append(image)
+            self.images.append(image.copy())
             self.imgpoints.append(cur_image_points)
             self.objpoints.append(cur_object_points)
             self.robot_poses.append(robot_pose)
@@ -178,7 +178,6 @@ class CalibrationData:
         base_to_end_tvecs: list[np.ndarray] = []
         for robot_pose in self.robot_poses:
             # Assuming robot_pose is an array of shape (6,), [x, y, z, rx, ry, rz], rotations in radians
-            # base_to_end_rmatrices.append(cv2.Rodrigues(robot_pose[3:6].reshape(3, 1))[0])
             base_to_end_rmatrices.append(R.from_euler('xyz', robot_pose[3:6], degrees=False).as_matrix())
             base_to_end_tvecs.append(robot_pose[0:3])
 
@@ -248,7 +247,7 @@ class CalibrationData:
             with open(pose_file_path, 'w') as pose_file:
                 for idx, (image, robot_pose) in enumerate(zip(self.images, self.robot_poses)):
                     img_path = images_dir / f'{idx}.png'
-                    cv2.imwrite(str(img_path), image)
+                    cv2.imwrite(str(img_path), cv2.cvtColor(image, cv2.COLOR_BGR2RGB))  # Save image)
                     # Save robot pose
                     tvecs = robot_pose[0:3]
                     rvecs = robot_pose[3:6]
