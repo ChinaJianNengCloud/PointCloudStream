@@ -85,7 +85,7 @@ class PipelineController:
         self.pipeline_view.scene_widgets.board_marker_size_num_edit.double_value = self.params.get('board_marker_size', 0.0175)
         self.pipeline_view.scene_widgets.board_type_combobox.selected_text = self.params.get('board_type', "DICT_4X4_100")
         self.pipeline_view.scene_widgets.calib_save_text.text_value = self.params.get('calib_path', "")
-        self.pipeline_view.scene_widgets.data_folder_text.text_value = self.params.get('data_path', "") + '/data.json'
+        self.pipeline_view.scene_widgets.data_folder_text.text_value = self.params.get('data_path', "")
         
 
     def update_view(self, frame_elements):
@@ -406,7 +406,7 @@ class PipelineController:
 
     def _data_tree_view_update(self):
         self.pipeline_view.scene_widgets.data_tree_view.tree.clear()
-        for key, value in self.collected_data.data_json.items():
+        for key, value in self.collected_data.shown_data_json.items():
             root_id = self.pipeline_view.scene_widgets.data_tree_view.add_item(
                 self.pipeline_view.scene_widgets.data_tree_view.tree.get_root_item(), key, level=1)
 
@@ -432,9 +432,11 @@ class PipelineController:
         # tmp_pose = np.array([1,2,3,4,5,6])
         try:
             tmp_pose = self.pipeline_model.robot_interface.capture_gripper_to_base(sep=False)
-            self.collected_data.append(self.pipeline_view.scene_widgets.prompt_text.text_value, 
-                                       tmp_pose, 
-                                       copy.deepcopy(self.pipeline_view.bbox_params))
+            self.collected_data.append(prompt=self.pipeline_view.scene_widgets.prompt_text.text_value, 
+                                       pose=tmp_pose, 
+                                       bbox_dict=copy.deepcopy(self.pipeline_view.bbox_params),
+                                       color=np.asarray(self.pipeline_model.rgbd_frame.color), 
+                                       depth=np.asarray(self.pipeline_model.rgbd_frame.depth))
             self._data_tree_view_update()
             logger.debug(f"On data collect Click")
         except:
@@ -450,7 +452,7 @@ class PipelineController:
             f"Level: {item.level}, Index in Level: {item.index_in_level}, "
             f"Parent Text: {item.parent_text}"
         )
-        self.pipeline_view.scene_widgets.prompt_text.text_value = self.collected_data.data_json.get(
+        self.pipeline_view.scene_widgets.prompt_text.text_value = self.collected_data.shown_data_json.get(
                 self.pipeline_view.scene_widgets.data_tree_view.selected_item.root_text
                 ).get('prompt')
 

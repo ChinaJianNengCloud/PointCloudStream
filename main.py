@@ -23,7 +23,8 @@ if __name__ == "__main__":
         'camera_config' : './default_config.json',
         'rgbd_video' : None,
         'board_type': 'DICT_4X4_100',
-        'data_path': './data'
+        'data_path': './data',
+        'load_in_startup': ['camera','camera_calib_init', 'robot_init']
     }
 
     PipelineController(params)

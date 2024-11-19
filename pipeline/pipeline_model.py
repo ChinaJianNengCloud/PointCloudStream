@@ -254,7 +254,7 @@ class PipelineModel:
                 self.color_std = np.std(frame_elements['pcd'].point.colors.cpu().numpy(), axis=0).tolist()  # frame_elements['pcd'].point.colors.std(dim=0)
                 logger.debug(f"color_mean = {self.color_mean}, color_std = {self.color_std}")
 
-            if self.flag_robot_init and self.flag_handeye_calib_success:
+            if self.flag_robot_init and self.flag_handeye_calib_success and self.flag_calib_axis_to_scene:
                 # Draw an axis for the robot position pose in the scene
                 robot_end_frame, robot_base_frame = self.robot_tracking()
                 if robot_end_frame is None:
