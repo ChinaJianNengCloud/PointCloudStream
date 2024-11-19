@@ -1,0 +1,23 @@
+{
+    "directory": ".",
+    "Image_Amount": 13,
+    "board_shape": [7, 10],
+    "board_square_size": 23.5,
+    "board_marker_size": 19,
+    "input_method": "auto_calibrated_mode",
+    "folder_path": "_tmp",
+    "pose_file_path": "./poses.txt",
+    "load_intrinsic": true,
+    "calib_path": "./Calibration_results/calibration_results.json",
+    "device": "cuda:0",
+    "camera_config": "./default_config.json",
+    "rgbd_video": null,
+    "board_type": "DICT_4X4_100",
+    "data_path": "./data",
+    "load_in_startup": {
+        "camera_init": true,
+        "camera_calib_init": true,
+        "robot_init": true,
+        "handeye_calib_init": false
+    }
+}

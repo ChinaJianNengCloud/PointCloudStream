@@ -72,7 +72,7 @@ class PipelineController:
         threading.Thread(name='PipelineModel',
                          target=self.pipeline_model.run).start()
         try:
-            self.on_stream_init_button()
+            self.load_in_startup()
         except Exception as e:
             logger.error(f"Stream init failed: {e}")
         gui.Application.instance.run()
@@ -88,6 +88,20 @@ class PipelineController:
         self.pipeline_view.scene_widgets.data_folder_text.text_value = self.params.get('data_path', "")
         
 
+    def load_in_startup(self):
+        startup_params = self.params.get('load_in_startup', {})
+        if 'camera_init' in startup_params and startup_params['camera_init']:
+            self.on_stream_init_button()
+        if 'camera_calib_init' in startup_params and startup_params['camera_calib_init']:
+            self.on_cam_calib_init_button()
+        if 'robot_init' in startup_params and startup_params['robot_init']:
+            self.on_robot_init_button()
+        if 'handeye_calib_init' in startup_params and startup_params['handeye_calib_init']:
+            self.on_handeye_calib_init_button()
+        if 'calib_check' in startup_params and startup_params['calib_check']:
+            self.on_calib_check_button()
+
+ 
     def update_view(self, frame_elements):
         """Updates view with new data. May be called from any thread.
 

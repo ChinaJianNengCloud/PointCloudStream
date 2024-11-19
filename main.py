@@ -1,30 +1,56 @@
 # main.py
 import logging
-
+import click
+import json
 
 from pipeline import PipelineController
 
-if __name__ == "__main__":
+@click.command()
+@click.option('--config', default='config.json', help='Path to configuration file')
+def main(config):
     logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(levelname)s] %(message)s')
     logger = logging.getLogger(__name__)
 
+    # Default configuration
     params = {
-        'directory': '.',  # Change to your directory if needed 
+        'directory': '.',
         'Image_Amount': 13,
         'board_shape': (7, 10),
-        'board_square_size': 23.5, # mm
-        'board_marker_size': 19, # mm
-        'input_method': 'auto_calibrated_mode',  # 'capture', 'load_from_folder', or 'auto_calibrated_mode'
-        'folder_path': '_tmp',  # Specify the folder path if using 'load_from_folder'
-        'pose_file_path': './poses.txt',  # Specify the pose file path for 'auto_calibrated_mode'
-        'load_intrinsic': True,  # Set to True or False
-        'calib_path': './Calibration_results/calibration_results.json',  # Path to the intrinsic JSON file
+        'board_square_size': 23.5,
+        'board_marker_size': 19,
+        'input_method': 'auto_calibrated_mode',
+        'folder_path': '_tmp',
+        'pose_file_path': './poses.txt',
+        'load_intrinsic': True,
+        'calib_path': './Calibration_results/calibration_results.json',
         'device': 'cuda:0',
-        'camera_config' : './default_config.json',
-        'rgbd_video' : None,
+        'camera_config': './default_config.json',
+        'rgbd_video': None,
         'board_type': 'DICT_4X4_100',
         'data_path': './data',
-        'load_in_startup': ['camera','camera_calib_init', 'robot_init']
+        'load_in_startup': {
+            'camera_init': True,
+            'camera_calib_init': True,
+            'robot_init': True,
+            'handeye_calib_init': True,
+            'calib_check': False
+        }
     }
 
-    PipelineController(params)
+    # Load configuration from file if it exists
+    try:
+        with open(config, 'r') as f:
+            file_params = json.load(f)
+            params.update(file_params)
+    except FileNotFoundError:
+        logger.warning(f"Configuration file {config} not found. Using default parameters.")
+        # Save default configuration
+        with open(config, 'w') as f:
+            json.dump(params, f, indent=4)
+    except json.JSONDecodeError:
+        logger.error(f"Error parsing configuration file {config}. Using default parameters.")
+
+    controller = PipelineController(params)
+
+if __name__ == "__main__":
+    main()
