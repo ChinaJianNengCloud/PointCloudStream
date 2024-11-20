@@ -88,7 +88,7 @@ class PipelineModel:
         self.flag_exit = False
         self.flag_stream_init = False
         self.flag_robot_init = False
-        self.flag_calibration_mode = False
+        self.flag_center_to_base = False
         self.flag_tracking_board = False
         self.flag_camera_init = False
         self.flag_handeye_calib_init = False
@@ -204,9 +204,6 @@ class PipelineModel:
                     self.camera.capture_frame, True)
                     
             try:
-                # if self.rgbd_frame is None:
-                #     continue
-                # time.sleep(0.01)
                 depth = o3d.t.geometry.Image(o3c.Tensor(np.asarray(self.rgbd_frame.depth), 
                                                         device=self.o3d_device))
                 color = o3d.t.geometry.Image(o3c.Tensor(np.asarray(self.rgbd_frame.color), 
@@ -282,7 +279,7 @@ class PipelineModel:
                 # logger.debug("Tracking board done")
 
             # push data
-            self.update_view(frame_elements)
+            self.update_view(frame_elements, self.flag_center_to_base)
 
             if self.flag_save_rgbd:
                 self.save_rgbd()

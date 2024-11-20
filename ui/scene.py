@@ -46,7 +46,7 @@ class SceneWidgets:
         # view tab
         self.__init_toggle_view_set(parent_layout=self.view_tab)
         self.__init_aqui_mode(parent_layout=self.view_tab)
-        self.__init_calibration_mode(parent_layout=self.view_tab)
+        self.__init_center_to_base_mode(parent_layout=self.view_tab)
         self.__init_display_mode(parent_layout=self.view_tab)
 
         self.__init_view_layout(parent_layout=self.view_tab)
@@ -360,14 +360,14 @@ class SceneWidgets:
         self.acq_mode_toggle.is_on = False
         edit_mode_toggle_2.add_child(self.acq_mode_toggle)
 
-    def __init_calibration_mode(self, parent_layout=None):
+    def __init_center_to_base_mode(self, parent_layout=None):
         edit_mode_toggle_2 = gui.Horiz(self.em)
         parent_layout.add_child(edit_mode_toggle_2)
 
-        self.calibration_mode_toggle = gui.ToggleSwitch("Calibration Mode")
-        self.calibration_mode_toggle.is_on = False
-        self.calibration_mode_toggle.enabled = False
-        edit_mode_toggle_2.add_child(self.calibration_mode_toggle)
+        self.center_to_base_toggle = gui.ToggleSwitch("Center to Base")
+        self.center_to_base_toggle.is_on = False
+        self.center_to_base_toggle.enabled = False
+        edit_mode_toggle_2.add_child(self.center_to_base_toggle)
 
 
     def __init_display_mode(self, parent_layout=None):

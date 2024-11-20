@@ -103,15 +103,28 @@ class PipelineController:
         if 'calib_check' in startup_params and startup_params['calib_check']:
             self.on_calib_check_button()
 
- 
-    def update_view(self, frame_elements):
+    def transform_element(self, elements:dict, element_name: str):
+        if self.pipeline_model.T_cam_to_base is None:
+            matrix = np.eye(4)
+        else:
+            matrix = self.pipeline_model.T_cam_to_base
+        if element_name in elements:
+            elements[element_name].transform(matrix)
+
+
+    def update_view(self, frame_elements: dict, transform_to_robot_space:bool = False):
         """Updates view with new data. May be called from any thread.
 
         Args:
             frame_elements (dict): Display elements (point cloud and images)
                 from the new frame to be shown.
         """
-        self.frame = frame_elements
+        if transform_to_robot_space:
+            self.transform_element(frame_elements, 'pcd')
+            self.transform_element(frame_elements, 'robot_end_frame')
+            self.transform_element(frame_elements, 'robot_base_frame')
+            self.transform_element(frame_elements, 'camera')
+
         gui.Application.instance.post_to_main_thread(
             self.pipeline_view.window,
             lambda: self.pipeline_view.update(frame_elements))
@@ -137,6 +150,10 @@ class PipelineController:
         else:
             with self.pipeline_model.cv_capture:
                 self.pipeline_model.cv_capture.notify()
+
+    @callback
+    def on_center_to_base_toggle(self, is_on):
+        self.pipeline_model.flag_center_to_base = is_on
 
     @callback
     def on_toggle_record(self, is_enabled):
@@ -357,11 +374,14 @@ class PipelineController:
             for name in self.calib.get('calibration_results').keys():
                 self.pipeline_view.scene_widgets.calib_combobox.add_item(name)
             
-            self.pipeline_view.scene_widgets.calibration_mode_toggle.enabled = True
+            self.pipeline_view.scene_widgets.center_to_base_toggle.enabled = True
             self.pipeline_view.scene_widgets.calib_combobox.enabled = True
             self.pipeline_model.flag_handeye_calib_success = True
+            self.pipeline_view.scene_widgets.center_to_base_toggle.enabled = True
             self.pipeline_view.scene_widgets.calib_combobox.selected_index = 0
             self.pipeline_view.scene_widgets.data_tab.visible = True
+            method = self.pipeline_view.scene_widgets.calib_combobox.selected_text
+            self.pipeline_model.T_cam_to_base = np.array(self.calib.get('calibration_results').get(method).get('transformation_matrix'))
             
         except Exception as e:
             self.pipeline_view.scene_widgets.calib_combobox.enabled = False

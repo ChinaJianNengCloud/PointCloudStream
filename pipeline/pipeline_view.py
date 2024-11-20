@@ -38,12 +38,11 @@ class PipelineView:
         self.callback_bindings()
         # Set the callbacks for widgets that require methods of PipelineView
         
-        
         # Now, we can access the widgets via self.widget_all
         self.pcdview = self.scene_widgets.get_pcd_view()
         self.em = self.scene_widgets.em
 
-        self.pcd_material = o3d.visualization.rendering.MaterialRecord()
+        self.pcd_material = rendering.MaterialRecord()
         self.pcd_material.shader = "defaultLit"
         # Set n_pixels displayed for each 3D point, accounting for HiDPI scaling
         self.pcd_material.point_size = int(4 * self.window.scaling)
