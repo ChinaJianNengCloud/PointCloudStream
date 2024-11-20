@@ -2,6 +2,7 @@ import threading
 import logging as log
 import open3d.visualization.gui as gui
 import numpy as np
+from scipy.spatial.transform import Rotation as R
 import open3d.visualization.rendering as rendering
 import open3d as o3d
 from pipeline.pipeline_model import PipelineModel
@@ -57,8 +58,9 @@ class PipelineController:
         self.drawing_rectangle = False
         self.initial_point = None
         self.rectangle_geometry = None
+        self.frame = None
         self.robot = RobotInterface()
-
+        GeneratorExit
         # Collect bound methods into callbacks dictionary
         self.callbacks = {name: getattr(self, name) for name in _callback_names}
         
@@ -109,6 +111,7 @@ class PipelineController:
             frame_elements (dict): Display elements (point cloud and images)
                 from the new frame to be shown.
         """
+        self.frame = frame_elements
         gui.Application.instance.post_to_main_thread(
             self.pipeline_view.window,
             lambda: self.pipeline_view.update(frame_elements))
@@ -445,16 +448,43 @@ class PipelineController:
     def on_data_collect_button(self):
         # tmp_pose = np.array([1,2,3,4,5,6])
         try:
-            tmp_pose = self.pipeline_model.robot_interface.capture_gripper_to_base(sep=False)
+            # tmp_pose = self.pipeline_model.robot_interface.capture_gripper_to_base(sep=False)
+            tmp_pose = self.pipeline_model.get_cam_space_gripper_pose()
+            if self.pipeline_model.T_cam_to_base is not None:
+                rotation_matrix = R.from_euler('xyz', tmp_pose[3:6].reshape(1, 3), degrees=False).as_matrix().reshape(3, 3)
+                T_end_to_base = np.eye(4)
+                T_end_to_base[:3, :3] = rotation_matrix
+                T_end_to_base[:3, 3] = tmp_pose[0:3].ravel()
+                tmp_pose = self.pipeline_model.T_cam_to_base @ tmp_pose
+            frame = self.frame
+            if frame is None:
+                raise Exception("No frame")
+
+            if 'color' in frame:
+                color = np.asarray(self.pipeline_model.rgbd_frame.color)
+            if 'depth' in frame:
+                depth = np.asarray(self.pipeline_model.rgbd_frame.depth)
+            if 'pcd' in frame:
+                if 'seg' in frame:
+                    seg = frame['seg']
+                else:
+                    seg = np.zeros(frame['pcd'].point.positions.shape[0])
+                pcd = frame['pcd'].to_legacy()
+                xyz = np.asarray(pcd.points)
+                rgb = np.asarray(pcd.colors)
+                rgb = (rgb * 255).astype(np.uint8)
+                pcd_with_labels = np.hstack((xyz, rgb, seg.reshape(-1, 1)))
+
             self.collected_data.append(prompt=self.pipeline_view.scene_widgets.prompt_text.text_value, 
                                        pose=tmp_pose, 
                                        bbox_dict=copy.deepcopy(self.pipeline_view.bbox_params),
-                                       color=np.asarray(self.pipeline_model.rgbd_frame.color), 
-                                       depth=np.asarray(self.pipeline_model.rgbd_frame.depth))
+                                       color=color, 
+                                       depth=depth, 
+                                       point_cloud=pcd_with_labels)
             self._data_tree_view_update()
             logger.debug(f"On data collect Click")
-        except:
-            logger.error("Failed to capture gripper pose")
+        except Exception as e: 
+            logger.error(e)
 
         # self.pipeline_view.scene_widgets.data_list_view.set_items(self.collected_data)
 

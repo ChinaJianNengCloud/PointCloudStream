@@ -10,7 +10,7 @@
     "load_intrinsic": true,
     "calib_path": "./Calibration_results/calibration_results.json",
     "device": "cuda:0",
-    "camera_config": "./default_config.json",
+    "camera_config": "./camera_config.json",
     "rgbd_video": null,
     "board_type": "DICT_4X4_100",
     "data_path": "./data",

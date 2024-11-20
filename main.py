@@ -24,7 +24,7 @@ def main(config):
         'load_intrinsic': True,
         'calib_path': './Calibration_results/calibration_results.json',
         'device': 'cuda:0',
-        'camera_config': './default_config.json',
+        'camera_config': './camera_config.json',
         'rgbd_video': None,
         'board_type': 'DICT_4X4_100',
         'data_path': './data',
@@ -33,7 +33,7 @@ def main(config):
             'camera_calib_init': True,
             'robot_init': True,
             'handeye_calib_init': True,
-            'calib_check': False
+            'calib_check': True
         }
     }
 

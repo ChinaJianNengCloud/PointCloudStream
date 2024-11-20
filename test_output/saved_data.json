@@ -1,0 +1,153 @@
+{
+  "e52f236379384d27b25957c903f2ef2a": {
+    "prompt": "Prompt A",
+    "pose": [
+      [
+        1,
+        2,
+        3
+      ],
+      [
+        13,
+        2,
+        3
+      ],
+      [
+        1,
+        2,
+        33
+      ]
+    ],
+    "bboxes": [
+      0,
+      1,
+      0,
+      1,
+      0,
+      1
+    ],
+    "poses": [
+      {
+        "pose0": [
+          1,
+          2,
+          3
+        ],
+        "pose1": [
+          13,
+          2,
+          3
+        ]
+      },
+      {
+        "pose0": [
+          13,
+          2,
+          3
+        ],
+        "pose1": [
+          1,
+          2,
+          33
+        ]
+      },
+      {
+        "pose0": [
+          1,
+          2,
+          33
+        ],
+        "pose1": null
+      }
+    ],
+    "color_files": [
+      "e52f236379384d27b25957c903f2ef2a_color_0.png",
+      "e52f236379384d27b25957c903f2ef2a_color_1.png",
+      "e52f236379384d27b25957c903f2ef2a_color_2.png"
+    ],
+    "depth_files": [
+      "e52f236379384d27b25957c903f2ef2a_depth_0.npy",
+      "e52f236379384d27b25957c903f2ef2a_depth_1.npy",
+      "e52f236379384d27b25957c903f2ef2a_depth_2.npy"
+    ],
+    "point_cloud_files": [
+      "e52f236379384d27b25957c903f2ef2a_point_cloud_0.ply",
+      "e52f236379384d27b25957c903f2ef2a_point_cloud_1.ply",
+      "e52f236379384d27b25957c903f2ef2a_point_cloud_2.ply"
+    ]
+  },
+  "2f8bd651fc384242948882da5f98ead1": {
+    "prompt": "Prompt B",
+    "pose": [
+      [
+        1,
+        23,
+        3
+      ]
+    ],
+    "bboxes": [
+      0,
+      1,
+      0,
+      1,
+      0,
+      1
+    ],
+    "poses": [
+      {
+        "pose0": [
+          1,
+          23,
+          3
+        ],
+        "pose1": null
+      }
+    ],
+    "color_files": [
+      "2f8bd651fc384242948882da5f98ead1_color_0.png"
+    ],
+    "depth_files": [
+      "2f8bd651fc384242948882da5f98ead1_depth_0.npy"
+    ],
+    "point_cloud_files": [
+      "2f8bd651fc384242948882da5f98ead1_point_cloud_0.ply"
+    ]
+  },
+  "fc4ea4314aec4046b67c55bda6b3a589": {
+    "prompt": "Prompt V",
+    "pose": [
+      [
+        1,
+        2,
+        23
+      ]
+    ],
+    "bboxes": [
+      0,
+      1,
+      0,
+      1,
+      0,
+      1
+    ],
+    "poses": [
+      {
+        "pose0": [
+          1,
+          2,
+          23
+        ],
+        "pose1": null
+      }
+    ],
+    "color_files": [
+      "fc4ea4314aec4046b67c55bda6b3a589_color_0.png"
+    ],
+    "depth_files": [
+      "fc4ea4314aec4046b67c55bda6b3a589_depth_0.npy"
+    ],
+    "point_cloud_files": [
+      "fc4ea4314aec4046b67c55bda6b3a589_point_cloud_0.ply"
+    ]
+  }
+}

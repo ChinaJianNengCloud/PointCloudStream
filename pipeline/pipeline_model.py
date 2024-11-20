@@ -41,6 +41,7 @@ class PipelineModel:
         self.o3d_device = o3d.core.Device(params.get('device', 'cuda:0'))
         self.torch_device = torch.device(params.get('device', 'cuda:0'))
         self.camera_config_file = params.get('camera_config', None)
+        
         self.rgbd_video = params.get('rgbd_video', None)
         self.checkerboard_dims = (10, 7)
         self.video = None
@@ -192,7 +193,7 @@ class PipelineModel:
         while (not self.flag_exit and
                (self.video is None or  # Camera
                 (self.video and not self.video.is_eof()))):  # Video
-            
+            self.frame = None
             if not self.flag_stream_init:
                 continue
 
@@ -268,7 +269,7 @@ class PipelineModel:
                                              self.intrinsic_matrix, self.extrinsics, 
                                              self.pcd_frame, np.asarray(self.rgbd_frame.color))
                 frame_elements['seg'] = labels
-
+            
             if self.flag_tracking_board:
                 # logger.debug("Tracking board")
                 calib_color, board_pose = self.camera_board_dectecting(axis_to_scene=self.flag_calib_axis_to_scene)
@@ -276,7 +277,8 @@ class PipelineModel:
                                                                                 device=o3d.core.Device('cpu:0')))
                 if board_pose is not None:
                     frame_elements['board_pose'] = board_pose
-                    
+            
+
                 # logger.debug("Tracking board done")
 
             # push data
@@ -426,6 +428,27 @@ class PipelineModel:
         chessboard_pose_instance.transform(self.T_cam_to_board)
         return processed_img, chessboard_pose_instance
     
+    def get_cam_space_gripper_pose(self):
+        pose = self.robot_interface.capture_gripper_to_base(sep=False)
+        t_xyz, r_xyz = pose[0:3], pose[3:6]
+        if self.T_cam_to_base is None:
+            logger.warning("Camera to base matrix did not detected, use robot pose instead!")
+            return pose
+        # rotation_matrix, _ = cv2.Rodrigues(rvecs)
+        rotation_matrix = R.from_euler('xyz', r_xyz.reshape(1, 3), degrees=False).as_matrix().reshape(3, 3)
+        T_end_to_base = np.eye(4)
+        T_end_to_base[:3, :3] = rotation_matrix
+        T_end_to_base[:3, 3] = t_xyz.ravel()
+        T_base_to_cam =  np.linalg.inv(self.T_cam_to_base)
+        T_cam_to_end = T_base_to_cam @ T_end_to_base
+        # R.from_rotvec
+        new_r = R.from_matrix(T_cam_to_end[:3, :3]).as_euler('xyz', degrees=False)
+        new_t = T_cam_to_end[:3, 3]
+        xyzrxrzry = np.hstack((new_r, new_t.reshape(-1)))
+        # Add the robot frame to the frame elements for visualization
+        return xyzrxrzry
+
+
     def robot_tracking(self):
         if self.T_cam_to_base is None:
             return None, None
@@ -461,9 +484,11 @@ class PipelineModel:
                                     device=self.o3d_device)
     
     def auto_calibration(self):
+        self.robot_interface.set_teach_mode(False)
         for idx, each_pose in enumerate(self.calibration_data.robot_poses):
             logger.info(f"Moving to pose {idx}")
             self.robot_interface.move_to_pose(each_pose)
             pose = self.robot_interface.capture_gripper_to_base(sep=False)
             img = np.asarray(self.rgbd_frame.color)
             self.calibration_data.modify(idx, img, pose)
+        self.robot_interface.set_teach_mode(True)
