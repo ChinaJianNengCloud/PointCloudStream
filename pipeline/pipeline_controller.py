@@ -118,6 +118,7 @@ class PipelineController:
             frame_elements (dict): Display elements (point cloud and images)
                 from the new frame to be shown.
         """
+        self.frame = frame_elements
         if transform_to_robot_space:
             self.transform_element(frame_elements, 'pcd')
             self.transform_element(frame_elements, 'robot_end_frame')
@@ -473,12 +474,12 @@ class PipelineController:
                 tmp_pose = self.pipeline_model.get_cam_space_gripper_pose()
 
             
-            if self.pipeline_model.T_cam_to_base is not None:
-                rotation_matrix = R.from_euler('xyz', tmp_pose[3:6].reshape(1, 3), degrees=False).as_matrix().reshape(3, 3)
-                T_end_to_base = np.eye(4)
-                T_end_to_base[:3, :3] = rotation_matrix
-                T_end_to_base[:3, 3] = tmp_pose[0:3].ravel()
-                tmp_pose = self.pipeline_model.T_cam_to_base @ tmp_pose
+            # if self.pipeline_model.T_cam_to_base is not None:
+            #     rotation_matrix = R.from_euler('xyz', tmp_pose[3:6].reshape(1, 3), degrees=False).as_matrix().reshape(3, 3)
+            #     T_end_to_base = np.eye(4)
+            #     T_end_to_base[:3, :3] = rotation_matrix
+            #     T_end_to_base[:3, 3] = tmp_pose[0:3].ravel()
+            #     tmp_pose = self.pipeline_model.T_cam_to_base @ T_end_to_base
             frame = self.frame
             if frame is None:
                 raise Exception("No frame")

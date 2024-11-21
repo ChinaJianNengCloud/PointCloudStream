@@ -13,6 +13,7 @@ def main(config):
     logger = logging.getLogger(__name__)
 
     # Default configuration
+    
     params = {
         'directory': '.',
         'Image_Amount': 13,

@@ -264,9 +264,12 @@ class PipelineModel:
                     frame_elements['robot_base_frame'] = robot_base_frame
 
             if self.flag_segemtation_mode:
-                labels = segment_pcd_from_2d(self.pcd_seg_model, 
-                                             self.intrinsic_matrix, self.extrinsics, 
-                                             self.pcd_frame, np.asarray(self.rgbd_frame.color))
+                try:
+                    labels = segment_pcd_from_2d(self.pcd_seg_model, 
+                                                self.intrinsic_matrix, self.extrinsics, 
+                                                self.pcd_frame, np.asarray(self.rgbd_frame.color))
+                except Exception as e:
+                    labels = np.zeros(self.pcd_frame.point.positions.shape[0])
                 frame_elements['seg'] = labels
             
             if self.flag_tracking_board:
