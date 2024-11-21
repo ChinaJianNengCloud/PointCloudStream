@@ -473,13 +473,6 @@ class PipelineController:
             else:
                 tmp_pose = self.pipeline_model.get_cam_space_gripper_pose()
 
-            
-            # if self.pipeline_model.T_cam_to_base is not None:
-            #     rotation_matrix = R.from_euler('xyz', tmp_pose[3:6].reshape(1, 3), degrees=False).as_matrix().reshape(3, 3)
-            #     T_end_to_base = np.eye(4)
-            #     T_end_to_base[:3, :3] = rotation_matrix
-            #     T_end_to_base[:3, 3] = tmp_pose[0:3].ravel()
-            #     tmp_pose = self.pipeline_model.T_cam_to_base @ T_end_to_base
             frame = self.frame
             if frame is None:
                 raise Exception("No frame")

@@ -28,7 +28,7 @@ class CollectedData:
     @property
     def shown_data_json(self):
         return {key: {k: v for k, v in value.items() if k not in ('color', 'depth', 'point_cloud')}
-                for key, value in zip(self.dataids, self.data_list)}
+                for key, value in zip(reversed(self.dataids), self.data_list)}
 
     @property
     def saved_data_json(self):
