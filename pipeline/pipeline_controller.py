@@ -86,7 +86,7 @@ class PipelineController:
         self.pipeline_view.scene_widgets.board_marker_size_num_edit.double_value = self.params.get('board_marker_size', 0.0175)
         self.pipeline_view.scene_widgets.board_type_combobox.selected_text = self.params.get('board_type', "DICT_4X4_100")
         self.pipeline_view.scene_widgets.calib_save_text.text_value = self.params.get('calib_path', "")
-        self.pipeline_view.scene_widgets.data_folder_text.text_value = self.params.get('data_path', "")
+        # self.pipeline_view.scene_widgets.data_folder_text.text_value = ""
         
 
     def load_in_startup(self):
@@ -542,17 +542,34 @@ class PipelineController:
                         self.collected_data.pop_pose(self.collected_data.dataids.index(select_item.root_text), 
                                                      select_item.index_in_level)
                     self._data_tree_view_update()
-        # logger.debug("Removing data")
+    
 
+    @callback
+    def on_data_tree_view_load_button(self):
+        path = self.params.get('data_path', './data')
+        path += "/" + self.pipeline_view.scene_widgets.data_folder_text.text_value
+        if self.pipeline_view.scene_widgets.data_folder_text.text_value == "":
+            logger.warning("No data folder selected")
+        else:
+            try:
+                self.collected_data.load(path)
+                self._data_tree_view_update()
+            except Exception as e:
+                logger.error(f"Failed to load data: {e}")
+            
+        logger.debug("Loading data")
 
     @callback
     def on_data_save_button(self):
+        path = self.params.get('data_path', './data')
+        path += "/" + self.pipeline_view.scene_widgets.data_folder_text.text_value
         if self.collected_data == '':
             pass
         else:
-            self.collected_data.save(self.pipeline_view.scene_widgets.data_folder_text.text_value)
+            self.collected_data.save(path)
         logger.debug("Saving data")
         pass
+
 
     @callback
     def on_board_type_combobox_change(self, text, index):

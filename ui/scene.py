@@ -112,20 +112,24 @@ class SceneWidgets:
         layout.add_child(prompt_layout)
         self.data_tree_view = ModifiedTreeView()
         layout.add_child(self.data_tree_view.get_tree_widget())
-        # self.data_list_view = gui.ListView()
-        # self.data_list_view.set_items(['Click to add data'])
-        # self.data_list_view.set_max_visible_items(5)
-        # layout.add_child(self.data_list_view)
-        list_operation_layout = gui.Horiz()
+
+        list_operation_layout = gui.Horiz(self.em)
         layout.add_child(list_operation_layout)
         self.data_tree_view_remove_button = gui.Button("Remove")
         self.data_tree_view_remove_button.horizontal_padding_em = 0.5
         self.data_tree_view_remove_button.vertical_padding_em = 0
         list_operation_layout.add_child(self.data_tree_view_remove_button)
 
+
+        self.data_tree_view_load_button = gui.Button("Load")
+        self.data_tree_view_load_button.horizontal_padding_em = 0.5
+        self.data_tree_view_load_button.vertical_padding_em = 0
+        list_operation_layout.add_child(self.data_tree_view_load_button)
+
         data_folder_layout = gui.Horiz()
         data_folder_layout.add_child(gui.Label("Save to:"))
         self.data_folder_text = gui.TextEdit()
+        self.data_folder_text.placeholder_text = "Input data path here..."
         data_folder_layout.add_child(self.data_folder_text)
         data_folder_layout.add_fixed(0.25 * self.em)
         self.data_folder_select_button = gui.Button("...")
