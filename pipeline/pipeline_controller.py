@@ -7,7 +7,6 @@ import open3d.visualization.rendering as rendering
 import open3d as o3d
 from pipeline.pipeline_model import PipelineModel
 from pipeline.pipeline_view import PipelineView
-from utils.calibration_process import CalibrationProcess
 from utils.robot import RobotInterface
 from functools import wraps
 import logging
@@ -60,7 +59,7 @@ class PipelineController:
         self.rectangle_geometry = None
         self.frame = None
         self.robot = RobotInterface()
-        GeneratorExit
+
         # Collect bound methods into callbacks dictionary
         self.callbacks = {name: getattr(self, name) for name in _callback_names}
         
@@ -316,7 +315,7 @@ class PipelineController:
     @callback
     def on_birds_eye_view_button(self):
         """Callback to reset point cloud view to birds eye (overhead) view"""
-        self.pipeline_view.pcdview.setup_camera(self.vfov, self.pcd_bounds, [0, 0, 0])
+        self.pipeline_view.pcdview.setup_camera(self.pipeline_view.vfov, self.pipeline_view.pcd_bounds, [0, 0, 0])
         self.pipeline_view.pcdview.scene.camera.look_at([0, 0, 1.5], [0, 3, 1.5], [0, -1, 0])
 
     @callback
@@ -468,8 +467,12 @@ class PipelineController:
     def on_data_collect_button(self):
         # tmp_pose = np.array([1,2,3,4,5,6])
         try:
-            # tmp_pose = self.pipeline_model.robot_interface.capture_gripper_to_base(sep=False)
-            tmp_pose = self.pipeline_model.get_cam_space_gripper_pose()
+            if self.pipeline_model.flag_center_to_base:
+                tmp_pose = self.pipeline_model.robot_interface.capture_gripper_to_base(sep=False)
+            else:
+                tmp_pose = self.pipeline_model.get_cam_space_gripper_pose()
+
+            
             if self.pipeline_model.T_cam_to_base is not None:
                 rotation_matrix = R.from_euler('xyz', tmp_pose[3:6].reshape(1, 3), degrees=False).as_matrix().reshape(3, 3)
                 T_end_to_base = np.eye(4)

@@ -16,6 +16,8 @@ import logging
 from utils import ARUCO_BOARD
 import open3d.visualization.gui as gui
 from utils import CollectedData
+np.set_printoptions(precision=3, suppress=True)
+
 logger = logging.getLogger(__name__)
 
 # calib = json.load(open('Calibration_results/calibration_results.json'))

@@ -2,7 +2,8 @@
 import logging
 import click
 import json
-
+import numpy as np
+np.set_printoptions(precision=4, suppress=True)
 from pipeline import PipelineController
 
 @click.command()
