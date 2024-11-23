@@ -18,6 +18,7 @@
         "camera_init": true,
         "camera_calib_init": true,
         "robot_init": true,
-        "handeye_calib_init": false
+        "handeye_calib_init": false,
+        "collect_data_viewer": true
     }
 }

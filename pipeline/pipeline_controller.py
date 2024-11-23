@@ -101,6 +101,8 @@ class PipelineController:
             self.on_handeye_calib_init_button()
         if 'calib_check' in startup_params and startup_params['calib_check']:
             self.on_calib_check_button()
+        if 'collect_data_viewer' in startup_params and startup_params['collect_data_viewer']:
+            self.collected_data.start_display_thread()
 
     def transform_element(self, elements:dict, element_name: str):
         if self.pipeline_model.T_cam_to_base is None:
@@ -440,7 +442,11 @@ class PipelineController:
         else:
             self.pipeline_view.scene_widgets.data_collect_button.enabled = True
         logger.debug(f"Prompt text changed: {text}")
-
+        select_item = self.pipeline_view.scene_widgets.data_tree_view.selected_item
+        if select_item.parent_text == "Prompt":
+            self.collected_data.data_list[self.collected_data.dataids.index(select_item.root_text)]['prompt'] = text
+            self._data_tree_view_update()
+            
     def _data_tree_view_update(self):
         self.pipeline_view.scene_widgets.data_tree_view.tree.clear()
         for key, value in self.collected_data.shown_data_json.items():
@@ -468,6 +474,10 @@ class PipelineController:
     def on_data_collect_button(self):
         # tmp_pose = np.array([1,2,3,4,5,6])
         try:
+            if not self.pipeline_view.scene_widgets.capture_toggle.is_on:
+                logger.warning("Stream not started")
+                return
+                
             if self.pipeline_model.flag_center_to_base:
                 tmp_pose = self.pipeline_model.robot_interface.capture_gripper_to_base(sep=False)
             else:
@@ -498,6 +508,7 @@ class PipelineController:
                                        color=color, 
                                        depth=depth, 
                                        point_cloud=pcd_with_labels)
+            
             self._data_tree_view_update()
             logger.debug(f"On data collect Click")
         except Exception as e: 
@@ -513,9 +524,20 @@ class PipelineController:
             f"Level: {item.level}, Index in Level: {item.index_in_level}, "
             f"Parent Text: {item.parent_text}"
         )
+        select_item = self.pipeline_view.scene_widgets.data_tree_view.selected_item
         self.pipeline_view.scene_widgets.prompt_text.text_value = self.collected_data.shown_data_json.get(
-                self.pipeline_view.scene_widgets.data_tree_view.selected_item.root_text
+                select_item.root_text
                 ).get('prompt')
+        match select_item.level:
+            case 1:
+                pass
+            case 2:
+                pass
+            case 3:
+                if select_item.parent_text == "Pose":
+                    prompt_idx = self.collected_data.dataids.index(select_item.root_text)
+                    pose_idx = select_item.index_in_level
+                    self.collected_data.show_image(prompt_idx, pose_idx)
 
     @callback
     def on_data_tree_view_remove_button(self):
@@ -545,7 +567,8 @@ class PipelineController:
             logger.warning("No data folder selected")
         else:
             try:
-                self.collected_data.load(path)
+                self.collected_data.path = path
+                self.collected_data.load()
                 self._data_tree_view_update()
             except Exception as e:
                 logger.error(f"Failed to load data: {e}")
@@ -555,11 +578,17 @@ class PipelineController:
     @callback
     def on_data_save_button(self):
         path = self.params.get('data_path', './data')
-        path += "/" + self.pipeline_view.scene_widgets.data_folder_text.text_value
-        if self.collected_data == '':
-            pass
+        data_folder = self.pipeline_view.scene_widgets.data_folder_text.text_value
+        if data_folder == "":
+            logger.warning("No data folder selected, use tmp folder")
+            data_folder = "tmp"
+
+        path += "/" + data_folder
+        if len(self.collected_data) == 0:
+            logger.warning("No data to save")
         else:
-            self.collected_data.save(path)
+            self.collected_data.path = path
+            self.collected_data.save()
         logger.debug("Saving data")
         pass
 
@@ -678,5 +707,7 @@ class PipelineController:
                     self.on_calib_button()
                 logger.info(f"key pressed {event.key}")
             return True
+        # if event.type == gui.KeyEvent.Type.DOWN:
+        #     print(event.key)
         return False
     

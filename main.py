@@ -35,22 +35,23 @@ def main(config):
             'camera_calib_init': True,
             'robot_init': True,
             'handeye_calib_init': True,
-            'calib_check': True
+            'calib_check': True,
+            'collect_data_viewer': True
         }
     }
 
-    # Load configuration from file if it exists
-    try:
-        with open(config, 'r') as f:
-            file_params = json.load(f)
-            params.update(file_params)
-    except FileNotFoundError:
-        logger.warning(f"Configuration file {config} not found. Using default parameters.")
-        # Save default configuration
-        with open(config, 'w') as f:
-            json.dump(params, f, indent=4)
-    except json.JSONDecodeError:
-        logger.error(f"Error parsing configuration file {config}. Using default parameters.")
+    # # Load configuration from file if it exists
+    # try:
+    #     with open(config, 'r') as f:
+    #         file_params = json.load(f)
+    #         params.update(file_params)
+    # except FileNotFoundError:
+    #     logger.warning(f"Configuration file {config} not found. Using default parameters.")
+    #     # Save default configuration
+    #     with open(config, 'w') as f:
+    #         json.dump(params, f, indent=4)
+    # except json.JSONDecodeError:
+    #     logger.error(f"Error parsing configuration file {config}. Using default parameters.")
 
     controller = PipelineController(params)
 
