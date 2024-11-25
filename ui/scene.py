@@ -11,13 +11,13 @@ class SceneWidgets:
         self.window = window
         self.callbacks = callbacks
         self.em = self.window.theme.font_size
-        self.__init_pcd_view()
+        self.init_pcd_view()
         self.__init_panel()
         self.__init_widgets()
 
-    def __init_pcd_view(self):
+    def init_pcd_view(self):
         self.pcdview = gui.SceneWidget()
-        self.pcdview.enable_scene_caching(True)  # makes UI _much_ more responsive
+        
         self.pcdview.scene = rendering.Open3DScene(self.window.renderer)
         self.pcdview.scene.set_background([1, 1, 1, 1])  # White background
         self.pcdview.scene.set_lighting(
@@ -29,6 +29,7 @@ class SceneWidgets:
         self.pcdview.add_3d_label([0, 1, 0], "Y")
         self.pcdview.add_3d_label([0, 0, 1], "Z")
         self.window.add_child(self.pcdview)
+        self.pcdview.enable_scene_caching(False)  # makes UI _much_ more responsive
 
 
     def __init_panel(self):

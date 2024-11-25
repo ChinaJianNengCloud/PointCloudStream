@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import torch
 import open3d as o3d
+o3d.utility.set_verbosity_level(o3d.utility.VerbosityLevel.Debug)
 import open3d.core as o3c
 from scipy.spatial.transform import Rotation as R
 import cv2
@@ -16,6 +17,7 @@ import logging
 from utils import ARUCO_BOARD
 import open3d.visualization.gui as gui
 from utils import CollectedData
+
 np.set_printoptions(precision=3, suppress=True)
 
 logger = logging.getLogger(__name__)
@@ -23,20 +25,52 @@ logger = logging.getLogger(__name__)
 # calib = json.load(open('Calibration_results/calibration_results.json'))
 # T_cam_to_base = np.array(calib.get('calibration_results').get('Tsai').get('transformation_matrix'))
 
+class FakeCamera:
+    """Fake camera that generates synthetic RGBD frames for debugging."""
+    def __init__(self):
+        self.width = 1280
+        self.height = 720
+        self.frame_idx = 0
+
+    def connect(self, index):
+        """Fake connect method, always returns True."""
+        return True
+
+    def disconnect(self):
+        """Fake disconnect method."""
+        pass
+
+    def capture_frame(self, enable_align_depth_to_color=True):
+        """Generate synthetic depth and color images."""
+        # Create a color image with a moving circle
+        color_image = np.zeros((self.height, self.width, 3), dtype=np.uint8)
+        center_x = int((self.frame_idx * 5) % self.width)
+        center_y = self.height // 2
+        cv2.circle(color_image, (center_x, center_y), 50, (0, 255, 0), -1)
+
+        # Generate a depth image as a gradient
+        depth_image = np.tile(np.linspace(500, 2000, self.width, dtype=np.uint16), (self.height, 1))
+
+        self.frame_idx += 1
+
+        # Return a fake RGBD frame
+        return FakeRGBDFrame(depth_image, color_image)
+
+class FakeRGBDFrame:
+    """Fake RGBD frame containing synthetic depth and color images."""
+    def __init__(self, depth_image, color_image):
+        self.depth = depth_image
+        self.color = color_image
+
 class PipelineModel:
-    """Controls IO (camera, video file, recording, saving frames). Methods run
-    in worker threads."""
+    """Controls IO (camera, video file, recording, saving frames). Methods run in worker threads."""
 
     def __init__(self, update_view, params: dict):
         """Initialize.
 
         Args:
-            update_view (callback): Callback to update display elements for a
-                frame.
-            camera_config_file (str): Camera configuration json file.
-            rgbd_video (str): RS bag file containing the RGBD video. If this is
-                provided, connected cameras are ignored.
-            device (str): Compute device (e.g.: 'cpu:0' or 'cuda:0').
+            update_view (callback): Callback to update display elements for a frame.
+            params (dict): Parameters including device, camera config, and other settings.
         """
         self.update_view = update_view
         self.params = params
@@ -51,6 +85,9 @@ class PipelineModel:
         self.rgbd_frame = None
         self.close_stream = None
         self.T_cam_to_base = None
+
+        # Fake camera flag
+        self.use_fake_camera = params.get('use_fake_camera', False)
 
         # self.robot_trans_matrix = calibrated_camera_to_end_effector
 
@@ -134,12 +171,18 @@ class PipelineModel:
         if self.camera_config_file:
             config = o3d.io.read_azure_kinect_sensor_config(self.camera_config_file)
             if self.camera is None:
-                self.camera = o3d.io.AzureKinectSensor(config)
+                if self.use_fake_camera:
+                    self.camera = FakeCamera()
+                else:
+                    self.camera = o3d.io.AzureKinectSensor(config)
                 self.camera_json = json.load(open(self.camera_config_file, 'r'))
             intrinsic = o3d.io.read_pinhole_camera_intrinsic(self.camera_config_file)
         else:
             if self.camera is None:
-                self.camera = o3d.io.AzureKinectSensor()
+                if self.use_fake_camera:
+                    self.camera = FakeCamera()
+                else:
+                    self.camera = o3d.io.AzureKinectSensor()
             # Use default intrinsics
             intrinsic = o3d.camera.PinholeCameraIntrinsic(
                 o3d.camera.PinholeCameraIntrinsicParameters.PrimeSenseDefault)
@@ -156,6 +199,7 @@ class PipelineModel:
         logger.info("Intrinsic matrix:")
         logger.info(self.intrinsic_matrix)
 
+        self.rgbd_frame = None
         while self.rgbd_frame is None:
             time.sleep(0.01)
             try:
@@ -188,74 +232,65 @@ class PipelineModel:
         # n_pts = 0
         frame_id = 0
         t1 = time.perf_counter()
-
-
-        pcd_errors = 0
         while (not self.flag_exit and
                (self.video is None or  # Camera
                 (self.video and not self.video.is_eof()))):  # Video
             self.frame = None
             if self.flag_stream_init:
-                logger.debug("Stream Debug Point 1")
+                # logger.debug("Stream Debug Point 1")
                 if self.video:
                     future_rgbd_frame = self.executor.submit(self.video.next_frame)
                 else:
                     future_rgbd_frame = self.executor.submit(
                         self.camera.capture_frame, True)
-                logger.debug("Stream Debug Point 2")
-                try:
-                    depth = o3d.t.geometry.Image(o3c.Tensor(np.asarray(self.rgbd_frame.depth), 
-                                                            device=self.o3d_device))
-                    color = o3d.t.geometry.Image(o3c.Tensor(np.asarray(self.rgbd_frame.color), 
-                                                            device=self.o3d_device))
-                    logger.debug("Stream Debug Point 2.0")
-                    rgbd_image = o3d.t.geometry.RGBDImage(color, depth)
+                # logger.debug("Stream Debug Point 2")
 
-                    self.pcd_frame = o3d.t.geometry.PointCloud.create_from_rgbd_image(
-                        rgbd_image, self.intrinsic_matrix, self.extrinsics,
-                        self.depth_scale, self.depth_max,
-                        self.pcd_stride, self.flag_normals)
-                    logger.debug("Stream Debug Point 2.1")
-                    # print(color.columns, color.rows)
-                    camera_line = o3d.geometry.LineSet.create_camera_visualization(
-                        color.columns, color.rows, self.intrinsic_matrix.cpu().numpy(),
-                        np.linalg.inv(self.extrinsics.cpu().numpy()), 0.2)
-                    logger.debug("Stream Debug Point 2.2")
-                    camera_line.paint_uniform_color([0.961, 0.475, 0.000])
-                    logger.debug("Stream Debug Point 2.3")
-                    if self.pcd_frame.is_empty():
-                        logger.warning(f"No valid depth data in frame {frame_id}")
+                depth = o3d.t.geometry.Image(o3c.Tensor(np.asarray(self.rgbd_frame.depth), 
+                                                        device=self.o3d_device))
+                color = o3d.t.geometry.Image(o3c.Tensor(np.asarray(self.rgbd_frame.color), 
+                                                        device=self.o3d_device))
+                # logger.debug("Stream Debug Point 2.0")
+                rgbd_image = o3d.t.geometry.RGBDImage(color, depth)
 
-                    depth_in_color = depth.colorize_depth(
-                        self.depth_scale, 0, self.depth_max)
-                    logger.debug("Stream Debug Point 3")
+                self.pcd_frame = o3d.t.geometry.PointCloud.create_from_rgbd_image(
+                    rgbd_image, self.intrinsic_matrix, self.extrinsics,
+                    self.depth_scale, self.depth_max,
+                    self.pcd_stride, self.flag_normals)
+                # logger.debug("Stream Debug Point 2.1")
+                # print(color.columns, color.rows)
+                camera_line = o3d.geometry.LineSet.create_camera_visualization(
+                    color.columns, color.rows, self.intrinsic_matrix.cpu().numpy(),
+                    np.linalg.inv(self.extrinsics.cpu().numpy()), 0.2)
+                # logger.debug("Stream Debug Point 2.2")
+                camera_line.paint_uniform_color([0.961, 0.475, 0.000])
+                # logger.debug("Stream Debug Point 2.3")
+                if self.pcd_frame.is_empty():
+                    logger.warning(f"No valid depth data in frame {frame_id}")
+
+                depth_in_color = depth.colorize_depth(
+                    self.depth_scale, 0, self.depth_max)
+                # logger.debug("Stream Debug Point 3")
                     
-                except RuntimeError as e:
-                    pcd_errors += 1
-                    logger.warning(f"Runtime error in frame {frame_id}: {e}")
-                    continue
-
-                logger.debug("Stream Debug Point 4")
                 frame_elements = {
-                    'color': color.cpu(),
-                    'depth': depth_in_color.cpu(),
-                    'pcd': self.pcd_frame.cpu().clone(),
+                    'color': color,
+                    'depth': depth_in_color,
+                    'pcd': self.pcd_frame,
                     'camera': camera_line,
                     # 'status_message': self.status_message
                 }
-                logger.debug("Stream Debug Point 4.5")
+                # logger.debug("Stream Debug Point 4.5")
                 # n_pts += self.pcd_frame.point.positions.shape[0]
                 if frame_id % 30 == 0 and frame_id > 0:
                     t0, t1 = t1, time.perf_counter()
                     frame_elements['fps'] =  30 * (1.0 / (t1 - t0))
-                logger.debug("Stream Debug Point 5")
+                # logger.debug("Stream Debug Point 5")
                 if frame_id % 120 == 0:
                     self.color_mean = np.mean(frame_elements['pcd'].point.colors.cpu().numpy(), axis=0).tolist()  # frame_elements['pcd'].point.colors.mean(dim=0)
                     self.color_std = np.std(frame_elements['pcd'].point.colors.cpu().numpy(), axis=0).tolist()  # frame_elements['pcd'].point.colors.std(dim=0)
                     logger.debug(f"color_mean = {self.color_mean}, color_std = {self.color_std}")
                     # frame_id = 0
-                logger.debug(frame_id)
-                logger.debug("Stream Debug Point 6")
+                # logger.debug(frame_id)
+                # logger.debug("Stream Debug Point 6")
                 if self.flag_robot_init and self.flag_handeye_calib_success and self.flag_calib_axis_to_scene:
                     # Draw an axis for the robot position pose in the scene
                     robot_end_frame, robot_base_frame = self.robot_tracking()
@@ -273,7 +308,7 @@ class PipelineModel:
                     except Exception as e:
                         labels = np.zeros(self.pcd_frame.point.positions.shape[0])
                     frame_elements['seg'] = labels
-                logger.debug("Stream Debug Point 7")
+                # logger.debug("Stream Debug Point 7")
                 if self.flag_tracking_board:
                     # logger.debug("Tracking board")
                     calib_color, board_pose = self.camera_board_dectecting(axis_to_scene=self.flag_calib_axis_to_scene)
@@ -281,10 +316,10 @@ class PipelineModel:
                                                                                     device=o3d.core.Device('cpu:0')))
                     if board_pose is not None:
                         frame_elements['board_pose'] = board_pose
-                
+
 
                     # logger.debug("Tracking board done")
-                logger.debug("Stream Debug Point 8")
+                # logger.debug("Stream Debug Point 8")
                 # push data
                 self.update_view(frame_elements, self.flag_center_to_base)
 
@@ -300,16 +335,16 @@ class PipelineModel:
                     self.calib_collect(np.asarray(self.rgbd_frame.color), self.flag_handeye_calib_init)
                     if len(self.calibration_data) > 0:
                         self.flag_calib_collect = False
-                logger.debug("Stream Debug Point 9")
+                # logger.debug("Stream Debug Point 9")
                 self.rgbd_frame = future_rgbd_frame.result()
                 while self.rgbd_frame is None:
                     time.sleep(0.01)
                     self.rgbd_frame = self.camera.capture_frame(True)
-            logger.debug("Stream Debug Point 10")
+            # logger.debug("Stream Debug Point 10")
             with self.cv_capture:  # Wait for capture to be enabled
                 self.cv_capture.wait_for(
                     predicate=lambda: self.flag_capture or self.flag_exit)
-            logger.debug("Stream Debug Point 11")
+            # logger.debug("Stream Debug Point 11")
             frame_id += 1
         try:
             self.close_stream()
@@ -427,7 +462,7 @@ class PipelineModel:
                                                                                      ret_vecs=True)
         if rvec is None or tvec is None or axis_to_scene is False:
             return processed_img, None
-        
+
 
         self.T_cam_to_board[:3, :3] = cv2.Rodrigues(rvec)[0] #R.from_euler('xyz', rvec.reshape(1, 3), degrees=False).as_matrix().reshape(3, 3)
         self.T_cam_to_board[:3, 3] = tvec.ravel()

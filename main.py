@@ -33,13 +33,16 @@ def main(config):
         'load_in_startup': {
             'camera_init': True,
             'camera_calib_init': True,
-            'robot_init': True,
+            # 'robot_init': True,
             'handeye_calib_init': True,
             'calib_check': True,
             'collect_data_viewer': True
-        }
+        },
+        'use_fake_camera': True
     }
-
+    import open3d as o3d
+    import faulthandler
+    faulthandler.enable()
     # # Load configuration from file if it exists
     # try:
     #     with open(config, 'r') as f:
@@ -52,7 +55,7 @@ def main(config):
     #         json.dump(params, f, indent=4)
     # except json.JSONDecodeError:
     #     logger.error(f"Error parsing configuration file {config}. Using default parameters.")
-
+    # with o3d.utility.VerbosityContextManager(o3d.utility.VerbosityLevel.Debug):
     controller = PipelineController(params)
 
 if __name__ == "__main__":

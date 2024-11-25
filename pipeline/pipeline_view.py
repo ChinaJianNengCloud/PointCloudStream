@@ -13,19 +13,17 @@ from ui import SceneWidgets
 logger = logging.getLogger(__name__)
 
 
-
 class PipelineView:
     """Controls display and user interface. All methods must run in the main thread."""
 
-    def __init__(self, max_pcd_vertices=1 << 20, callbacks:dict[str, Callable]=None):
-        # def __init__(self, max_pcd_vertices=1 << 20, **callbacks):
+    def __init__(self, max_pcd_vertices=1 << 20, callbacks: dict[str, Callable] = None):
         """Initialize."""
         self.vfov = 60
         self.max_pcd_vertices = max_pcd_vertices
         self.callbacks = callbacks  # Store the callbacks dictionary
         self.capturing = False  # Initialize capturing flag
         self.acq_mode = False  # Initialize acquisition mode flag
-
+        self.frame_num = 0
         gui.Application.instance.initialize()
         self.window = gui.Application.instance.create_window(
             "Real time RGBD camera and PCD rendering", 1280, 720)
@@ -37,7 +35,7 @@ class PipelineView:
         self.scene_widgets = SceneWidgets(self.window, callbacks)
         self.callback_bindings()
         # Set the callbacks for widgets that require methods of PipelineView
-        
+
         # Now, we can access the widgets via self.widget_all
         self.pcdview = self.scene_widgets.get_pcd_view()
         self.em = self.scene_widgets.em
@@ -71,7 +69,7 @@ class PipelineView:
 
     def callback_bindings(self):
         for each in self.callbacks.keys():
-            
+
             if "button" in each or 'toggle' in each:
                 getattr(self.scene_widgets, "_".join(each.split('_')[1:])).set_on_clicked(self.callbacks[each])
                 logger.info(f"Registered callback for {each}")
@@ -98,7 +96,6 @@ class PipelineView:
 
         self.window.set_on_key(self.callbacks['on_key_pressed'])
 
-
     def __init_bbox(self):
         # Initialize bounding box parameters
         self.bbox_params = {'xmin': -0.5, 'xmax': 0.5,
@@ -119,10 +116,10 @@ class PipelineView:
         bbox_params = ['xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax']
         for param in bbox_params:
             self.scene_widgets.bbox_sliders[param].double_value = self.bbox_params[param]
-            self.scene_widgets.bbox_sliders[param].set_on_value_changed(lambda value, 
+            self.scene_widgets.bbox_sliders[param].set_on_value_changed(lambda value,
                                                                         p=param: self._on_bbox_slider_changed(value, p))
             self.scene_widgets.bbox_edits[param].double_value = self.bbox_params[param]
-            self.scene_widgets.bbox_edits[param].set_on_value_changed(lambda value, 
+            self.scene_widgets.bbox_edits[param].set_on_value_changed(lambda value,
                                                                       p=param: self._on_bbox_edit_changed(value, p))
 
     def update(self, frame_elements: dict):
@@ -146,8 +143,8 @@ class PipelineView:
         # Update the point cloud visualization
         self.update_pcd_geometry()
 
-        if self.scene_widgets.tab_view.selected_tab_index == 0: # general tab
-        # Update color and depth images
+        if self.scene_widgets.tab_view.selected_tab_index == 0:  # general tab
+            # Update color and depth images
             if self.scene_widgets.show_color.get_is_open() and 'color' in frame_elements:
                 sampling_ratio = self.video_size[1] / frame_elements['color'].columns
                 self.scene_widgets.color_video.update_image(
@@ -157,19 +154,17 @@ class PipelineView:
                 sampling_ratio = self.video_size[1] / frame_elements['depth'].columns
                 self.scene_widgets.depth_video.update_image(
                     frame_elements['depth'].resize(sampling_ratio).to_legacy())
-        
-        if self.scene_widgets.tab_view.selected_tab_index == 2: # calib tab
+
+        if self.scene_widgets.tab_view.selected_tab_index == 2:  # calib tab
             if self.scene_widgets.show_calib.get_is_open() and 'calib_color' in frame_elements:
                 sampling_ratio = self.video_size[1] / frame_elements['calib_color'].columns
                 self.scene_widgets.calib_video.update_image(
                     frame_elements['calib_color'].resize(sampling_ratio).to_legacy())
 
-
-        self.geometry_registry("camera", frame_elements, self.line_material)
-        self.geometry_registry("robot_base_frame", frame_elements, self.pcd_material)
-        self.geometry_registry("robot_end_frame", frame_elements, self.pcd_material)
-        self.geometry_registry("board_pose", frame_elements, self.pcd_material)
-
+        # self.geometry_registry("camera", frame_elements, self.line_material)
+        # self.geometry_registry("robot_base_frame", frame_elements, self.pcd_material)
+        # self.geometry_registry("robot_end_frame", frame_elements, self.pcd_material)
+        # self.geometry_registry("board_pose", frame_elements, self.pcd_material)
 
         if 'status_message' in frame_elements:
             self.scene_widgets.status_message.text = frame_elements["status_message"]
@@ -179,11 +174,24 @@ class PipelineView:
             self.scene_widgets.fps_label.text = f"FPS: {int(fps)}"
 
         self.scene_widgets.view_status.text = str(self.pcdview.scene.camera.get_view_matrix())
+        self.frame_num += 1
+        logger.debug(f"Frame: {self.frame_num}")
 
     def geometry_registry(self, name, frame_elements, material):
         if name in frame_elements:
-            self.pcdview.scene.remove_geometry(name)
-            self.pcdview.scene.add_geometry(name, frame_elements[name], material)
+            if self.pcdview.scene.has_geometry(name):
+                # Update existing geometry
+                update_flags = (rendering.Scene.UPDATE_POINTS_FLAG |
+                                rendering.Scene.UPDATE_COLORS_FLAG |
+                                rendering.Scene.UPDATE_NORMALS_FLAG)
+                self.pcdview.scene.scene.update_geometry(name, frame_elements[name], update_flags)
+            else:
+                # Add new geometry
+                self.pcdview.scene.add_geometry(name, frame_elements[name], material)
+
+    def transform_geometry(self, name, transform):
+        if self.pcdview.scene.has_geometry(name):
+            self.pcdview.scene.scene.transform_geometry(name, transform)
 
     def update_pcd_geometry(self):
         if not self.flag_gui_init:
@@ -200,15 +208,16 @@ class PipelineView:
                                           o3c.Dtype.Float32)
             })
             if self.pcdview.scene.has_geometry('pcd'):
-                self.pcdview.scene.remove_geometry('pcd')
-
-            # Set shader based on display mode
-            if self.display_mode == 'Normals':
-                self.pcd_material.shader = 'normals'
+                # No need to remove; will update later
+                pass
             else:
-                self.pcd_material.shader = 'defaultLit'
+                # Set shader based on display mode
+                if self.display_mode == 'Normals':
+                    self.pcd_material.shader = 'normals'
+                else:
+                    self.pcd_material.shader = 'defaultLit'
 
-            self.pcdview.scene.add_geometry('pcd', dummy_pcd, self.pcd_material)
+                self.pcdview.scene.add_geometry('pcd', dummy_pcd.cuda(), self.pcd_material)
             self.flag_gui_init = True
 
         pcd = self.current_pcd
@@ -221,60 +230,41 @@ class PipelineView:
             # If labels is a torch tensor (possibly on GPU), handle accordingly
             if isinstance(labels, torch.Tensor):
                 device = labels.device  # Get the device (CPU or GPU)
-
-                # Convert palettes to a torch tensor on the same device
                 PALETTE_TENSOR = torch.tensor(self.palettes, device=device, dtype=torch.float32) / 255.0
-
                 num_points = labels.shape[0]
-
-                # Initialize colors tensor with zeros (black color)
                 colors = torch.zeros((num_points, 3), device=device, dtype=torch.float32)
-
-                # Get valid indices where labels are non-negative
                 valid_indices = torch.nonzero(labels >= 0, as_tuple=False).squeeze(1)
-
-                # Assign colors to valid points
                 colors[valid_indices] = PALETTE_TENSOR[labels[valid_indices]]
-
-                # Convert colors to Open3D tensor and assign to point cloud
                 pcd.point.colors = o3c.Tensor(colors, dtype=o3c.Dtype.Float32, device=device)
             else:
-                # If labels is a numpy array
                 labels = labels.astype(np.int32)
                 num_points = len(labels)
-
-                # Initialize colors array with zeros (black color)
                 colors = np.zeros((num_points, 3), dtype=np.float32)
-
-                # Get valid indices where labels are non-negative
                 valid_idx = labels >= 0
-
-                # Assign colors to valid points
-                colors[valid_idx] = np.array(self.palettes)[labels[valid_idx]] / 255.0  # Normalize to [0, 1]
-
-                # Convert colors to Open3D tensor and assign to point cloud
+                colors[valid_idx] = np.array(self.palettes)[labels[valid_idx]] / 255.0 
                 pcd.point.colors = o3c.Tensor(colors, dtype=o3c.Dtype.Float32)
 
             # Set shader to defaultLit for segmentation coloring
             self.pcd_material.shader = 'defaultLit'
-            pcd_to_display = pcd
 
         elif self.display_mode == 'Normals':
             # Use normals for coloring; shader will use normals
             self.pcd_material.shader = 'normals'
-            pcd_to_display = pcd
 
         else:  # 'Colors' mode
-            # Use colors as usual
             self.pcd_material.shader = 'defaultLit'
-            pcd_to_display = pcd
 
+        update_flags = (rendering.Scene.UPDATE_POINTS_FLAG |
+                        rendering.Scene.UPDATE_COLORS_FLAG |
+                        (rendering.Scene.UPDATE_NORMALS_FLAG
+                         if self.display_mode == 'Normals' else 0))
+        
         # Update the geometry in the scene
         if self.pcdview.scene.has_geometry('pcd'):
-            self.pcdview.scene.remove_geometry('pcd')
-        self.pcdview.scene.add_geometry('pcd', pcd_to_display, self.pcd_material)
-        self.pcdview.force_redraw()
-
+            self.pcdview.scene.scene.update_geometry('pcd', pcd, update_flags)
+        else:
+            self.pcdview.scene.add_geometry('pcd', pcd, self.pcd_material)
+        # self.pcdview.force_redraw()
 
     def on_layout(self, layout_context):
         """Callback on window initialize / resize"""
@@ -282,8 +272,8 @@ class PipelineView:
         panel_width = self.em * 22
         # Set the frame for the panel on the right side
         self.scene_widgets.panel.frame = gui.Rect(frame.get_right() - panel_width,
-                                               frame.y, panel_width,
-                                               frame.height)
+                                                  frame.y, panel_width,
+                                                  frame.height)
 
         # Set the frame for the scene on the left side
         self.pcdview.frame = gui.Rect(frame.x, frame.y,
@@ -291,11 +281,10 @@ class PipelineView:
                                       frame.height)
 
         pref = self.scene_widgets.fps_label.calc_preferred_size(layout_context,
-                                                             gui.Widget.Constraints())
+                                                                gui.Widget.Constraints())
         self.scene_widgets.fps_label.frame = gui.Rect(frame.x,
-                                                   frame.get_bottom() - pref.height,
-                                                   pref.width, pref.height)
-
+                                                      frame.get_bottom() - pref.height,
+                                                      pref.width, pref.height)
 
     def _on_bbox_slider_changed(self, value, param):
         self.bbox_params[param] = value
@@ -335,10 +324,12 @@ class PipelineView:
         bbox_lineset.lines = o3d.utility.Vector2iVector(lines)
         bbox_lineset.colors = o3d.utility.Vector3dVector(colors)
 
-        # Remove the old lineset if it exists
-        if self.bbox_lineset is not None:
-            self.pcdview.scene.remove_geometry(self.bbox_lineset_name)
-        # Add the new lineset
-        self.pcdview.scene.add_geometry(self.bbox_lineset_name, bbox_lineset, self.bbox_material)
+        # Update or add the lineset in the scene
+        if self.pcdview.scene.has_geometry(self.bbox_lineset_name):
+            update_flags = rendering.Scene.UPDATE_POINTS_FLAG | rendering.Scene.UPDATE_COLORS_FLAG
+            self.pcdview.scene.scene.update_geometry(self.bbox_lineset_name, bbox_lineset, update_flags)
+        else:
+            self.pcdview.scene.add_geometry(self.bbox_lineset_name, bbox_lineset, self.bbox_material)
+
         self.bbox_lineset = bbox_lineset
         self.pcdview.force_redraw()
