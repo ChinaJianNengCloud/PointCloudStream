@@ -45,6 +45,11 @@ class PipelineView:
         # Set n_pixels displayed for each 3D point, accounting for HiDPI scaling
         self.pcd_material.point_size = int(4 * self.window.scaling)
 
+        # self.cam_material = rendering.MaterialRecord()
+        # self.cam_material.shader = "defaultLit"
+        # # Set n_pixels displayed for each 3D point, accounting for HiDPI scaling
+        # self.cam_material.line_width = 5
+
         # Point cloud bounds, depends on the sensor range
         self.pcd_bounds = o3d.geometry.AxisAlignedBoundingBox([0, 0, 0],
                                                               [0, 0, 0.5])
@@ -64,7 +69,7 @@ class PipelineView:
         self.plane = None
 
         self.palettes = get_num_of_palette(80)
-
+        self.init_scence_objects()
         self.__init_bbox()
 
     def callback_bindings(self):
@@ -139,6 +144,15 @@ class PipelineView:
         self.current_pcd = frame_elements.get('pcd', None)
         self.current_seg = frame_elements.get('seg', None)
         self.current_robot_frame = frame_elements.get('robot_frame', None)
+        if self.frame_num == 0:
+            camera_line = o3d.geometry.LineSet.create_camera_visualization(
+            frame_elements['color'].columns, 
+            frame_elements['color'].rows, 
+            frame_elements['intrinsic_matrix'],
+            np.linalg.inv(frame_elements['extrinsics']), 0.2)
+            # logger.debug("Stream Debug Point 2.2")
+            camera_line.paint_uniform_color([0.961, 0.475, 0.000])
+            self.pcdview.scene.add_geometry("camera", camera_line, self.line_material)
 
         # Update the point cloud visualization
         self.update_pcd_geometry()
@@ -161,6 +175,10 @@ class PipelineView:
                 self.scene_widgets.calib_video.update_image(
                     frame_elements['calib_color'].resize(sampling_ratio).to_legacy())
 
+        self.transform_geometry("robot_base_frame", frame_elements.get('robot_base_frame', None))
+        self.transform_geometry("robot_end_frame", frame_elements.get('robot_end_frame', None))
+        self.transform_geometry("board_pose", frame_elements.get('board_pose', None))
+
         # self.geometry_registry("camera", frame_elements, self.line_material)
         # self.geometry_registry("robot_base_frame", frame_elements, self.pcd_material)
         # self.geometry_registry("robot_end_frame", frame_elements, self.pcd_material)
@@ -177,6 +195,18 @@ class PipelineView:
         self.frame_num += 1
         logger.debug(f"Frame: {self.frame_num}")
 
+    def init_scence_objects(self):
+        self.pcdview.scene.add_geometry("robot_base_frame", 
+                                        o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1), self.pcd_material)
+        self.pcdview.scene.add_geometry("robot_end_frame", 
+                                        o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1), self.pcd_material)
+        self.pcdview.scene.add_geometry("board_pose", 
+                                        o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1), self.pcd_material)
+        
+        # self.pcdview.scene.add_geometry("camera", o3d.geometry.LineSet.create_camera_visualization(
+        #             self.scene_widgets.video_size, color.rows, self.intrinsic_matrix.cpu().numpy(),
+        #             np.linalg.inv(self.extrinsics.cpu().numpy()), 0.2), self.pcd_material)
+
     def geometry_registry(self, name, frame_elements, material):
         if name in frame_elements:
             if self.pcdview.scene.has_geometry(name):
@@ -189,13 +219,14 @@ class PipelineView:
                 # Add new geometry
                 self.pcdview.scene.add_geometry(name, frame_elements[name], material)
 
-    def transform_geometry(self, name, transform):
-        if self.pcdview.scene.has_geometry(name):
-            self.pcdview.scene.scene.transform_geometry(name, transform)
+    def transform_geometry(self, name, transform=None):
+        if self.pcdview.scene.has_geometry(name) and transform is not None:
+            self.pcdview.scene.set_geometry_transform(name, transform)
 
     def update_pcd_geometry(self):
         if not self.flag_gui_init:
             # Initialize the point cloud geometry in the scene
+            
             dummy_pcd = o3d.t.geometry.PointCloud({
                 'positions':
                     o3d.core.Tensor.zeros((self.max_pcd_vertices, 3),

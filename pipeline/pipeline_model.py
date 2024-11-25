@@ -256,14 +256,7 @@ class PipelineModel:
                     rgbd_image, self.intrinsic_matrix, self.extrinsics,
                     self.depth_scale, self.depth_max,
                     self.pcd_stride, self.flag_normals)
-                # logger.debug("Stream Debug Point 2.1")
-                # print(color.columns, color.rows)
-                camera_line = o3d.geometry.LineSet.create_camera_visualization(
-                    color.columns, color.rows, self.intrinsic_matrix.cpu().numpy(),
-                    np.linalg.inv(self.extrinsics.cpu().numpy()), 0.2)
-                # logger.debug("Stream Debug Point 2.2")
-                camera_line.paint_uniform_color([0.961, 0.475, 0.000])
-                # logger.debug("Stream Debug Point 2.3")
+
                 if self.pcd_frame.is_empty():
                     logger.warning(f"No valid depth data in frame {frame_id}")
 
@@ -275,7 +268,8 @@ class PipelineModel:
                     'color': color,
                     'depth': depth_in_color,
                     'pcd': self.pcd_frame,
-                    'camera': camera_line,
+                    'intrinsic_matrix': self.intrinsic_matrix.cpu().numpy(),
+                    'extrinsics': self.extrinsics.cpu().numpy(),
                     # 'status_message': self.status_message
                 }
                 # logger.debug("Stream Debug Point 4.5")
@@ -502,12 +496,12 @@ class PipelineModel:
         T_end_to_base[:3, 3] = tvects.ravel()
         T_base_to_cam =  np.linalg.inv(self.T_cam_to_base)
         T_cam_to_end = T_base_to_cam @ T_end_to_base
-        robot_end_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
-        robot_base_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
-        robot_end_frame.transform(T_cam_to_end)
-        robot_base_frame.transform(T_base_to_cam)
+        # robot_end_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
+        # robot_base_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
+        # robot_end_frame.transform(T_cam_to_end)
+        # robot_base_frame.transform(T_base_to_cam)
         # Add the robot frame to the frame elements for visualization
-        return robot_end_frame, robot_base_frame
+        return T_cam_to_end, T_cam_to_end
     
     def calib_collect(self, img: np.ndarray, with_robot_pose=False):
         if with_robot_pose:
