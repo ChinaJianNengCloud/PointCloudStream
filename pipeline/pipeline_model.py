@@ -456,13 +456,9 @@ class PipelineModel:
                                                                                      ret_vecs=True)
         if rvec is None or tvec is None or axis_to_scene is False:
             return processed_img, None
-
-
         self.T_cam_to_board[:3, :3] = cv2.Rodrigues(rvec)[0] #R.from_euler('xyz', rvec.reshape(1, 3), degrees=False).as_matrix().reshape(3, 3)
         self.T_cam_to_board[:3, 3] = tvec.ravel()
-        chessboard_pose_instance = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
-        chessboard_pose_instance.transform(self.T_cam_to_board)
-        return processed_img, chessboard_pose_instance
+        return processed_img, self.T_cam_to_board
     
     def get_cam_space_gripper_pose(self):
         pose = self.robot_interface.capture_gripper_to_base(sep=False)
@@ -501,7 +497,7 @@ class PipelineModel:
         # robot_end_frame.transform(T_cam_to_end)
         # robot_base_frame.transform(T_base_to_cam)
         # Add the robot frame to the frame elements for visualization
-        return T_cam_to_end, T_cam_to_end
+        return T_cam_to_end, T_base_to_cam
     
     def calib_collect(self, img: np.ndarray, with_robot_pose=False):
         if with_robot_pose:
