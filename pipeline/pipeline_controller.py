@@ -68,7 +68,6 @@ class PipelineController:
             callbacks=self.callbacks
         )
 
-
         self.init_settinngs_values()
         threading.Thread(name='PipelineModel',
                          target=self.pipeline_model.run).start()
@@ -109,8 +108,19 @@ class PipelineController:
             matrix = np.eye(4)
         else:
             matrix = self.pipeline_model.T_cam_to_base
+
         if element_name in elements:
-            elements[element_name].transform(matrix)
+            match element_name:
+                case 'pcd':
+                    elements[element_name].transform(matrix)
+                case 'robot_end_frame':
+                    elements[element_name] @= matrix
+                case 'robot_base_frame':
+                    elements[element_name] @= matrix
+                case 'board_pose':
+                    elements[element_name] @= matrix
+                case _:
+                    logger.warning(f"No transform for {element_name}")
 
 
     def update_view(self, frame_elements: dict, transform_to_robot_space:bool = False):
@@ -123,9 +133,9 @@ class PipelineController:
         self.frame = frame_elements
         if transform_to_robot_space:
             self.transform_element(frame_elements, 'pcd')
-            self.transform_element(frame_elements, 'robot_end_frame')
-            self.transform_element(frame_elements, 'robot_base_frame')
-            self.transform_element(frame_elements, 'camera')
+            # self.transform_element(frame_elements, 'robot_end_frame')
+            # self.transform_element(frame_elements, 'robot_base_frame')
+            # self.transform_element(frame_elements, 'camera')
 
         gui.Application.instance.post_to_main_thread(
             self.pipeline_view.window,

@@ -141,7 +141,7 @@ class PipelineView:
                     'status_message': message
         """
         # Store the current point cloud and segmentation data
-        self.current_pcd = frame_elements.get('pcd', None)
+        # self.current_pcd = frame_elements.get('pcd', None)
         self.current_seg = frame_elements.get('seg', None)
         self.current_robot_frame = frame_elements.get('robot_frame', None)
         if self.frame_num == 0:
@@ -155,7 +155,7 @@ class PipelineView:
             self.pcdview.scene.add_geometry("camera", camera_line, self.line_material)
 
         # Update the point cloud visualization
-        self.update_pcd_geometry()
+        
 
         if self.scene_widgets.tab_view.selected_tab_index == 0:  # general tab
             # Update color and depth images
@@ -174,15 +174,13 @@ class PipelineView:
                 sampling_ratio = self.video_size[1] / frame_elements['calib_color'].columns
                 self.scene_widgets.calib_video.update_image(
                     frame_elements['calib_color'].resize(sampling_ratio).to_legacy())
-
+    
+    
+        self.update_pcd_geometry(frame_elements.get('pcd', None))
         self.transform_geometry("robot_base_frame", frame_elements.get('robot_base_frame', None))
         self.transform_geometry("robot_end_frame", frame_elements.get('robot_end_frame', None))
         self.transform_geometry("board_pose", frame_elements.get('board_pose', None))
 
-        # self.geometry_registry("camera", frame_elements, self.line_material)
-        # self.geometry_registry("robot_base_frame", frame_elements, self.pcd_material)
-        # self.geometry_registry("robot_end_frame", frame_elements, self.pcd_material)
-        # self.geometry_registry("board_pose", frame_elements, self.pcd_material)
 
         if 'status_message' in frame_elements:
             self.scene_widgets.status_message.text = frame_elements["status_message"]
@@ -202,58 +200,12 @@ class PipelineView:
                                         o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1), self.pcd_material)
         self.pcdview.scene.add_geometry("board_pose", 
                                         o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1), self.pcd_material)
-        
-        # self.pcdview.scene.add_geometry("camera", o3d.geometry.LineSet.create_camera_visualization(
-        #             self.scene_widgets.video_size, color.rows, self.intrinsic_matrix.cpu().numpy(),
-        #             np.linalg.inv(self.extrinsics.cpu().numpy()), 0.2), self.pcd_material)
-
-    def geometry_registry(self, name, frame_elements, material):
-        if name in frame_elements:
-            if self.pcdview.scene.has_geometry(name):
-                # Update existing geometry
-                update_flags = (rendering.Scene.UPDATE_POINTS_FLAG |
-                                rendering.Scene.UPDATE_COLORS_FLAG |
-                                rendering.Scene.UPDATE_NORMALS_FLAG)
-                self.pcdview.scene.scene.update_geometry(name, frame_elements[name], update_flags)
-            else:
-                # Add new geometry
-                self.pcdview.scene.add_geometry(name, frame_elements[name], material)
 
     def transform_geometry(self, name, transform=None):
         if self.pcdview.scene.has_geometry(name) and transform is not None:
             self.pcdview.scene.set_geometry_transform(name, transform)
 
-    def update_pcd_geometry(self):
-        if not self.flag_gui_init:
-            # Initialize the point cloud geometry in the scene
-            
-            dummy_pcd = o3d.t.geometry.PointCloud({
-                'positions':
-                    o3d.core.Tensor.zeros((self.max_pcd_vertices, 3),
-                                          o3d.core.Dtype.Float32),
-                'colors':
-                    o3d.core.Tensor.zeros((self.max_pcd_vertices, 3),
-                                          o3c.Dtype.Float32),
-                'normals':
-                    o3d.core.Tensor.zeros((self.max_pcd_vertices, 3),
-                                          o3c.Dtype.Float32)
-            })
-            if self.pcdview.scene.has_geometry('pcd'):
-                # No need to remove; will update later
-                pass
-            else:
-                # Set shader based on display mode
-                if self.display_mode == 'Normals':
-                    self.pcd_material.shader = 'normals'
-                else:
-                    self.pcd_material.shader = 'defaultLit'
-
-                self.pcdview.scene.add_geometry('pcd', dummy_pcd.cuda(), self.pcd_material)
-            self.flag_gui_init = True
-
-        pcd = self.current_pcd
-        if pcd is None:
-            return
+    def update_pcd_geometry(self, pcd):
 
         if self.display_mode == 'Segmentation' and self.current_seg is not None:
             labels = self.current_seg  # Assuming labels is either a numpy array or a torch tensor
@@ -289,12 +241,12 @@ class PipelineView:
                         rendering.Scene.UPDATE_COLORS_FLAG |
                         (rendering.Scene.UPDATE_NORMALS_FLAG
                          if self.display_mode == 'Normals' else 0))
-        
+        cpu_pcd = pcd.cpu()
         # Update the geometry in the scene
         if self.pcdview.scene.has_geometry('pcd'):
-            self.pcdview.scene.scene.update_geometry('pcd', pcd, update_flags)
+            self.pcdview.scene.scene.update_geometry('pcd', cpu_pcd, update_flags)
         else:
-            self.pcdview.scene.add_geometry('pcd', pcd, self.pcd_material)
+            self.pcdview.scene.add_geometry('pcd', cpu_pcd, self.pcd_material)
         # self.pcdview.force_redraw()
 
     def on_layout(self, layout_context):

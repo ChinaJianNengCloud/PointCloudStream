@@ -23,7 +23,6 @@ class CalibrationData:
         self.camera_to_board_tvecs: list[np.ndarray] = []
         self.__manage_list: list[str] = []
         self.save_dir = Path(save_dir) if save_dir else None
-
         self.camera_matrix = None
         self.dist_coeffs = None
         self.calibration_results = {}

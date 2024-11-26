@@ -38,7 +38,7 @@ def main(config):
             'calib_check': True,
             'collect_data_viewer': True
         },
-        'use_fake_camera': False
+        'use_fake_camera': True
     }
     import open3d as o3d
     import faulthandler
