@@ -113,7 +113,8 @@ class PipelineModel:
         
         self.calib_exec = ThreadPoolExecutor(max_workers=3,
                                            thread_name_prefix='Calibreation')
-        self.pcd_lock = threading.Lock()  # Lock for point cloud synchronization
+
+        
     
     def __init_gui_signals(self):
         self.recording = False  # Are we currently recording
@@ -228,6 +229,7 @@ class PipelineModel:
 
     def run(self):
         """Run pipeline."""
+        # n_pts = 0
         frame_id = 0
         t1 = time.perf_counter()
         while (not self.flag_exit and
@@ -235,58 +237,68 @@ class PipelineModel:
                 (self.video and not self.video.is_eof()))):  # Video
             self.frame = None
             if self.flag_stream_init:
+                # logger.debug("Stream Debug Point 1")
                 if self.video:
                     future_rgbd_frame = self.executor.submit(self.video.next_frame)
                 else:
                     future_rgbd_frame = self.executor.submit(
                         self.camera.capture_frame, True)
+                # logger.debug("Stream Debug Point 2")
 
-                # Create point cloud with lock protection
-                with self.pcd_lock:
-                    depth = o3d.t.geometry.Image(o3c.Tensor(np.asarray(self.rgbd_frame.depth), 
+                depth = o3d.t.geometry.Image(o3c.Tensor(np.asarray(self.rgbd_frame.depth), 
                                                         device=self.o3d_device))
-                    color = o3d.t.geometry.Image(o3c.Tensor(np.asarray(self.rgbd_frame.color), 
+                color = o3d.t.geometry.Image(o3c.Tensor(np.asarray(self.rgbd_frame.color), 
                                                         device=self.o3d_device))
-                    rgbd_image = o3d.t.geometry.RGBDImage(color, depth)
+                # logger.debug("Stream Debug Point 2.0")
+                rgbd_image = o3d.t.geometry.RGBDImage(color, depth)
 
-                    self.pcd_frame = o3d.t.geometry.PointCloud.create_from_rgbd_image(
-                        rgbd_image, self.intrinsic_matrix, self.extrinsics,
-                        self.depth_scale, self.depth_max,
-                        self.pcd_stride, self.flag_normals)
+                self.pcd_frame = o3d.t.geometry.PointCloud.create_from_rgbd_image(
+                    rgbd_image, self.intrinsic_matrix, self.extrinsics,
+                    self.depth_scale, self.depth_max,
+                    self.pcd_stride, self.flag_normals)
+                # logger.debug("Stream Debug Point 2.1")
+                # print(color.columns, color.rows)
 
-                    if self.pcd_frame.is_empty():
-                        logger.warning(f"No valid depth data in frame {frame_id}")
+                # logger.debug("Stream Debug Point 2.3")
+                if self.pcd_frame.is_empty():
+                    logger.warning(f"No valid depth data in frame {frame_id}")
 
-                    depth_in_color = depth.colorize_depth(
-                        self.depth_scale, 0, self.depth_max)
+                depth_in_color = depth.colorize_depth(
+                    self.depth_scale, 0, self.depth_max)
+                # logger.debug("Stream Debug Point 3")
                     
-                    # Create a deep copy of the point cloud for rendering
-                    frame_elements = {
-                        'color': color,
-                        'depth': depth_in_color,
-                        'pcd': self.pcd_frame.clone(),  # Create a deep copy
-                        'intrinsic_matrix': self.intrinsic_matrix.cpu().numpy(),
-                        'extrinsics': self.extrinsics.cpu().numpy(),
-                    }
-
+                frame_elements = {
+                    'color': color,
+                    'depth': depth_in_color,
+                    'pcd': self.pcd_frame,
+                    # 'camera': camera_line,
+                    'intrinsic_matrix': self.intrinsic_matrix.cpu().numpy(),
+                    'extrinsics': self.extrinsics.cpu().numpy(),
+                    # 'status_message': self.status_message
+                }
+                # time.sleep(0.01)
+                # logger.debug("Stream Debug Point 4.5")
+                # n_pts += self.pcd_frame.point.positions.shape[0]
                 if frame_id % 30 == 0 and frame_id > 0:
                     t0, t1 = t1, time.perf_counter()
-                    frame_elements['fps'] = 30 * (1.0 / (t1 - t0))
-
+                    frame_elements['fps'] =  30 * (1.0 / (t1 - t0))
+                # logger.debug("Stream Debug Point 5")
                 if frame_id % 120 == 0:
-                    with self.pcd_lock:
-                        self.color_mean = np.mean(frame_elements['pcd'].point.colors.cpu().numpy(), axis=0).tolist()
-                        self.color_std = np.std(frame_elements['pcd'].point.colors.cpu().numpy(), axis=0).tolist()
-                        logger.debug(f"color_mean = {self.color_mean}, color_std = {self.color_std}")
+                    self.color_mean = np.mean(frame_elements['pcd'].point.colors.cpu().numpy(), axis=0).tolist()  # frame_elements['pcd'].point.colors.mean(dim=0)
+                    self.color_std = np.std(frame_elements['pcd'].point.colors.cpu().numpy(), axis=0).tolist()  # frame_elements['pcd'].point.colors.std(dim=0)
+                    logger.debug(f"color_mean = {self.color_mean}, color_std = {self.color_std}")
 
                 if self.flag_robot_init and self.flag_handeye_calib_success and self.flag_calib_axis_to_scene:
                     robot_end_frame, robot_base_frame = self.robot_tracking()
-                    if robot_end_frame is not None:
+                    if robot_end_frame is None:
+                        pass
+                    else:
                         frame_elements['robot_end_frame'] = robot_end_frame
                         frame_elements['robot_base_frame'] = robot_base_frame
 
                 if self.flag_tracking_board:
-                    calib_color = self.camera_board_dectecting(axis_to_scene=self.flag_calib_axis_to_scene)
+                    # logger.debug("Tracking board")
+                    calib_color= self.camera_board_dectecting(axis_to_scene=self.flag_calib_axis_to_scene)
                     frame_elements['calib_color'] = o3d.t.geometry.Image(o3c.Tensor(calib_color, 
                                                                                     device=o3d.core.Device('cpu:0')))
                     if self.T_cam_to_board is not None:
@@ -294,8 +306,7 @@ class PipelineModel:
 
                 if self.flag_segemtation_mode:
                     try:
-                        with self.pcd_lock:
-                            labels = segment_pcd_from_2d(self.pcd_seg_model, 
+                        labels = segment_pcd_from_2d(self.pcd_seg_model, 
                                                     self.intrinsic_matrix, self.extrinsics, 
                                                     self.pcd_frame, np.asarray(self.rgbd_frame.color))
                     except Exception as e:
@@ -311,20 +322,22 @@ class PipelineModel:
                 if self.flag_save_pcd:
                     self.save_pcd()
                     self.flag_save_pcd = False
-            
+                
                 if self.flag_calib_collect:
                     self.calib_collect(np.asarray(self.rgbd_frame.color), self.flag_handeye_calib_init)
                     if len(self.calibration_data) > 0:
                         self.flag_calib_collect = False
-
-                frame_id += 1
+                # logger.debug("Stream Debug Point 9")
+                self.rgbd_frame = future_rgbd_frame.result()
+                while self.rgbd_frame is None:
+                    time.sleep(0.01)
+                    self.rgbd_frame = self.camera.capture_frame(True)
+            # logger.debug("Stream Debug Point 10")
             with self.cv_capture:  # Wait for capture to be enabled
                 self.cv_capture.wait_for(
                     predicate=lambda: self.flag_capture or self.flag_exit)
-            self.rgbd_frame = future_rgbd_frame.result()
-            while self.rgbd_frame is None:
-                time.sleep(0.01)
-                self.rgbd_frame = self.camera.capture_frame(True)
+            # logger.debug("Stream Debug Point 11")
+            frame_id += 1
         try:
             self.close_stream()
         except Exception as e:
@@ -481,6 +494,7 @@ class PipelineModel:
         T_end_to_base[:3, 3] = tvects.ravel()
         T_base_to_cam =  np.linalg.inv(self.T_cam_to_base)
         T_cam_to_end = T_base_to_cam @ T_end_to_base
+
         return T_base_to_cam, T_cam_to_end
     
     def calib_collect(self, img: np.ndarray, with_robot_pose=False):
