@@ -34,27 +34,16 @@ class PipelineView:
 
         self.scene_widgets = SceneWidgets(self.window, callbacks)
         self.callback_bindings()
-        # Set the callbacks for widgets that require methods of PipelineView
 
-        # Now, we can access the widgets via self.widget_all
         self.pcdview = self.scene_widgets.get_pcd_view()
         self.em = self.scene_widgets.em
 
         self.pcd_material = rendering.MaterialRecord()
         self.pcd_material.shader = "defaultLit"
-        # Set n_pixels displayed for each 3D point, accounting for HiDPI scaling
+
         self.pcd_material.point_size = int(4 * self.window.scaling)
-
-        # self.cam_material = rendering.MaterialRecord()
-        # self.cam_material.shader = "defaultLit"
-        # # Set n_pixels displayed for each 3D point, accounting for HiDPI scaling
-        # self.cam_material.line_width = 5
-
-        # Point cloud bounds, depends on the sensor range
         self.pcd_bounds = o3d.geometry.AxisAlignedBoundingBox([0, 0, 0],
                                                               [0, 0, 0.5])
-        # self.camera_view()  # Initially look from the camera
-
         # Initialize other variables
         self.display_mode = 'Colors'  # Initialize display mode to 'Colors'
 
@@ -259,7 +248,7 @@ class PipelineView:
                         rendering.Scene.UPDATE_COLORS_FLAG |
                         (rendering.Scene.UPDATE_NORMALS_FLAG
                          if self.display_mode == 'Normals' else 0))
-        
+
         if self.pcdview.scene.has_geometry('pcd'):
             self.pcdview.scene.scene.update_geometry('pcd', pcd, update_flags)
         self.pcdview.force_redraw()
