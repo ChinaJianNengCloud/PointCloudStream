@@ -58,6 +58,7 @@ class PipelineController:
         self.initial_point = None
         self.rectangle_geometry = None
         self.frame = None
+
         self.robot = RobotInterface()
 
         # Collect bound methods into callbacks dictionary
@@ -123,7 +124,7 @@ class PipelineController:
                     logger.warning(f"No transform for {element_name}")
 
 
-    def update_view(self, frame_elements: dict, transform_to_robot_space:bool = False):
+    def update_view(self, frame_elements: dict, transform_to_robot_space: bool = False):
         """Updates view with new data. May be called from any thread.
 
         Args:
@@ -133,13 +134,19 @@ class PipelineController:
         self.frame = frame_elements
         if transform_to_robot_space:
             self.transform_element(frame_elements, 'pcd')
-            # self.transform_element(frame_elements, 'robot_end_frame')
-            # self.transform_element(frame_elements, 'robot_base_frame')
-            # self.transform_element(frame_elements, 'camera')
 
         gui.Application.instance.post_to_main_thread(
             self.pipeline_view.window,
-            lambda: self.pipeline_view.update(frame_elements))
+            lambda: self._render_update(frame_elements))
+
+    def _render_update(self, frame_elements):
+        """Helper to handle render update and signal completion."""
+        
+        # Signal rendering is done
+        with self.pipeline_model.cv_render:
+            self.pipeline_view.update(frame_elements)
+            self.pipeline_model.render_done = True
+            self.pipeline_model.cv_render.notify_all()
 
     @callback
     def on_capture_toggle(self, is_on):
@@ -157,8 +164,7 @@ class PipelineController:
         self.pipeline_model.flag_capture = is_on
         if not is_on:
             self.on_toggle_record(False)
-            # if self.pipeline_view.toggle_record is not None:
-            #     self.pipeline_view.toggle_record.is_on = False
+
         else:
             with self.pipeline_model.cv_capture:
                 self.pipeline_model.cv_capture.notify()

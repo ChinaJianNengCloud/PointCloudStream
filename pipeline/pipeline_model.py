@@ -12,7 +12,6 @@ from scipy.spatial.transform import Rotation as R
 import cv2
 import json
 from utils.segmentation import segment_pcd_from_2d
-
 import logging
 from utils import ARUCO_BOARD
 import open3d.visualization.gui as gui
@@ -89,7 +88,8 @@ class PipelineModel:
         self.o3d_device = o3d.core.Device(params.get('device', 'cuda:0'))
         self.torch_device = torch.device(params.get('device', 'cuda:0'))
         self.camera_config_file = params.get('camera_config', None)
-        
+        self.render_done = False
+        self.pcd_lock = threading.Lock()
         self.rgbd_video = params.get('rgbd_video', None)
         self.checkerboard_dims = (10, 7)
         self.video = None
@@ -104,6 +104,7 @@ class PipelineModel:
         # self.robot_trans_matrix = calibrated_camera_to_end_effector
 
         self.cv_capture = threading.Condition()  # condition variable
+        self.cv_render = threading.Condition()
 
         # RGBD -> PCD
         self.extrinsics = o3d.core.Tensor.eye(4,
@@ -256,7 +257,6 @@ class PipelineModel:
                     future_rgbd_frame = self.executor.submit(
                         self.camera.capture_frame, True)
                 # logger.debug("Stream Debug Point 2")
-
                 depth = o3d.t.geometry.Image(o3c.Tensor(np.asarray(self.rgbd_frame.depth), 
                                                         device=self.o3d_device))
                 color = o3d.t.geometry.Image(o3c.Tensor(np.asarray(self.rgbd_frame.color), 
@@ -268,29 +268,22 @@ class PipelineModel:
                     rgbd_image, self.intrinsic_matrix, self.extrinsics,
                     self.depth_scale, self.depth_max,
                     self.pcd_stride, self.flag_normals)
-                # logger.debug("Stream Debug Point 2.1")
-                # print(color.columns, color.rows)
 
-                # logger.debug("Stream Debug Point 2.3")
                 if self.pcd_frame.is_empty():
                     logger.warning(f"No valid depth data in frame {frame_id}")
 
                 depth_in_color = depth.colorize_depth(
                     self.depth_scale, 0, self.depth_max)
                 # logger.debug("Stream Debug Point 3")
-                    
+                
+                
                 frame_elements = {
                     'color': color,
                     'depth': depth_in_color,
                     'pcd': self.pcd_frame.cpu(),
-                    # 'camera': camera_line,
                     'intrinsic_matrix': self.intrinsic_matrix.cpu().numpy(),
                     'extrinsics': self.extrinsics.cpu().numpy(),
-                    # 'status_message': self.status_message
                 }
-                # time.sleep(0.01)
-                # logger.debug("Stream Debug Point 4.5")
-                # n_pts += self.pcd_frame.point.positions.shape[0]
                 if frame_id % 30 == 0 and frame_id > 0:
                     t0, t1 = t1, time.perf_counter()
                     frame_elements['fps'] =  30 * (1.0 / (t1 - t0))
@@ -326,6 +319,10 @@ class PipelineModel:
                     frame_elements['seg'] = labels
 
                 self.update_view(frame_elements, self.flag_center_to_base)
+                
+                with self.cv_render:
+                    self.cv_render.wait_for(lambda: self.render_done)
+                    self.render_done = False  # Reset for the next loop
 
                 if self.flag_save_rgbd:
                     self.save_rgbd()

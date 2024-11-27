@@ -33,7 +33,7 @@ def main(config):
         'load_in_startup': {
             'camera_init': True,
             'camera_calib_init': True,
-            'robot_init': False,
+            'robot_init': True,
             'handeye_calib_init': True,
             'calib_check': True,
             'collect_data_viewer': True

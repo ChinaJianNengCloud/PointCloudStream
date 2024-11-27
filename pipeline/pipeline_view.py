@@ -259,10 +259,9 @@ class PipelineView:
                         rendering.Scene.UPDATE_COLORS_FLAG |
                         (rendering.Scene.UPDATE_NORMALS_FLAG
                          if self.display_mode == 'Normals' else 0))
-
+        
         if self.pcdview.scene.has_geometry('pcd'):
             self.pcdview.scene.scene.update_geometry('pcd', pcd, update_flags)
-
         self.pcdview.force_redraw()
 
     def on_layout(self, layout_context):
