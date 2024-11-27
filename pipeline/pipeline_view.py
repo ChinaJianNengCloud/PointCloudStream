@@ -140,8 +140,26 @@ class PipelineView:
                     'depth': depth image (uint8),
                     'status_message': message
         """
-        # Store the current point cloud and segmentation data
-        # self.current_pcd = frame_elements.get('pcd', None)
+        if not self.flag_gui_init:
+            # Set dummy point cloud to allocate graphics memory
+            dummy_pcd = o3d.t.geometry.PointCloud({
+                'positions':
+                    o3d.core.Tensor.zeros((self.max_pcd_vertices, 3),
+                                          o3d.core.Dtype.Float32),
+                'colors':
+                    o3d.core.Tensor.zeros((self.max_pcd_vertices, 3),
+                                          o3d.core.Dtype.Float32),
+                'normals':
+                    o3d.core.Tensor.zeros((self.max_pcd_vertices, 3),
+                                          o3d.core.Dtype.Float32)
+            })
+            if self.pcdview.scene.has_geometry('pcd'):
+                self.pcdview.scene.remove_geometry('pcd')
+
+            self.pcd_material.shader = "normals" if self.display_mode == 'Normals' else "defaultLit"
+            self.pcdview.scene.add_geometry('pcd', dummy_pcd, self.pcd_material)
+            self.flag_gui_init = True
+
         self.current_seg = frame_elements.get('seg', None)
         self.current_robot_frame = frame_elements.get('robot_frame', None)
         if self.frame_num == 0:
@@ -241,13 +259,11 @@ class PipelineView:
                         rendering.Scene.UPDATE_COLORS_FLAG |
                         (rendering.Scene.UPDATE_NORMALS_FLAG
                          if self.display_mode == 'Normals' else 0))
-        cpu_pcd = pcd.cpu()
-        # Update the geometry in the scene
+
         if self.pcdview.scene.has_geometry('pcd'):
-            self.pcdview.scene.scene.update_geometry('pcd', cpu_pcd, update_flags)
-        else:
-            self.pcdview.scene.add_geometry('pcd', cpu_pcd, self.pcd_material)
-        # self.pcdview.force_redraw()
+            self.pcdview.scene.scene.update_geometry('pcd', pcd, update_flags)
+
+        self.pcdview.force_redraw()
 
     def on_layout(self, layout_context):
         """Callback on window initialize / resize"""

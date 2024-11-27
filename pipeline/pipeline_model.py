@@ -41,7 +41,7 @@ class FakeCamera:
         pass
 
     def capture_frame(self, enable_align_depth_to_color=True):
-        """Generate synthetic depth and color images."""
+        """Generate synthetic depth and color images with missing depth regions."""
         # Create a color image with a moving circle
         color_image = np.zeros((self.height, self.width, 3), dtype=np.uint8)
         center_x = int((self.frame_idx * 5) % self.width)
@@ -50,6 +50,18 @@ class FakeCamera:
 
         # Generate a depth image as a gradient
         depth_image = np.tile(np.linspace(500, 2000, self.width, dtype=np.uint16), (self.height, 1))
+
+        # Randomly zero out some regions to simulate missing depth
+        num_missing_regions = np.random.randint(5, 15)  # Random number of missing regions
+        for _ in range(num_missing_regions):
+            # Randomly choose the size and position of the missing region
+            start_x = np.random.randint(0, self.width - 50)
+            start_y = np.random.randint(0, self.height - 50)
+            width = np.random.randint(20, 100)
+            height = np.random.randint(20, 100)
+            
+            # Zero out the region
+            depth_image[start_y:start_y + height, start_x:start_x + width] = 0
 
         self.frame_idx += 1
 
@@ -270,7 +282,7 @@ class PipelineModel:
                 frame_elements = {
                     'color': color,
                     'depth': depth_in_color,
-                    'pcd': self.pcd_frame,
+                    'pcd': self.pcd_frame.cpu(),
                     # 'camera': camera_line,
                     'intrinsic_matrix': self.intrinsic_matrix.cpu().numpy(),
                     'extrinsics': self.extrinsics.cpu().numpy(),
