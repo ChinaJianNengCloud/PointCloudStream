@@ -6,9 +6,7 @@ import numpy as np
 import torch
 import open3d as o3d
 import open3d.core as o3c
-
 import cv2
-
 
 from typing import Callable
 from PyQt5 import QtWidgets, QtCore, QtGui
@@ -33,12 +31,13 @@ from vtkmodules.vtkFiltersSources import vtkCubeSource
 from vtkmodules.util.numpy_support import numpy_to_vtk, numpy_to_vtkIdTypeArray
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 
-from .pcd_streamer import PCDStreamerFromCamera, PCDUpdater
 from utils import RobotInterface, CameraInterface, ARUCO_BOARD
+from .pcd_streamer import PCDStreamerFromCamera, PCDUpdater
+from .app_ui import PCDStreamerUI
 # Import constants
 from vtkmodules.vtkCommonCore import VTK_UNSIGNED_CHAR
 
-from .app_ui import PCDStreamerUI
+
 
 logger = logging.getLogger(__name__)
 _callback_names = []
@@ -52,7 +51,6 @@ def callback(func):
     def wrapper(self, *args, **kwargs):
         return func(self, *args, **kwargs)
     # setattr(PipelineController, func.__name__, wrapper)
-
     return wrapper
 
 
@@ -154,6 +152,7 @@ class PCDStreamer(PCDStreamerUI):
         self.display_mode_combobox.currentTextChanged.connect(self.on_display_mode_combobox_changed)
 
         # Calibration Tab
+        self.cam_calib_init_button.clicked.connect(self.on_cam_calib_init_button_clicked)
         self.robot_init_button.clicked.connect(self.on_robot_init_button_clicked)
         self.calib_collect_button.clicked.connect(self.on_calib_collect_button_clicked)
         self.calib_button.clicked.connect(self.on_calib_button_clicked)
@@ -311,7 +310,25 @@ class PCDStreamer(PCDStreamerUI):
         logger.debug(f"Display mode changed to: {text}")
 
     def on_robot_init_button_clicked(self):
+        from utils import RobotInterface
+        self.robot =  RobotInterface()
         logger.debug("Robot init button clicked")
+
+    def on_cam_calib_init_button_clicked(self):
+        if not hasattr(self, 'calibration_data'):
+            from utils import CalibrationData
+            charuco_dict = cv2.aruco.getPredefinedDictionary(ARUCO_BOARD[self.params['board_type']])
+            charuco_board = cv2.aruco.CharucoBoard(
+                self.params['board_shape'],
+                squareLength=self.params['board_square_size'] / 1000, # to meter
+                markerLength=self.params['board_marker_size'] / 1000, # to meter
+                dictionary=charuco_dict
+            )
+            self.calibration_data = CalibrationData(charuco_board, save_dir=self.params['folder_path'])
+            logger.debug("Camera calibration init button clicked")
+        else:
+            square_size = 
+            
 
     def on_calib_collect_button_clicked(self):
         logger.debug("Calibration collect button clicked")
@@ -531,16 +548,6 @@ class PCDStreamer(PCDStreamerUI):
         #             elements[element_name] @= matrix
         #         case _:
         #             logger.warning(f"No transform for {element_name}")
-        pass
-
-    def _render_update(self, frame_elements):
-        """Helper to handle render update and signal completion."""
-        
-        # Signal rendering is done
-        # with self.pipeline_model.cv_render:
-        #     self.pipeline_view.update(frame_elements)
-        #     self.pipeline_model.render_done = True
-        #     self.pipeline_model.cv_render.notify_all()
         pass
 
     @callback
