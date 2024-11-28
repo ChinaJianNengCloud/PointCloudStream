@@ -333,7 +333,8 @@ class PipelineModel:
                     self.flag_save_pcd = False
                 
                 if self.flag_calib_collect:
-                    self.calib_collect(np.asarray(self.rgbd_frame.color), self.flag_handeye_calib_init)
+                    self.calib_collect(np.asarray(self.rgbd_frame.color), 
+                                       self.flag_handeye_calib_init)
                     if len(self.calibration_data) > 0:
                         self.flag_calib_collect = False
                 # logger.debug("Stream Debug Point 9")
