@@ -462,8 +462,7 @@ class PipelineModel:
                                                                                      self.calibration_data.dist_coeffs, 
                                                                                      ret_vecs=True)
         if rvec is None or tvec is None or axis_to_scene is False:
-            return processed_img, None
-
+            return processed_img
 
         self.T_cam_to_board[:3, :3] = cv2.Rodrigues(rvec)[0] #R.from_euler('xyz', rvec.reshape(1, 3), degrees=False).as_matrix().reshape(3, 3)
         self.T_cam_to_board[:3, 3] = tvec.ravel()
