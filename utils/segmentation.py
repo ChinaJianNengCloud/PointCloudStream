@@ -2,18 +2,21 @@ import torch
 import numpy as np
 import open3d as o3d
 import open3d.core as o3c
+import cv2
 import torch.utils
 import torch.utils.dlpack
 
-def segment_pcd_from_2d(model, intrinsic, extrinsic, pcd, color):
+def segment_pcd_from_2d(model, pcd, color, intrinsic, extrinsic=np.eye(4)):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # 1. Run the model to get the segmentation masks
     # color_torch = torch.from_numpy(color).permute(2, 0, 1).unsqueeze(0).to(device)  # Shape: (1, 3, H, W)
-    res = model(color)
+    res = model.predict(source=color)
     masks = res[0].masks.data  # Shape: (num_masks, H', W')
 
     # Resize the masks to the original image size
+    if not isinstance(color, np.ndarray):
+        color = cv2.imread(color)
     H, W = color.shape[:2]
     masks_resized = torch.nn.functional.interpolate(
         masks.unsqueeze(1).float(),  # Add channel dimension
@@ -25,7 +28,7 @@ def segment_pcd_from_2d(model, intrinsic, extrinsic, pcd, color):
     # 2. Get the 3D points from the point cloud
     if isinstance(pcd.point["positions"], o3c.Tensor):
         points_3d = pcd.point["positions"]
-        points_3d = o3d_t_to_torch(points_3d)
+        points_3d = o3d_t_to_torch(points_3d).to(device)
     else:
         points_3d = torch.from_numpy(np.asarray(pcd.points)).to(device)  # Shape: (N, 3)
     N = points_3d.shape[0]
@@ -33,10 +36,20 @@ def segment_pcd_from_2d(model, intrinsic, extrinsic, pcd, color):
     # 3. Project the 3D points into the 2D image plane
     ones = torch.ones((N, 1), device=device)
     points_3d_hom = torch.cat([points_3d, ones], dim=1)  # Shape: (N, 4)
+    if isinstance(intrinsic, o3c.Tensor):
+        intrinsic_torch = o3d_t_to_torch(intrinsic).to(device)
+    elif isinstance(intrinsic, np.ndarray):
+        intrinsic_torch = torch.from_numpy(intrinsic)
+
+    if isinstance(extrinsic, o3c.Tensor):
+        extrinsic_torch = o3d_t_to_torch(extrinsic).to(device)
+    elif isinstance(extrinsic, np.ndarray):
+        extrinsic = extrinsic.astype(np.float32)
+        extrinsic_torch = torch.from_numpy(extrinsic).to(device)
 
     # Convert intrinsic and extrinsic to torch tensors
-    intrinsic_torch = o3d_t_to_torch(intrinsic) # Shape: (3, 3)
-    extrinsic_torch = o3d_t_to_torch(extrinsic) # Shape: (4, 4)
+    # intrinsic_torch = o3d_t_to_torch(intrinsic) # Shape: (3, 3)
+    # extrinsic_torch = o3d_t_to_torch(extrinsic) # Shape: (4, 4)
 
     # Transform points to camera coordinates
     points_cam_hom = (extrinsic_torch @ points_3d_hom.T).T  # Shape: (N, 4)
