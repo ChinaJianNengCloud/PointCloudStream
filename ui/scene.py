@@ -226,7 +226,7 @@ class SceneWidgets:
         # button_layout.add_stretch()
 
     def __init_fps_label(self, parent_layout=None):
-        self.fps_label = gui.Label("FPS: 99 ")
+        self.fps_label = gui.Label("FPS: 99  ")
         parent_layout.add_child(self.fps_label)
 
     def __init_stream_set(self, parent_layout=None):
