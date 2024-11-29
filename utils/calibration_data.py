@@ -1,18 +1,22 @@
 import numpy as np
 import cv2
 from scipy.spatial.transform import Rotation as R
+from PyQt5.QtCore import pyqtSignal, QObject, QThread
 import logging
 import json
 from pathlib import Path
 import shutil
+import time
 
 # Configure logging
 # logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
 
 
-class CalibrationData:
+class CalibrationData(QObject):
+    data_changed = pyqtSignal()
     def __init__(self, board: cv2.aruco.CharucoBoard, save_dir: str = None):
+        super().__init__()
         self.board = board
         self.detector = cv2.aruco.CharucoDetector(board)
         self.images: list[np.ndarray] = []
@@ -23,7 +27,6 @@ class CalibrationData:
         self.camera_to_board_tvecs: list[np.ndarray] = []
         self.__manage_list: list[str] = []
         self.save_dir = Path(save_dir) if save_dir else None
-
         self.calibration_results = {}
         self.image_size = None
 
@@ -50,7 +53,7 @@ class CalibrationData:
                 
             return ["p_cam:" + cam + " p_arm:" + robot for cam, robot in zip(cam_tvec_string, robot_tvec_string)]
 
-        return []
+        return ['No Data Collected']
 
     def reset(self):
         self.images = []
@@ -62,6 +65,7 @@ class CalibrationData:
         self.camera_matrix = None
         self.dist_coeffs = None
         self.calibration_results = {}
+        self.data_changed.emit()
         del self.camera_matrix, self.dist_coeffs
 
     def __len__(self):
@@ -77,6 +81,7 @@ class CalibrationData:
             logger.info(f"Board detected in image, image added. count:{len(self.images)}")
             if recalib:
                 self.calibrate_all()
+            self.data_changed.emit()
         else:
             logger.warning("Failed to detect board in image, image not added.")
 
@@ -87,7 +92,7 @@ class CalibrationData:
             self.robot_poses[index] = robot_pose
             self.imgpoints[index] = cur_image_points
             self.objpoints[index] = cur_object_points
-
+            self.data_changed.emit()
         else:
             logger.warning("Failed to detect board in image, image not modified.")
 
@@ -118,6 +123,7 @@ class CalibrationData:
                 self.objpoints, self.imgpoints, self.image_size, None, None
             )
             if ret:
+                self.data_changed.emit()
                 logger.info("Camera calibration successful")
             else:
                 logger.warning("Camera calibration failed")
@@ -215,7 +221,7 @@ class CalibrationData:
             logger.info(f"{method_name} Calibration Matrix:\n{transformation_matrix}\n")
             rvecs, _ = cv2.Rodrigues(R_cam2base)
             logger.info(f"{method_name} Calibration Pose (x, y, z, rx, ry, rz):\n {t_cam2base.ravel()} {rvecs.ravel()}\n")
-
+        self.data_changed.emit()
         # Save calibration results in self
         self.calibration_results = calibration_results
 
@@ -274,13 +280,16 @@ class CalibrationData:
             self.reset()
             for image, robot_pose in zip(images, robot_poses):
                 self.append(image, robot_pose)
+            self.data_changed.emit()
 
     def pop(self, index: int):
-        self.images.pop(index)
-        self.robot_poses.pop(index)
-        self.objpoints.pop(index)
-        self.imgpoints.pop(index)
-        self.calibrate_all()
+        if len(self) > 0:
+            self.images.pop(index)
+            self.robot_poses.pop(index)
+            self.objpoints.pop(index)
+            self.imgpoints.pop(index)
+            if not self.calibrate_all():
+                self.data_changed.emit()
 
 
     def calibrate_all(self):
@@ -289,13 +298,21 @@ class CalibrationData:
             self.board_pose_calculation()
             self.compute_reprojection_error()
             self.calibrate_hand_eye()
+            self.data_changed.emit()
+            return True
+        return False
 
-    def load_camera_intrinsics(self, intrinsic_path):
-        intrinsic_path = Path(intrinsic_path)
-        with open(intrinsic_path, 'r') as json_file:
+    def load_camera_intrinsics(self, camera_config_path):
+        camera_config_path = Path(camera_config_path)
+        with open(camera_config_path, 'r') as json_file:
             data = json.load(json_file)
-        self.camera_matrix = np.array(data['camera_matrix'])
-        self.dist_coeffs = np.array(data['dist_coeffs'])
-        logger.info(f"Loaded camera intrinsic parameters from {intrinsic_path}")
+        self.load_camera_parameters(np.array(data['camera_matrix']), np.array(data['dist_coeffs']))
+
+        logger.info(f"Loaded camera intrinsic parameters from {camera_config_path}")
         logger.info(f"Camera matrix:\n{self.camera_matrix}")
         logger.info(f"Distortion coefficients:\n{self.dist_coeffs}")
+
+    def load_camera_parameters(self, intrinsic:np.ndarray, dist_coeffs:np.ndarray):
+        self.camera_matrix = intrinsic
+        self.dist_coeffs = dist_coeffs
+        self.data_changed.emit()

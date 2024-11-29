@@ -7,9 +7,11 @@ import torch
 import open3d as o3d
 import open3d.core as o3c
 import cv2
-
-from typing import Callable
+import copy
+from typing import Callable, Union, List
 from PyQt5 import QtWidgets, QtCore, QtGui
+from PyQt5.QtCore import pyqtSignal, QObject, QThread, QTimer
+from PyQt5.QtGui import QImage, QPixmap
 from functools import wraps
 
 # Import specific modules from vtkmodules
@@ -32,6 +34,7 @@ from vtkmodules.util.numpy_support import numpy_to_vtk, numpy_to_vtkIdTypeArray
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 
 from utils import RobotInterface, CameraInterface, ARUCO_BOARD
+from utils import CalibrationData
 from .pcd_streamer import PCDStreamerFromCamera, PCDUpdater
 from .app_ui import PCDStreamerUI
 # Import constants
@@ -59,10 +62,6 @@ class PCDStreamer(PCDStreamerUI):
     processing  and the PipelineView object for display and UI. All methods
     operate on the main thread.
     """
-
-    # Class-level dictionary to store callbacks
-    
-
     def __init__(self, params:dict=None):
         super().__init__()
         """Initialize.
@@ -78,27 +77,31 @@ class PCDStreamer(PCDStreamerUI):
         self.prev_frame_time = time.time()
         self.frame_num = 0
         self.real_fps = 0
-
         self.frame = None
-    
         self.callback_bindings()
         self.palettes = self.get_num_of_palette(80)
         self.__init_scene_objects()
         self.__init_bbox()
         self.__init_signals()
+        self.set_disable_before_stream_init()
+        self.init_ui_values_from_params()
         self.streamer = PCDStreamerFromCamera(params=params)
         self.pcd_updater = PCDUpdater(self.renderer)
         self.streamer.camera_frustrum.register_renderer(self.renderer)
         self.callbacks = {name: getattr(self, name) for name in _callback_names}
 
+    def init_ui_values_from_params(self):
+        self.calib_save_text.setText(self.params.get('calib_path', "Please_set_calibration_path"))
+        self.board_col_num_edit.setValue(self.params.get('board_shape', (11, 6))[0])
+        self.board_row_num_edit.setValue(self.params.get('board_shape', (11, 6))[1])
+        self.board_square_size_num_edit.setValue(self.params.get('board_square_size', 0.023))
+        self.board_marker_size_num_edit.setValue(self.params.get('board_marker_size', 0.0175))
+        self.board_type_combobox.setCurrentText(self.params.get('board_type', "DICT_4X4_100"))
+
     def __init_signals(self):
-        self.streaming = False  # Streaming flag
+        self.streaming = False
         self.show_axis = False
-        self.capturing = False  # Initialize capturing flag
-        self.acq_mode = False  # Initialize acquisition mode flag
-        self.collect_calib_data = False
-        self.collect_dataset = False
-        
+
     def init_bbox_controls(self, layout:QtWidgets.QVBoxLayout):
         self.bbox_groupbox = QtWidgets.QGroupBox("Bounding Box Controls")
         group_layout = QtWidgets.QVBoxLayout()
@@ -132,15 +135,34 @@ class PCDStreamer(PCDStreamerUI):
     def set_disable_before_stream_init(self):
         self.capture_toggle.setEnabled(False)
         self.seg_model_init_toggle.setEnabled(False)
-        self.detect_board_toggle.setEnabled(False)
         self.data_collect_button.setEnabled(False)
+        self.calib_collect_button.setEnabled(False)
+        self.calib_button.setEnabled(False)
+        self.calib_op_save_button.setEnabled(False)
+        self.calib_op_load_button.setEnabled(False)
+        self.calib_op_run_button.setEnabled(False)
+        self.detect_board_toggle.setEnabled(False)
+        self.show_axis_in_scene_button.setEnabled(False)
+        self.calib_list_remove_button.setEnabled(False)
+        self.robot_move_button.setEnabled(False)
 
     def set_enable_after_stream_init(self):
         self.capture_toggle.setEnabled(True)
         self.seg_model_init_toggle.setEnabled(True)
-        self.detect_board_toggle.setEnabled(True)
         self.data_collect_button.setEnabled(True)
-        
+        self.calib_collect_button.setEnabled(True)
+
+
+    def set_enable_after_calib_init(self):
+        self.calib_button.setEnabled(True)
+        self.detect_board_toggle.setEnabled(True)
+        self.show_axis_in_scene_button.setEnabled(True)
+        self.calib_list_remove_button.setEnabled(True)
+        self.robot_move_button.setEnabled(True)
+        self.calib_op_save_button.setEnabled(True)
+        self.calib_op_load_button.setEnabled(True)
+        self.calib_op_run_button.setEnabled(True)
+
     def callback_bindings(self):
         # Binding callbacks to GUI elements
         # General Tab
@@ -159,6 +181,13 @@ class PCDStreamer(PCDStreamerUI):
         self.calib_button.clicked.connect(self.on_calib_button_clicked)
         self.detect_board_toggle.stateChanged.connect(self.on_detect_board_toggle_state_changed)
         self.show_axis_in_scene_button.clicked.connect(self.on_show_axis_in_scene_button_clicked)
+        self.calib_list_remove_button.clicked.connect(self.on_calib_list_remove_button_clicked)
+        self.robot_move_button.clicked.connect(self.on_robot_move_button_clicked)
+        self.calib_op_load_button.clicked.connect(self.on_calib_op_load_button_clicked)
+        self.calib_op_save_button.clicked.connect(self.on_calib_op_save_button_clicked)
+        self.calib_op_run_button.clicked.connect(self.on_calib_op_run_button_clicked)
+        self.calib_save_button.clicked.connect(self.on_calib_save_button_clicked)
+        self.calib_check_button.clicked.connect(self.on_calib_check_button_clicked)
         # BBox sliders and edits are connected in init_bbox()
 
         # Data Tab
@@ -183,14 +212,10 @@ class PCDStreamer(PCDStreamerUI):
             # Start streaming
             self.streaming = True
             self.stream_init_button.setText("Stop")
-            # Create an instance of FakeCamera
             connected = self.streamer.camera_mode_init()
-            # self.fake_camera = FakeCamera()
-            # connected = self.fake_camera.connect(0)  # Assuming index 0
             if connected:
                 self.status_message.setText("System: Streaming from Camera")
-                # Start a QTimer to update frames
-                self.timer = QtCore.QTimer()
+                self.timer = QTimer()
                 self.timer.timeout.connect(self.frame_calling)
                 self.timer.start()  # Update at ~33 FPS
             else:
@@ -216,10 +241,10 @@ class PCDStreamer(PCDStreamerUI):
         camera = self.renderer.GetActiveCamera()
         
         position = extrinsics[:3, 3]
-        rotation = extrinsics[:3, :3] 
+        rotation = extrinsics[:3, :3]
 
         focal_point = position + rotation[:, 2]
-        view_up = rotation[:, 1]
+        view_up = -rotation[:, 1]
         
         camera.SetPosition(*position)
         camera.SetFocalPoint(*focal_point)
@@ -242,29 +267,12 @@ class PCDStreamer(PCDStreamerUI):
             self.prev_frame_time = current_frame_time
         # Capture a frame from the fake camera
         frame = self.streamer.get_frame(take_pcd=True)
-        # Update the GUI with the frame
         
         frame_elements = {
             'fps': round(self.real_fps, 2),  # Assuming 30 FPS for fake camera
         }
-
-        if self.collect_calib_data and hasattr(self, 'calibration_data'):
-            robot_pose = None
-            if hasattr(self, 'robot'):
-                robot_pose = self.robot.capture_gripper_to_base(sep=False)
-            
-            if isinstance(frame['color'], o3d.geometry.Image):
-                frame['color'] = np.array(frame['color'])
-            elif isinstance(frame['color'], o3d.t.geometry.Image):
-                frame['color'] = np.array(frame['color'].cpu())
-
-            self.calibration_data.append(frame['color'], robot_pose=robot_pose)
-            self.collect_calib_data = False
-
-        # if 
-            
-
         frame_elements.update(frame)
+        self.current_frame = frame_elements
         self.update(frame_elements)
 
     def update(self, frame_elements: dict):
@@ -284,6 +292,10 @@ class PCDStreamer(PCDStreamerUI):
         if 'fps' in frame_elements:
             fps = frame_elements["fps"]
             self.fps_label.setText(f"FPS: {int(fps)}")
+
+        # if hasattr(self, 'robot'):
+        #     if 'robot_pose' in frame_elements:
+        #         self.robot_end_frame.SetUserMatrix(frame_elements['robot_pose'])
 
         self.frame_num += 1
         logger.debug(f"Frame: {self.frame_num}")
@@ -330,8 +342,8 @@ class PCDStreamer(PCDStreamerUI):
         from utils import RobotInterface
         self.robot =  RobotInterface()
         try:
-            # self.robot.find_device()
-            # self.robot.connect()
+            self.robot.find_device()
+            self.robot.connect()
             ip = self.robot.ip_address
             msg = f'Robot: Connected [{ip}]'
             self.robot_init_button.setStyleSheet("background-color: green;")
@@ -345,6 +357,67 @@ class PCDStreamer(PCDStreamerUI):
             self.flag_robot_init = False
         # logger.debug("Robot init button clicked")
 
+    def on_calib_data_list_changed(self):
+        self.calib_data_list.clear()
+        self.calib_data_list.addItems(self.calibration_data.display_str_list)
+        logger.debug("Calibration data list changed")
+
+    def on_calib_op_load_button_clicked(self):
+        self.calibration_data.load_img_and_pose()
+        logger.debug("Calibration operation load button clicked")
+
+    def on_calib_op_save_button_clicked(self):
+        self.calibration_data.save_img_and_pose()
+        logger.debug("Calibration operation save button clicked")
+
+    def update_progress(self, value):
+        pose = self.robot.capture_gripper_to_base(sep=False)
+        img = self.img_to_array(self.current_frame['color'])
+        self.calibration_data.modify(value, img, pose)
+        logger.debug(f"Robot Move Progress: {value} and update calibration data")
+        # self.label.setText(f"Progress: {value}")
+
+    def calibration_finished(self):
+        self.calibration_data.calibrate_all()
+        logger.info("Calibration operation completed.")
+
+    def on_calib_op_run_button_clicked(self):
+        self.calib_thread = CalibrationThread(self.robot, self.calibration_data, self.current_frame)
+        self.calib_thread.progress.connect(self.update_progress)
+        self.calib_thread.finished.connect(self.calibration_finished)
+        self.calib_thread.start()
+        logger.debug("Calibration operation run button clicked")
+
+    def on_calib_save_button_clicked(self):
+        path = self.calib_save_text.text()
+        self.calibration_data.save_calibration_data(path)
+        logger.debug(f"Calibration saved: {path}")
+
+    def on_calib_check_button_clicked(self):
+        try:
+            self.on_cam_calib_init_button_clicked()
+            path = self.params['calib_path']
+            with open(path, 'r') as f:
+                self.calib: dict = json.load(f)
+            intrinsic = np.array(self.calib.get('camera_matrix'))
+            dist_coeffs = np.array(self.calib.get('dist_coeffs'))
+            self.streamer.intrinsic_matrix = intrinsic
+            self.streamer.dist_coeffs = dist_coeffs
+            self.calibration_data.load_camera_parameters(intrinsic, dist_coeffs)
+            self.calib_combobox.clear()
+            for name in self.calib.get('calibration_results').keys():
+                self.calib_combobox.addItem(name)
+                # self.pipeline_view.scene_widgets.calib_combobox.add_item(name)
+            self.calib_combobox.setEnabled(True)
+            self.calib_combobox.setCurrentIndex(0)
+            curent_selected = self.calib_combobox.currentText()
+            self.T_CamToBase = np.array(self.calib.get('calibration_results').get(curent_selected).get('transformation_matrix'))
+            self.center_to_base_toggle.setEnabled(True)
+            
+        except Exception as e:
+            logger.error(f"Failed to load calibration data: {e}")
+        logger.debug("Calibration check button clicked")
+
     def on_cam_calib_init_button_clicked(self):
         try:
             if not hasattr(self, 'calibration_data'):
@@ -357,9 +430,9 @@ class PCDStreamer(PCDStreamerUI):
                     dictionary=charuco_dict
                 )
                 self.calibration_data = CalibrationData(charuco_board, save_dir=self.params['folder_path'])
+                self.calibration_data.data_changed.connect(self.on_calib_data_list_changed)
                 logger.debug("Camera calibration init button clicked")
             else:
-                from utils import CalibrationData
                 square_size = self.board_square_size_num_edit.value()
                 marker_size = self.board_marker_size_num_edit.value()
                 board_col = self.board_col_num_edit.value()
@@ -371,26 +444,62 @@ class PCDStreamer(PCDStreamerUI):
                 self.params['board_shape'] = board_shape
                 self.params['board_square_size'] = square_size
                 self.params['board_marker_size'] = marker_size
-                charuco_dict = cv2.aruco.getPredefinedDictionary(ARUCO_BOARD[self.params['board_type']])
                 charuco_board = cv2.aruco.CharucoBoard(
                     self.params['board_shape'],
                     squareLength=self.params['board_square_size'] / 1000, # to meter
                     markerLength=self.params['board_marker_size'] / 1000, # to meter
-                    dictionary=charuco_dict
+                    dictionary=cv2.aruco.getPredefinedDictionary(ARUCO_BOARD[self.params['board_type']])
                 )
                 self.calibration_data = CalibrationData(charuco_board, save_dir=self.params['folder_path'])
-            if hasattr(self, 'robot'):
-                self.handeye_calib_init_button.setEnabled(True)
-            self.detect_board_toggle.setEnabled(True)
+
+            if not hasattr(self, 'camera_interface'):
+                from utils import CameraInterface
+                self.camera_interface: CameraInterface = CameraInterface(self.streamer.camera, self.calibration_data)
+            
             self.cam_calib_init_button.setStyleSheet("background-color: green;")
+            self.set_enable_after_calib_init()
         except Exception as e:
             self.cam_calib_init_button.setStyleSheet("background-color: red;")
             logger.error(f"Failed to init camera calibration: {e}")
         
-
     def on_calib_collect_button_clicked(self):
-        self.collect_calib_data = True
+        if hasattr(self, 'timer'):
+            self.timer.stop()
+
+        if hasattr(self, 'calibration_data'):
+            robot_pose = None
+            if hasattr(self, 'robot'):
+                robot_pose = self.robot.capture_gripper_to_base(sep=False)
+            color = self.img_to_array(self.current_frame['color'])
+            self.calibration_data.append(color, robot_pose=robot_pose)
+
+        if not hasattr(self, 'timer'):
+            self.timer.start()
         logger.debug("Calibration collect button clicked")
+    
+    def on_calib_list_remove_button_clicked(self):
+        self.calibration_data.pop(self.calib_data_list.currentIndex().row())
+        logger.debug(f"Calibration list remove button clicked")
+
+    def on_robot_move_button_clicked(self):
+        idx = self.calib_data_list.currentIndex().row()
+        try:
+            self.robot.move_to_pose(
+                self.calibration_data.robot_poses[idx])
+            
+            if hasattr(self, 'timer'):
+                self.timer.stop()
+            self.calibration_data.modify(idx, self.img_to_array(self.current_frame['color']),
+                                        self.robot.capture_gripper_to_base(sep=False),
+                                        copy.deepcopy(self.bbox_params))
+            if hasattr(self, 'timer'):
+                self.timer.start()
+            logger.debug("Moving robot and collecting data")
+        except:
+            logger.error("Failed to move robot")
+
+
+        logger.debug("Robot move button clicked")
 
     def on_calib_button_clicked(self):
         logger.debug("Calibration button clicked")
@@ -409,48 +518,42 @@ class PCDStreamer(PCDStreamerUI):
         if key == 'space':
             logger.info("Space key pressed")
             pass  # Handle space key press if needed
+    
+    def img_to_array(self, image: Union[np.ndarray, o3d.geometry.Image, o3d.t.geometry.Image]) -> np.ndarray:
+        if isinstance(image, np.ndarray):
+            return image
+        elif isinstance(image, o3d.geometry.Image):
+            return np.asarray(image)
+        elif isinstance(image, o3d.t.geometry.Image):
+            return np.asarray(image.cpu())
 
     def update_color_image(self, color_image):
         """Update the color image display."""
         if self.color_groupbox.isChecked():
+            image = self.img_to_array(color_image)
             # Convert color_image to QImage and display in QLabel
-            if isinstance(color_image, np.ndarray):
-                # Ensure the image is in RGB format
-                if color_image.shape[2] == 3:
-                    height, width, channel = color_image.shape
-                    bytes_per_line = 3 * width
-                    q_image = QtGui.QImage(color_image.data.tobytes(), width, height, bytes_per_line, QtGui.QImage.Format_RGB888)
-                    pixmap = QtGui.QPixmap.fromImage(q_image)
-                    self.color_video.setPixmap(pixmap.scaled(self.color_video.size(), QtCore.Qt.KeepAspectRatio))
-            elif isinstance(color_image, o3d.geometry.Image):
-                # Handle other types of images if necessary
-                self.update_color_image(np.array(color_image))
+            if image.shape[2] == 3:
+                height, width, channel = image.shape
+                bytes_per_line = 3 * width
                 
-            elif isinstance(color_image, o3d.t.geometry.Image):
-                # Handle other types of images if necessary
-                self.update_color_image(np.array(color_image.cpu()))
-            else:
-                # Handle other types of images if necessary
-                pass
+                q_image = QImage(image.data.tobytes(), width, height, bytes_per_line, QImage.Format_RGB888)
+                pixmap = QPixmap.fromImage(q_image)
+                self.color_video.setPixmap(pixmap.scaled(self.color_video.size(), QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation))
+
 
     def update_depth_image(self, depth_image):
         """Update the depth image display."""
         if self.depth_groupbox.isChecked():
+            image = self.img_to_array(depth_image)
             # Convert depth_image to QImage and display in QLabel
-            if isinstance(depth_image, np.ndarray):
-                # Normalize depth image for display
-                # depth_image_normalized = cv2.normalize(depth_image, None, 0, 255, cv2.NORM_MINMAX)
-                # depth_image_normalized = depth_image_normalized.astype(np.uint8)
-                height, width, channel = depth_image.shape
+            if image.shape[2] == 3:
+                height, width, channel = image.shape
                 bytes_per_line = 3 * width
-                q_image = QtGui.QImage(depth_image.data.tobytes(), width, height, bytes_per_line, QtGui.QImage.Format_RGB888)
-                pixmap = QtGui.QPixmap.fromImage(q_image)
-                self.depth_video.setPixmap(pixmap.scaled(self.depth_video.size(), QtCore.Qt.KeepAspectRatio))
-            elif isinstance(depth_image, o3d.geometry.Image):
-                # Handle other types of images if necessary
-                self.update_depth_image(np.array(depth_image))
-            elif isinstance(depth_image, o3d.t.geometry.Image):
-                self.update_depth_image(np.array(depth_image.cpu()))
+                q_image = QImage(image.data.tobytes(), width, height, bytes_per_line, QImage.Format_RGB888)
+                pixmap = QPixmap.fromImage(q_image)
+                
+                self.depth_video.setPixmap(pixmap.scaled(self.depth_video.size(), QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation))
+
 
     def __init_scene_objects(self):
         """Initialize scene objects in the VTK renderer."""
@@ -592,560 +695,9 @@ class PCDStreamer(PCDStreamerUI):
             self.collected_data.start_display_thread()
 
     def transform_element(self, elements:dict, element_name: str):
-        # if self.pipeline_model.T_cam_to_base is None:
-        #     matrix = np.eye(4)
-        # else:
-        #     matrix = self.pipeline_model.T_cam_to_base
-
-        # if element_name in elements:
-        #     match element_name:
-        #         case 'pcd':
-        #             elements[element_name].transform(matrix)
-        #         case 'robot_end_frame':
-        #             elements[element_name] @= matrix
-        #         case 'robot_base_frame':
-        #             elements[element_name] @= matrix
-        #         case 'board_pose':
-        #             elements[element_name] @= matrix
-        #         case _:
-        #             logger.warning(f"No transform for {element_name}")
-        pass
-
-    @callback
-    def on_capture_toggle(self, is_on):
-        logger.debug("on_capture_toggle")
-        """Callback to toggle capture."""
-        # self.pipeline_view.capturing = is_on
-        # self.pipeline_view.vfov =  1.25 * self.pipeline_model.vfov
-        # if not self.pipeline_view.capturing:
-        #     # Set the mouse callback when not capturing
-        #     self.pipeline_view.pcdview.set_on_mouse(self.on_mouse_widget3d)
-        # else:
-        #     # Unset the mouse callback when capturing
-        #     self.pipeline_view.pcdview.set_on_mouse(None)
-
-        # # Update model
-        # self.pipeline_model.flag_capture = is_on
-        # if not is_on:
-        #     self.on_toggle_record(False)
-
-        # else:
-        #     with self.pipeline_model.cv_capture:
-        #         self.pipeline_model.cv_capture.notify()
-        pass
-
-    @callback
-    def on_center_to_base_toggle(self, is_on):
-        logger.debug("on_center_to_base_toggle")
-        # self.pipeline_model.flag_center_to_base = is_on
-        pass
-
-    @callback
-    def on_toggle_record(self, is_enabled):
-        logger.debug("on_toggle_record")
-        """Callback to toggle recording RGBD video."""
-        # self.pipeline_model.flag_record = is_enabled
-        pass
-
-
-    @callback
-    def on_window_close(self):
-        logger.debug("on_window_close")
-        """Callback when the user closes the application window."""
-        # self.pipeline_model.flag_exit = True
-        # with self.pipeline_model.cv_capture:
-        #     self.pipeline_model.cv_capture.notify_all()
-        # return True  # OK to close window
-        pass
-
-    @callback
-    def on_save_pcd_button(self):
-        logger.debug("on_save_pcd_button")
-        """Callback to save current point cloud."""
-        # self.pipeline_model.flag_save_pcd = True
-        pass
-
-    @callback
-    def on_seg_model_init_toggle(self, is_enabled):
-        logger.debug("on_seg_model_init_toggle")
-        # self.pipeline_model.seg_model_intialization()
-        # self.pipeline_model.flag_segemtation_mode = is_enabled
-        pass
-
-    @callback
-    def on_save_rgbd_button(self):
-        logger.debug("on_save_rgbd_button")
-        """Callback to save current RGBD image pair."""
-        # self.pipeline_model.flag_save_rgbd = True
-        # logger.debug('Saving RGBD image pair')
-        pass
-
-    @callback
-    def on_mouse_widget3d(self, event):
-        logger.debug("on_mouse_widget")
-        # if self.pipeline_view.capturing:
-        #     return gui.Widget.EventCallbackResult.IGNORED  # Do nothing if capturing
-
-        # if not self.pipeline_view.acq_mode:
-        #     return gui.Widget.EventCallbackResult.IGNORED
-
-        # # Handle left button down with Ctrl key to start drawing
-        # if (event.type == gui.MouseEvent.Type.BUTTON_DOWN and
-        #     event.is_modifier_down(gui.KeyModifier.CTRL) and
-        #     event.is_button_down(gui.MouseButton.LEFT)):
-        #     x = event.x - self.pipeline_view.pcdview.frame.x
-        #     y = event.y - self.pipeline_view.pcdview.frame.y
-        #     if 0 <= x < self.pipeline_view.pcdview.frame.width and 0 <= y < self.pipeline_view.pcdview.frame.height:
-
-        #         def depth_callback(depth_image):
-        #             depth_array = np.asarray(depth_image)
-        #             # Check if (x, y) are valid coordinates inside the depth image
-        #             if y < depth_array.shape[0] and x < depth_array.shape[1]:
-        #                 depth = depth_array[y, x]
-        #             else:
-        #                 depth = 1.0  # Assign far plane depth if out of bounds
-
-        #             if depth == 1.0:  # clicked on nothing (far plane)
-        #                 text = "Mouse Coord: Clicked on nothing"
-        #             else:
-        #                 # Compute world coordinates from screen (x, y) and depth
-        #                 world = self.pipeline_view.pcdview.scene.camera.unproject(
-        #                     x, y, depth, self.pipeline_view.pcdview.frame.width, self.pipeline_view.pcdview.frame.height)
-        #                 text = "Mouse Coord: ({:.3f}, {:.3f}, {:.3f})".format(
-        #                     world[0], world[1], world[2])
-
-        #             # Update label in the main UI thread
-        #             def update_label():
-        #                 self.pipeline_view.scene_widgets.mouse_coord.text = text
-        #                 self.pipeline_view.window.set_needs_layout()
-
-        #             gui.Application.instance.post_to_main_thread(self.pipeline_view.window, update_label)
-
-        #         # Perform the depth rendering asynchronously
-        #         self.pipeline_view.pcdview.scene.scene.render_to_depth_image(depth_callback)
-        #     return gui.Widget.EventCallbackResult.HANDLED
-
-        # # Handle dragging to update rectangle
-        # elif event.type == gui.MouseEvent.Type.DRAG and self.drawing_rectangle:
-        #     pass
-        #     return gui.Widget.EventCallbackResult.HANDLED
-
-        # # Handle left button up to finish drawing
-        # elif (event.type == gui.MouseEvent.Type.BUTTON_UP and
-        #     self.drawing_rectangle):
-        #     # Finalize rectangle
-        #     self.drawing_rectangle = False
-        #     return gui.Widget.EventCallbackResult.HANDLED
-
-        # return gui.Widget.EventCallbackResult.IGNORED
-        pass
-
-    @callback
-    def on_camera_view_button(self):
-        logger.debug("on_camera_view_button")
-        # self.pipeline_view.pcdview.setup_camera(self.pipeline_view.vfov, 
-        #                                         self.pipeline_view.pcd_bounds, [0, 0, 0])
-        # lookat = [0, 0, 0]
-        # placeat = [-0.139, -0.356, -0.923]
-        # pointat = [-0.037, -0.93, 0.3649]
-        # self.pipeline_view.pcdview.scene.camera.look_at(lookat, placeat, pointat)
-        pass
-
-    @callback
-    def on_birds_eye_view_button(self):
-        logger.debug("on_birds_eye_view_button")
-        """Callback to reset point cloud view to birds eye (overhead) view"""
-        # self.pipeline_view.pcdview.setup_camera(self.pipeline_view.vfov, self.pipeline_view.pcd_bounds, [0, 0, 0])
-        # self.pipeline_view.pcdview.scene.camera.look_at([0, 0, 1.5], [0, 3, 1.5], [0, -1, 0])
-        pass
-
-    @callback
-    def on_stream_init_button(self):
-        logger.debug("on_stream_init_button")
-        # log.debug('Stream init start')
-        # match self.pipeline_view.scene_widgets.stream_combbox.selected_text:
-        #     case 'Camera':
-        #         try:
-        #             self.pipeline_model.camera_mode_init()
-        #             self.pipeline_model.flag_stream_init = True
-        #             self.pipeline_view.scene_widgets.status_message.text = "Azure Kinect camera connected."
-        #             self.pipeline_view.scene_widgets.after_stream_init()
-        #             self.pipeline_model.flag_camera_init = True
-        #             if self.pipeline_model.flag_robot_init and self.pipeline_model.flag_camera_init:
-        #                 self.pipeline_view.scene_widgets.handeye_calib_init_button.enabled = True
-        #             self.on_camera_view_button()
-        #         except Exception as e:
-        #             self.pipeline_view.scene_widgets.status_message.text = "Camera initialization failed!"
-        #     case 'Video':
-        #         pass
-        pass
-
-    @callback
-    def on_acq_mode_toggle(self, is_on):
-        logger.debug("on_acq_mode_toggle")
-        # self.pipeline_view.acq_mode = is_on
-        # if is_on:
-        #     self.pipeline_view.pcdview.set_view_controls(gui.SceneWidget.Controls.PICK_POINTS)
-        #     if self.pipeline_view.plane is None:
-        #         plane = o3d.geometry.TriangleMesh.create_box(width=10, height=0.01, depth=10)
-        #         plane.translate([-5, 1, -5])  # Position the plane at y=1
-        #         plane.paint_uniform_color([0.8, 0.8, 0.8])  # Light gray color
-        #         plane_material = rendering.MaterialRecord()
-        #         plane_material.shader = "defaultUnlit"
-        #         plane_material.base_color = [0.8, 0.8, 0.8, 0.5]  # Semi-transparent
-        #         self.pipeline_view.pcdview.scene.add_geometry("edit_plane", plane, plane_material)
-        #         self.pipeline_view.plane = plane
-        #         self.pipeline_view.pcdview.force_redraw()
-        # else:
-        #     self.pipeline_view.pcdview.set_view_controls(gui.SceneWidget.Controls.ROTATE_CAMERA)
-        #     if self.pipeline_view.plane is not None:
-        #         self.pipeline_view.pcdview.scene.remove_geometry("edit_plane")
-        #         self.pipeline_view.plane = None
-        #     self.pipeline_view.pcdview.force_redraw()
-        pass
-
-    @callback
-    def on_calib_check_button(self):
-        logger.debug("on_calib_check_button")
-        # try:
-        #     path = self.params['calib_path']
-        #     with open(path, 'r') as f:
-        #         self.calib:dict = json.load(f)
-        #     intrinsic = np.array(self.calib.get('camera_matrix'))
-        #     dist_coeffs = np.array(self.calib.get('dist_coeffs'))
-        #     self.pipeline_model.update_camera_matrix(intrinsic, dist_coeffs)
-        #     self.pipeline_view.scene_widgets.calib_combobox.clear_items()
-
-        #     for name in self.calib.get('calibration_results').keys():
-        #         self.pipeline_view.scene_widgets.calib_combobox.add_item(name)
-            
-        #     self.pipeline_view.scene_widgets.center_to_base_toggle.enabled = True
-        #     self.pipeline_view.scene_widgets.calib_combobox.enabled = True
-        #     self.pipeline_model.flag_handeye_calib_success = True
-        #     self.pipeline_view.scene_widgets.center_to_base_toggle.enabled = True
-        #     self.pipeline_view.scene_widgets.calib_combobox.selected_index = 0
-        #     self.pipeline_view.scene_widgets.data_tab.visible = True
-        #     method = self.pipeline_view.scene_widgets.calib_combobox.selected_text
-        #     self.pipeline_model.T_cam_to_base = np.array(self.calib.get('calibration_results').get(method).get('transformation_matrix'))
-            
-        # except Exception as e:
-        #     self.pipeline_view.scene_widgets.calib_combobox.enabled = False
-        #     log.error(e)
-        pass
-
-    @callback
-    def on_calib_combobox_change(self, text, index):
-        logger.debug("on_calib_combobox_change")
-        # self.pipeline_model.T_cam_to_base = np.array(self.calib.get('calibration_results').get(text).get('transformation_matrix'))
-        # self.pipeline_model.T_cam_to_base
         pass
         
-    @callback
-    def on_board_col_num_edit_change(self, value):
-        logger.debug("on_board_col_num_edit_change")
-        # self.calibration.chessboard_size[0] = int(value)
-        # self.params['board_shape'] = (int(value), self.params['board_shape'][1])
-        # log.debug(f"Chessboard type: {self.params.get('board_shape')}")    
-        pass
 
-    @callback
-    def on_board_row_num_edit_change(self, value):
-        logger.debug("on_board_row_num_edit_change")
-        # self.calibration.chessboard_size[1] = int(value)
-        # self.params['board_shape'] = (self.params.get('board_shape')[0], int(value))
-        # log.debug(f"Chessboard type: {self.params.get('board_shape')}")
-        pass
-
-    @callback
-    def on_board_square_size_num_edit_change(self, value):
-        logger.debug("on_board_square_size_num_edit_change")
-        # self.params['board_square_size'] = value
-        # logger.debug(f'board_square_size changed: {value} mm')
-        pass
-    
-    @callback
-    def on_board_marker_size_num_edit_change(self, value):
-        logger.debug("on_board_marker_size_num_edit_change")
-        # self.params['board_marker_size'] = value
-        # logger.debug(f'board_marker_size changed: {value} mm')
-        pass
-
-    @callback
-    def on_data_folder_select_button(self):
-        logger.debug("on_data_folder_select_button")
-        # filedlg = gui.FileDialog(gui.FileDialog.OPEN_DIR, 
-        #                          "Select Folder",
-        #                          self.pipeline_view.window.theme)
-        # # filedlg.add_filter(".obj .ply .stl", "Triangle mesh (.obj, .ply, .stl)")
-        # # filedlg.add_filter("", "All files")
-        # filedlg.set_on_cancel(self._on_data_folder_cancel)
-        # filedlg.set_on_done(self._on_data_folder_selcted)
-        # self.pipeline_view.window.show_dialog(filedlg)
-        pass
-
-    def _on_data_folder_selcted(self, path):
-        # self.pipeline_view.scene_widgets.data_folder_text.text_value = path+"/data.recorder"
-        # self.pipeline_view.window.close_dialog()
-        pass
-
-    def _on_data_folder_cancel(self):
-        # self.pipeline_view.scene_widgets.data_folder_text.text = ""
-        # self.pipeline_view.window.close_dialog()
-        pass
-    
-    @callback
-    def on_prompt_text_change(self, text):
-        logger.debug("on_prompt_text_change")
-        # if text == "":
-        #     self.pipeline_view.scene_widgets.data_collect_button.enabled = False
-        # else:
-        #     self.pipeline_view.scene_widgets.data_collect_button.enabled = True
-        # logger.debug(f"Prompt text changed: {text}")
-        # select_item = self.pipeline_view.scene_widgets.data_tree_view.selected_item
-        # if select_item.parent_text == "Prompt":
-        #     self.collected_data.data_list[self.collected_data.dataids.index(select_item.root_text)]['prompt'] = text
-        #     self._data_tree_view_update()
-        pass
-            
-    def _data_tree_view_update(self):
-        # self.pipeline_view.scene_widgets.data_tree_view.tree.clear()
-        # for key, value in self.collected_data.shown_data_json.items():
-        #     root_id = self.pipeline_view.scene_widgets.data_tree_view.add_item(
-        #         self.pipeline_view.scene_widgets.data_tree_view.tree.get_root_item(), key, level=1)
-
-        #     # Add 'prompt' field
-        #     prompt_id = self.pipeline_view.scene_widgets.data_tree_view.add_item(root_id, "Prompt", level=2, root_text=key)
-        #     self.pipeline_view.scene_widgets.data_tree_view.add_item(prompt_id, value["prompt"], level=3, root_text=key)
-
-        #     # Add 'bbox' field
-        #     bbox_id = self.pipeline_view.scene_widgets.data_tree_view.add_item(root_id, "Bbox", level=2, root_text=key)
-        #     bbox_text = f"[{','.join(f'{v:.2f}' for v in value['bboxes'])}]"
-        #     self.pipeline_view.scene_widgets.data_tree_view.add_item(bbox_id, bbox_text, level=3, root_text=key)
-
-        #     # Add 'pose' field
-        #     pose_id = self.pipeline_view.scene_widgets.data_tree_view.add_item(root_id, "Pose", level=2, root_text=key)
-        #     for i, pose in enumerate(value["pose"]):
-        #         pose_text = f"{i + 1}: [{','.join(f'{v:.2f}' for v in pose)}]"
-        #         self.pipeline_view.scene_widgets.data_tree_view.add_item(pose_id, pose_text, level=3, root_text=key)
-
-        # self.pipeline_view.scene_widgets.data_tree_view.selected_item.reset()
-        pass
-
-    @callback
-    def on_data_collect_button(self):
-        logger.debug("on_data_collect_button")
-        # tmp_pose = np.array([1,2,3,4,5,6])
-        # try:
-        #     if not self.pipeline_view.scene_widgets.capture_toggle.is_on:
-        #         logger.warning("Stream not started")
-        #         return
-                
-        #     if self.pipeline_model.flag_center_to_base:
-        #         tmp_pose = self.pipeline_model.robot_interface.capture_gripper_to_base(sep=False)
-        #     else:
-        #         tmp_pose = self.pipeline_model.get_cam_space_gripper_pose()
-
-        #     frame = self.frame
-        #     if frame is None:
-        #         raise Exception("No frame")
-
-        #     if 'color' in frame:
-        #         color = np.asarray(self.pipeline_model.rgbd_frame.color)
-        #     if 'depth' in frame:
-        #         depth = np.asarray(self.pipeline_model.rgbd_frame.depth)
-        #     if 'pcd' in frame:
-        #         if 'seg' in frame:
-        #             seg = frame['seg']
-        #         else:
-        #             seg = np.zeros(frame['pcd'].point.positions.shape[0])
-        #         pcd = frame['pcd'].to_legacy()
-        #         xyz = np.asarray(pcd.points)
-        #         rgb = np.asarray(pcd.colors)
-        #         rgb = (rgb * 255).astype(np.uint8)
-        #         pcd_with_labels = np.hstack((xyz, rgb, seg.reshape(-1, 1)))
-
-        #     self.collected_data.append(prompt=self.pipeline_view.scene_widgets.prompt_text.text_value, 
-        #                                pose=tmp_pose, 
-        #                                bbox_dict=copy.deepcopy(self.pipeline_view.bbox_params),
-        #                                color=color, 
-        #                                depth=depth, 
-        #                                point_cloud=pcd_with_labels)
-            
-        #     self._data_tree_view_update()
-        #     logger.debug(f"On data collect Click")
-        # except Exception as e: 
-        #     logger.error(e)
-        pass
-        # self.pipeline_view.scene_widgets.data_list_view.set_items(self.collected_data)
-
-    @callback
-    def on_data_tree_view_changed(self, item):
-        logger.debug("on_data_tree_view_changed")
-        # logger.debug(
-        #     f"Root Parent Text: {item.root_text}, "
-        #     f"Custom Callback -> Selected Item ID: {item.item_id}, "
-        #     f"Level: {item.level}, Index in Level: {item.index_in_level}, "
-        #     f"Parent Text: {item.parent_text}"
-        # )
-        # select_item = self.pipeline_view.scene_widgets.data_tree_view.selected_item
-        # self.pipeline_view.scene_widgets.prompt_text.text_value = self.collected_data.shown_data_json.get(
-        #         select_item.root_text
-        #         ).get('prompt')
-        # match select_item.level:
-        #     case 1:
-        #         pass
-        #     case 2:
-        #         pass
-        #     case 3:
-        #         if select_item.parent_text == "Pose":
-        #             prompt_idx = self.collected_data.dataids.index(select_item.root_text)
-        #             pose_idx = select_item.index_in_level
-        #             self.collected_data.show_image(prompt_idx, pose_idx)
-        pass
-
-    @callback
-    def on_data_tree_view_remove_button(self):
-        logger.debug("on_data_tree_view_remove_button")
-        # select_item = self.pipeline_view.scene_widgets.data_tree_view.selected_item
-        # # self.on_data_tree_view_changed(select_item)
-        # if select_item != None:
-        #     match select_item.level:
-        #         case 1:
-        #             logger.debug(f"Removing {select_item.root_text}")
-        #             self.collected_data.pop(self.collected_data.dataids.index(select_item.root_text))
-        #             self._data_tree_view_update()
-        #         case 2:
-        #             pass
-        #         case 3:
-        #             logger.debug(f"Removing pose")
-        #             if select_item.parent_text == "Pose":
-        #                 self.collected_data.pop_pose(self.collected_data.dataids.index(select_item.root_text), 
-        #                                              select_item.index_in_level)
-        #             self._data_tree_view_update()
-        pass
-    
-
-    @callback
-    def on_data_tree_view_load_button(self):
-        logger.debug("on_data_tree_view_load_button")
-        # path = self.params.get('data_path', './data')
-        # path += "/" + self.pipeline_view.scene_widgets.data_folder_text.text_value
-        # if self.pipeline_view.scene_widgets.data_folder_text.text_value == "":
-        #     logger.warning("No data folder selected")
-        # else:
-        #     try:
-        #         self.collected_data.path = path
-        #         self.collected_data.load()
-        #         self._data_tree_view_update()
-        #     except Exception as e:
-        #         logger.error(f"Failed to load data: {e}")
-            
-        # logger.debug("Loading data")
-        pass
-
-    @callback
-    def on_data_save_button(self):
-        logger.debug("on_data_save_button")
-        # path = self.params.get('data_path', './data')
-        # data_folder = self.pipeline_view.scene_widgets.data_folder_text.text_value
-        # if data_folder == "":
-        #     logger.warning("No data folder selected, use tmp folder")
-        #     data_folder = "tmp"
-
-        # path += "/" + data_folder
-        # if len(self.collected_data) == 0:
-        #     logger.warning("No data to save")
-        # else:
-        #     self.collected_data.path = path
-        #     self.collected_data.save()
-        # logger.debug("Saving data")
-        pass
-
-
-    @callback
-    def on_board_type_combobox_change(self, text, index):
-        logger.debug("on_board_type_combobox_change")
-        # self.params['board_type'] = self.pipeline_view.scene_widgets.board_type_combobox.selected_text
-        # logger.debug(f"Board type: {self.params.get('board_type')}")
-        pass
-    
-    @callback
-    def on_calib_list_remove_button(self):
-        logger.debug("on_calib_list_remove_button")
-        # self.calibration_data.pop(self.pipeline_view.scene_widgets.frame_list_view.selected_index)
-        # self.pipeline_view.scene_widgets.frame_list_view.set_items(
-        #     self.calibration_data.display_str_list)
-        # logger.debug("Removing calibration data")
-        pass
-
-    @callback
-    def on_robot_move_button(self):
-        logger.debug("on_robot_move_button")
-        # idx = self.pipeline_view.scene_widgets.frame_list_view.selected_index
-        # try:
-        #     self.pipeline_model.robot_interface.move_to_pose(
-        #         self.calibration_data.robot_poses[idx])
-        #     self.calibration_data.modify(idx, np.asarray(self.pipeline_model.rgbd_frame.color),
-        #                                 self.pipeline_model.robot_interface.capture_gripper_to_base(sep=False),
-        #                                 copy.deepcopy(self.pipeline_view.bbox_params))
-        #     logger.debug("Moving robot and collecting data")
-        # except:
-        #     logger.error("Failed to move robot")
-        pass
-        
-    @callback
-    def on_calib_save_button(self):
-        logger.debug("on_calib_save_button")
-        # self.calibration_data.save_calibration_data(
-        #     self.pipeline_view.scene_widgets.calib_save_text.text_value)
-        # self.on_calib_check_button()
-        # logger.debug("Saving calibration data and check data")
-        pass
-    
-    @callback
-    def on_calib_op_save_button(self):
-        logger.debug("on_calib_op_save_button")
-        # self.calibration_data.save_img_and_pose()
-        # logger.debug("Saving images and poses")
-        pass
-
-    @callback
-    def on_calib_op_load_button(self):
-        logger.debug("on_calib_op_load_button")
-        # self.calibration_data.load_img_and_pose()
-        # self.pipeline_view.scene_widgets.frame_list_view.set_items(
-        #     self.calibration_data.display_str_list)
-        # logger.debug("Checking calibration data")
-        pass
-    
-    @callback
-    def on_calib_op_run_button(self):
-        logger.debug("on_calib_op_run_button")
-        # logger.debug("Running calibration data")
-        # self.pipeline_model.robot_interface.set_teach_mode(False)
-        # self.pipeline_model.calib_exec.submit(self.pipeline_model.auto_calibration)
-        pass
-
-
-    @callback
-    def on_calib_button(self):
-        logger.debug("on_calib_button")
-        # self.calibration_data.calibrate_all()
-        # self.pipeline_view.scene_widgets.frame_list_view.set_items(
-        #     self.calibration_data.display_str_list)
-        # self.pipeline_model.update_camera_matrix(self.calibration_data.camera_matrix, 
-        #                                          self.calibration_data.dist_coeffs)
-        # logger.debug("calibration button")
-        pass
-
-    @callback 
-    def on_detect_board_toggle(self, is_on):
-        logger.debug("on_detect_board_toggle")
-        # self.pipeline_model.flag_tracking_board = is_on
-        # logger.debug(f"Detecting board: {is_on}")
-        pass
-
-    # @callback 
     def on_show_axis_in_scene_button_clicked(self):
         logger.debug(f"on_show_axis {self.show_axis}")
         if self.show_axis:
@@ -1163,46 +715,32 @@ class PCDStreamer(PCDStreamerUI):
             self.robot_end_frame.SetVisibility(1)
             self.board_pose_frame.SetVisibility(1)
         self.renderer.GetRenderWindow().Render()
-        # logger.debug("on_show_axis_in_scene_button_clicked")
 
-    @callback
-    def on_frame_list_view_changed(self, new_val, is_dbl_click):
-        logger.debug("on_frame_list_view_changed")
-        # # TODO: update still buggy, need to be fixed
-        # logger.debug(new_val)
-        # self.pipeline_model.flag_tracking_board = False
-        # self.pipeline_view.scene_widgets.detect_board_toggle.is_on = False
-        # if len(self.calibration_data) > 0:
-        #     img = self.calibration_data.images[self.pipeline_view.scene_widgets.frame_list_view.selected_index]
-        #     # img = np.random.randint(0, 255, (img.shape[0], img.shape[1], 3), dtype=np.uint8)
-        #     img = o3d.t.geometry.Image(img)
-        #     if self.pipeline_view.scene_widgets.show_calib.get_is_open():
-        #         sampling_ratio = self.pipeline_view.video_size[1] / img.columns
-        #         self.pipeline_view.scene_widgets.calib_video.update_image(img.resize(sampling_ratio))
-        #         logger.debug("Showing calibration pic")
-        pass
+    def closeEvent(self, event):
+        """Ensure the popup window is closed when the main window exits."""
+        if hasattr(self, 'popup_window'):
+            self.popup_window.close()
+            self.popup_window = None
+        logger.debug("Exiting main window")
+        if hasattr(self, 'timer'):
+            self.timer.stop()
+        self.streamer = None
+        self.current_frame = None
+        super().closeEvent(event) 
 
-    @callback
-    def on_calib_save_text_changed(self, text):
-        logger.debug("on_calib_save_text_changed")
-        # self.params['calib_path'] = text
-        # logger.debug(f"calib_path changed: {text}")
-        pass
 
-    @callback
-    def on_key_pressed(self, event):
-        logger.debug("on_key_pressed")
-        # if self.pipeline_view.scene_widgets.tab_view.selected_tab_index == 2 and \
-        #             self.pipeline_model.flag_camera_init:
-        #     if event.type == gui.KeyEvent.Type.DOWN:
-        #         if event.key == gui.KeyName.SPACE:
-        #         # self.pipeline_model.flag_tracking_board = not self.pipeline_model.flag_tracking_board
-        #             self.on_calib_collect_button()
-        #         elif event.key == gui.KeyName.C:
-        #             self.on_calib_button()
-        #         logger.info(f"key pressed {event.key}")
-        #     return True
-        # # if event.type == gui.KeyEvent.Type.DOWN:
-        # #     print(event.key)
-        # return False
-        pass
+
+class CalibrationThread(QThread):
+    progress = pyqtSignal(int)  # Signal to communicate progress updates
+    def __init__(self, robot: RobotInterface, robot_poses: List[np.ndarray]):
+        self.robot = robot
+        self.robot_poses = robot_poses
+        super().__init__()
+
+    def run(self):
+        self.robot.set_teach_mode(False)
+        for idx, each_pose in enumerate(self.robot_poses):
+            logger.info(f"Moving to pose {idx}")
+            self.robot.move_to_pose(each_pose)
+            self.progress.emit(idx)
+        self.robot.set_teach_mode(True)

@@ -7,3 +7,4 @@ testoutput/
 *test*.py
 wandb/
 runs/
+_tmp*/
