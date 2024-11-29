@@ -34,7 +34,7 @@ from vtkmodules.util.numpy_support import numpy_to_vtk, numpy_to_vtkIdTypeArray
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 
 from utils import RobotInterface, CameraInterface, ARUCO_BOARD
-from utils import CalibrationData
+from utils import CalibrationData, CollectedData
 from .pcd_streamer import PCDStreamerFromCamera, PCDUpdater
 from .app_ui import PCDStreamerUI
 # Import constants
@@ -78,19 +78,22 @@ class PCDStreamer(PCDStreamerUI):
         self.frame_num = 0
         self.real_fps = 0
         self.frame = None
-        self.callback_bindings()
+        self.streamer = PCDStreamerFromCamera(params=params)
+        self.pcd_updater = PCDUpdater(self.renderer)
+        self.collected_data = CollectedData(self.params.get('data_path', './data'))
+        self.streamer.camera_frustrum.register_renderer(self.renderer)
+        self.callbacks = {name: getattr(self, name) for name in _callback_names}
         self.palettes = self.get_num_of_palette(80)
+
         self.__init_scene_objects()
         self.__init_bbox()
         self.__init_signals()
+        self.__init_ui_values_from_params()
+        self.callback_bindings()
         self.set_disable_before_stream_init()
-        self.init_ui_values_from_params()
-        self.streamer = PCDStreamerFromCamera(params=params)
-        self.pcd_updater = PCDUpdater(self.renderer)
-        self.streamer.camera_frustrum.register_renderer(self.renderer)
-        self.callbacks = {name: getattr(self, name) for name in _callback_names}
 
-    def init_ui_values_from_params(self):
+
+    def __init_ui_values_from_params(self):
         self.calib_save_text.setText(self.params.get('calib_path', "Please_set_calibration_path"))
         self.board_col_num_edit.setValue(self.params.get('board_shape', (11, 6))[0])
         self.board_row_num_edit.setValue(self.params.get('board_shape', (11, 6))[1])
@@ -188,12 +191,17 @@ class PCDStreamer(PCDStreamerUI):
         self.calib_op_run_button.clicked.connect(self.on_calib_op_run_button_clicked)
         self.calib_save_button.clicked.connect(self.on_calib_save_button_clicked)
         self.calib_check_button.clicked.connect(self.on_calib_check_button_clicked)
+        self.calib_combobox.currentTextChanged.connect(self.on_calib_combobox_changed)
         # BBox sliders and edits are connected in init_bbox()
 
         # Data Tab
         self.data_collect_button.clicked.connect(self.on_data_collect_button_clicked)
         self.data_save_button.clicked.connect(self.on_data_save_button_clicked)
-
+        self.data_tree_view_load_button.clicked.connect(self.on_data_tree_view_load_button_clicked)
+        self.data_folder_select_button.clicked.connect(self.on_data_folder_select_button_clicked)
+        self.data_tree_view_remove_button.clicked.connect(self.on_data_tree_view_remove_button_clicked)
+        self.data_tree_view.set_on_selection_changed(self.on_tree_selection_changed)
+        self.collected_data.data_changed.connect(self._data_tree_view_update)
         # Key press events
         self.vtk_widget.AddObserver("KeyPressEvent", self.on_key_press)
 
@@ -271,10 +279,19 @@ class PCDStreamer(PCDStreamerUI):
         frame_elements = {
             'fps': round(self.real_fps, 2),  # Assuming 30 FPS for fake camera
         }
+
+        if hasattr(self, 'camera_interface') and self.detect_board_toggle.isChecked():
+            rgb_with_pose, rvec, tvec = self.camera_interface._process_and_display_frame(
+                self.img_to_array(frame['color']), ret_vecs=True)
+            self.T_CamToBoard[:3, :3] = cv2.Rodrigues(rvec)[0]
+            self.T_CamToBoard[:3, 3] = tvec.ravel()
+            self.board_pose_frame.SetUserMatrix(rvec, tvec)
         frame_elements.update(frame)
         self.current_frame = frame_elements
         self.update(frame_elements)
 
+
+    
     def update(self, frame_elements: dict):
         """Update visualization with point cloud and images."""
         if 'pcd' in frame_elements:
@@ -382,7 +399,15 @@ class PCDStreamer(PCDStreamerUI):
         logger.info("Calibration operation completed.")
 
     def on_calib_op_run_button_clicked(self):
-        self.calib_thread = CalibrationThread(self.robot, self.calibration_data, self.current_frame)
+        if not hasattr(self, 'robot'):
+            logger.error("Robot not initialized")
+            return
+        
+        if not hasattr(self, 'current_frame'):
+            logger.error("No current frame, please start streaming first.")
+            return
+        
+        self.calib_thread = CalibrationThread(self.robot, self.calibration_data.robot_poses)
         self.calib_thread.progress.connect(self.update_progress)
         self.calib_thread.finished.connect(self.calibration_finished)
         self.calib_thread.start()
@@ -392,6 +417,11 @@ class PCDStreamer(PCDStreamerUI):
         path = self.calib_save_text.text()
         self.calibration_data.save_calibration_data(path)
         logger.debug(f"Calibration saved: {path}")
+
+    def on_calib_combobox_changed(self, text):
+        if text != "":
+            self.T_CamToBase = np.array(self.calib.get('calibration_results').get(text).get('transformation_matrix'))
+        logger.debug(f"Calibration combobox changed: {text}")
 
     def on_calib_check_button_clicked(self):
         try:
@@ -405,9 +435,7 @@ class PCDStreamer(PCDStreamerUI):
             self.streamer.dist_coeffs = dist_coeffs
             self.calibration_data.load_camera_parameters(intrinsic, dist_coeffs)
             self.calib_combobox.clear()
-            for name in self.calib.get('calibration_results').keys():
-                self.calib_combobox.addItem(name)
-                # self.pipeline_view.scene_widgets.calib_combobox.add_item(name)
+            self.calib_combobox.addItems(self.calib.get('calibration_results').keys())
             self.calib_combobox.setEnabled(True)
             self.calib_combobox.setCurrentIndex(0)
             curent_selected = self.calib_combobox.currentText()
@@ -421,7 +449,6 @@ class PCDStreamer(PCDStreamerUI):
     def on_cam_calib_init_button_clicked(self):
         try:
             if not hasattr(self, 'calibration_data'):
-                from utils import CalibrationData
                 charuco_dict = cv2.aruco.getPredefinedDictionary(ARUCO_BOARD[self.params['board_type']])
                 charuco_board = cv2.aruco.CharucoBoard(
                     self.params['board_shape'],
@@ -463,8 +490,9 @@ class PCDStreamer(PCDStreamerUI):
             logger.error(f"Failed to init camera calibration: {e}")
         
     def on_calib_collect_button_clicked(self):
-        if hasattr(self, 'timer'):
-            self.timer.stop()
+        if self.streaming:
+            if hasattr(self, 'timer'):
+                self.timer.start()
 
         if hasattr(self, 'calibration_data'):
             robot_pose = None
@@ -473,8 +501,9 @@ class PCDStreamer(PCDStreamerUI):
             color = self.img_to_array(self.current_frame['color'])
             self.calibration_data.append(color, robot_pose=robot_pose)
 
-        if not hasattr(self, 'timer'):
-            self.timer.start()
+        if self.streaming:
+            if hasattr(self, 'timer'):
+                self.timer.start()
         logger.debug("Calibration collect button clicked")
     
     def on_calib_list_remove_button_clicked(self):
@@ -502,15 +531,127 @@ class PCDStreamer(PCDStreamerUI):
         logger.debug("Robot move button clicked")
 
     def on_calib_button_clicked(self):
+        self.calibration_data.calibrate_all()
         logger.debug("Calibration button clicked")
 
     def on_detect_board_toggle_state_changed(self):
         logger.debug("Detect board state changed to:")
 
     def on_data_collect_button_clicked(self):
+        if self.streaming:
+            self.timer.stop()
+        if not hasattr(self, 'robot'):
+            logger.error("Robot not initialized")
+            self.timer.start()
+            return
+        if not self.center_to_base_toggle.isChecked():
+            robot_pose = self.robot.capture_gripper_to_base(sep=False)
+        else:
+            if hasattr(self, 'T_CamToBase'):
+                robot_pose = self.robot.get_cam_space_gripper_pose(self.T_CamToBase)
+            else:
+                logger.error("No robot calibration data detected")
+                return
+        
+        color = self.img_to_array(self.current_frame['color'])
+        depth = self.img_to_array(self.current_frame['depth'])
+        pcd =  self.current_frame['pcd'].to_legacy()
+        seg = self.current_frame.get('seg', np.zeros(pcd.points.shape[0]))
+        xyz = np.asarray(pcd.points)
+        rgb = (np.asarray(pcd.colors) * 255).astype(np.uint8)
+        pcd_with_labels = np.hstack((xyz, rgb, seg.reshape(-1, 1)))
+
+        self.collected_data.append(prompt=self.prompt_text.text(),
+                                   color=color,
+                                   depth=depth,
+                                   point_cloud=pcd_with_labels,
+                                   robot_pose=robot_pose,
+                                   bbox_dict=self.bbox_params)
+        if self.streaming:
+            if hasattr(self, 'timer'):
+                self.timer.start()
         logger.debug("Data collect button clicked")
 
+    def _data_tree_view_update(self):
+        """
+        Updates the tree view with data from `shown_data_json`.
+        """
+        # Clear the tree widget
+        self.data_tree_view.clear()
+        
+        # Iterate through the shown_data_json dictionary
+        for key, value in self.collected_data.shown_data_json.items():
+            # Add the root node for each key
+            root_id = self.data_tree_view.add_item(parent_item=None, text=key, level=1)
+            prompt_id = self.data_tree_view.add_item(parent_item=root_id, text="Prompt", level=2, root_text=key)
+            self.data_tree_view.add_item(parent_item=prompt_id, text=value["prompt"], level=3, root_text=key)
+            bbox_id = self.data_tree_view.add_item(parent_item=root_id, text="Bbox", level=2, root_text=key)
+
+            bbox_text = f"[{','.join(f'{v:.2f}' for v in value['bboxes'])}]"
+
+            self.data_tree_view.add_item(parent_item=bbox_id, text=bbox_text, level=3, root_text=key)
+
+            pose_id = self.data_tree_view.add_item(parent_item=root_id, text="Pose", level=2, root_text=key)
+            
+            for i, pose in enumerate(value["pose"]):
+                pose_text = f"{i + 1}: [{','.join(f'{v:.2f}' for v in pose)}]"
+                self.data_tree_view.add_item(
+                    parent_item=pose_id,
+                    text=pose_text,
+                    level=3,
+                    root_text=key
+                )
+
+        self.data_tree_view.expandAll()
+
+    def on_data_tree_view_load_button_clicked(self):
+        try:
+            self.collected_data.load(self.data_folder_text.text())
+        except Exception as e:
+            logger.error(f"Failed to load data: {e}")
+        logger.debug("Data tree view load button clicked")
+
+    def on_data_tree_view_remove_button_clicked(self):
+        select_item = self.data_tree_view.selected_item
+        if select_item != None:
+            match select_item.level:
+                case 1:
+                    logger.debug(f"Removing {select_item.root_text}")
+                    self.collected_data.pop(self.collected_data.dataids.index(select_item.root_text))
+                case 2:
+                    pass
+                case 3:
+                    logger.debug(f"Removing pose{select_item.root_text}-{select_item.index_in_level}")
+                    if select_item.parent_text == "Pose":
+                        self.collected_data.pop_pose(self.collected_data.dataids.index(select_item.root_text), 
+                                                     select_item.index_in_level)
+                        pass
+        logger.debug("Data tree view remove button clicked")
+
+    def on_tree_selection_changed(self, item, level, index_in_level, parent_text, root_text):
+        """
+        Callback for when the selection changes.
+        """
+        logger.debug(f"Selected Item: {item.text(0)}, Level: {level}, Index in Level: {index_in_level}, Parent Text: {parent_text}, Root Text: {root_text}")
+        select_item = self.data_tree_view.selected_item
+        self.prompt_text.setText(self.collected_data.shown_data_json.get(
+                                select_item.root_text
+                                ).get('prompt'))
+
+
+    def on_data_folder_select_button_clicked(self):
+        from PyQt5.QtWidgets import QFileDialog
+        start_dir = self.params.get('data_path', './data')
+        dir_text = QFileDialog.getExistingDirectory(
+            directory=start_dir,
+            options=QFileDialog.ShowDirsOnly
+        )
+        if not dir_text == "":
+            self.data_folder_text.setText(dir_text)
+        logger.debug("Data folder select button clicked")
+
     def on_data_save_button_clicked(self):
+        self.collected_data.save(self.data_folder_text.text())
         logger.debug("Data save button clicked")
 
     def on_key_press(self, obj, event):
@@ -563,23 +704,33 @@ class PCDStreamer(PCDStreamerUI):
         self.robot_base_frame = vtkAxesActor()
         self.robot_base_frame.AxisLabelsOff()
         self.robot_base_frame.SetTotalLength(*size)
-        # self.robot_base_frame.SetYAxisLabelText('')
-        # self.renderer
+        self.T_base = np.eye(4)
         self.renderer.AddActor(self.robot_base_frame)
-        # Robot end frame
+
         self.robot_end_frame = vtkAxesActor()
         self.robot_end_frame.AxisLabelsOff()
         self.robot_end_frame.SetTotalLength(*size)
+        self.T_End = np.eye(4)
         self.renderer.AddActor(self.robot_end_frame)
-        # Board pose
+
         self.board_pose_frame = vtkAxesActor()
         self.board_pose_frame.AxisLabelsOff()
         self.board_pose_frame.SetTotalLength(*size)
+        self.T_Board = np.eye(4)
         self.renderer.AddActor(self.board_pose_frame)
 
         self.robot_base_frame.SetVisibility(0)
         self.robot_end_frame.SetVisibility(0)
         self.board_pose_frame.SetVisibility(0)
+
+    def axis_pose_to_matrix(self, axis:vtkAxesActor, matrix: np.ndarray):
+        """Convert axis pose to matrix."""
+        # Assuming axis pose is a 4x4 numpy array
+        vtk_matrix = vtkMatrix4x4()
+        for i in range(4):
+            for j in range(4):
+                vtk_matrix.SetElement(i, j, matrix[i, j])
+        axis.SetUserMatrix(vtk_matrix)
 
     def __init_bbox(self):
         """Initialize bounding box visualization."""

@@ -35,7 +35,7 @@ def main():
         'camera_config': './camera_config.json',
         'rgbd_video': None,
         'board_type': 'DICT_4X4_100',
-        'data_path': './data',
+        'data_path': '/home/capre/disk_4/yutao/data',
         'load_in_startup': {
             'camera_init': True,
             'camera_calib_init': True,
