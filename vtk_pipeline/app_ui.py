@@ -36,6 +36,93 @@ console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 
 
+
+class DataTreeWidget(QtWidgets.QTreeWidget):
+    def __init__(self):
+        super().__init__()
+        self.item_to_level = {}   # Mapping of item IDs to their levels
+        self.item_to_root_text = {}  # Mapping of item IDs to their root parent's text
+        self._on_selection_callback = None
+        self.selected_item = self.SelectedItem()
+        self.itemClicked.connect(self._on_item_clicked)
+
+    def add_item(self, parent_item, text, level, root_text=None):
+        """
+        Adds an item to the QTreeWidget and tracks its metadata.
+
+        :param parent_item: The parent QTreeWidgetItem.
+        :param text: The text for the new item.
+        :param level: The hierarchical level of the new item.
+        :param root_text: The root parent's text for the new item (defaults to its own text if root level).
+        :return: The created QTreeWidgetItem.
+        """
+        item = QtWidgets.QTreeWidgetItem(parent_item, [text]) if parent_item else QtWidgets.QTreeWidgetItem([text])
+        self.addTopLevelItem(item) if not parent_item else None
+
+        item_id = id(item)
+        self.item_to_level[item_id] = level
+        self.item_to_root_text[item_id] = root_text if root_text else text
+        return item
+
+    def set_on_selection_changed(self, callback):
+        """
+        Sets a user-defined callback to be called when the selection changes.
+
+        :param callback: A callable with the signature callback(item, level, index_in_level, parent_text, root_text).
+        """
+        self._on_selection_callback = callback
+
+    def _on_item_clicked(self, item: QtWidgets.QTreeWidgetItem, column):
+        """
+        Called when a QTreeWidgetItem is clicked. Calls the user-defined callback if provided.
+        """
+        item_id = id(item)
+        parent_item = item.parent()
+        parent_id = id(parent_item) if parent_item else None
+        level = self.item_to_level.get(item_id, -1)
+        parent_text = parent_item.text(0) if parent_item else "None"
+        root_text = self.item_to_root_text.get(item_id, "None")
+
+        # Find all siblings
+        siblings = []
+        if parent_item:  # If the item has a parent, get siblings from the parent
+            for i in range(parent_item.childCount()):
+                siblings.append(parent_item.child(i))
+        else:  # If the item is a top-level item, get siblings from the invisible root
+            for i in range(self.topLevelItemCount()):
+                siblings.append(self.topLevelItem(i))
+
+        index_in_level = siblings.index(item) if item in siblings else -1
+        self.selected_item.set_attr(item, level, index_in_level, parent_text, root_text)
+        # Call the user-defined callback, if any
+        if self._on_selection_callback:
+            self._on_selection_callback(item, level, index_in_level, parent_text, root_text)
+
+    class SelectedItem:
+        def __init__(self, item=None, level=None, index_in_level=None, parent_text=None, root_text=None):
+            self.item = item
+            self.level = level
+            self.index_in_level = index_in_level
+            self.parent_text = parent_text
+            self.root_text = root_text
+
+        def __eq__(self, value: str) -> bool:
+            return self.item == value
+
+        def set_attr(self, item, level, index_in_level, parent_text, root_text):
+            self.item = item
+            self.level = level
+            self.index_in_level = index_in_level
+            self.parent_text = parent_text
+            self.root_text = root_text
+        
+        def reset(self):
+            self.item = None
+            self.level = None
+            self.index_in_level = None
+            self.parent_text = None
+            self.root_text = None
+
 class ResizableImageLabel(QtWidgets.QLabel):
     """Custom QLabel that automatically resizes the image to fit the widget while maintaining aspect ratio."""
     def __init__(self, parent=None):
@@ -513,7 +600,7 @@ class PCDStreamerUI(QtWidgets.QMainWindow):
         self.prompt_text.setPlaceholderText("Input prompt here...")
         prompt_layout.addWidget(self.prompt_text)
 
-        self.data_tree_view = QtWidgets.QTreeWidget()
+        self.data_tree_view = DataTreeWidget()
         self.data_tree_view.setHeaderLabel("Data Items")
         layout.addWidget(self.data_tree_view)
 

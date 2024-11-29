@@ -8,13 +8,15 @@ from plyfile import PlyData, PlyElement
 import logging
 import threading
 import cv2
-
+from PyQt5.QtCore import pyqtSignal, QObject
 
 logger = logging.getLogger(__name__)
 
 
-class CollectedData:
+class CollectedData(QObject):
+    data_changed = pyqtSignal()
     def __init__(self, path='data'):
+        super().__init__()
         self.dataids: List[AnyStr] = []
         self.resource_path = os.path.join(path, "resources")
         self.data_list: List[Dict[AnyStr, Dict[AnyStr, List | AnyStr]]] = []
@@ -69,14 +71,13 @@ class CollectedData:
     def pop(self, idx):
         data_entry = self.data_list.pop(idx)
         id = self.dataids.pop(idx)
-
-        # Delete files
         for file_list in [data_entry.get('color_files', []), data_entry.get('depth_files', []),
                           data_entry.get('point_cloud_files', [])]:
             for file_name in file_list:
                 file_path = os.path.join(self.resource_path, file_name)
                 if os.path.exists(file_path):
                     os.remove(file_path)
+        self.data_changed.emit()
 
     def pop_pose(self, prompt_idx, pose_idx=-1):
         data_entry = self.data_list[prompt_idx]
@@ -95,10 +96,11 @@ class CollectedData:
         # Remove pose
         data_entry['pose'].pop(pose_idx)
 
-        # If no poses left, remove the data_entry entirely
         if not data_entry['pose']:
             self.data_list.pop(prompt_idx)
             self.dataids.pop(prompt_idx)
+
+        self.data_changed.emit()
 
     def append(self, prompt, pose, bbox_dict: Dict[AnyStr, float] = None, color: np.ndarray = None,
                depth: np.ndarray = None, point_cloud: np.ndarray = None):
@@ -149,15 +151,17 @@ class CollectedData:
                 )
                 ply = PlyData([PlyElement.describe(vertex, 'vertex')], text=True)
                 ply.write(os.path.join(self.resource_path, point_cloud_file))
-
+        
         # Start the thread
         thread = threading.Thread(target=save_files, args=(
             color, depth, point_cloud, color_file, depth_file, point_cloud_file))
         thread.start()
-
+        self.data_changed.emit()
         return True
 
     def save(self, path=None):
+        if path is not None:
+            self.path = path
         with open(os.path.join(self.path, "shown_data.json"), "w") as f:
             json.dump(self.shown_data_json, f, indent=2)
 
@@ -170,6 +174,8 @@ class CollectedData:
         """
         # Load shown_data.json and saved_data.json
         # shown_data_path = os.path.join(self.path, "shown_data.json")
+        if path is not None:
+            self.path = path
         saved_data_path = os.path.join(self.path, "saved_data.json")
 
         if not os.path.exists(saved_data_path):
@@ -215,8 +221,8 @@ class CollectedData:
                 # Files missing, skip this data_id
                 logger.info(f"Data entry {data_id} skipped due to missing files.")
                 continue
-
-        print("Data loaded successfully.")
+        self.data_changed.emit()
+        logger.info("Data loaded successfully.")
 
     def box_from_dict(self, bbox_dict_or_list):
         key_set = ('xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax')
@@ -233,69 +239,69 @@ class CollectedData:
         key_set = ('xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax')
         return {key: self.bboxes[idx] for idx, key in enumerate(key_set)}
 
-    def _image_display_loop(self):
-        """
-        Continuously display the image, updating whenever `current_image_path` is changed.
-        """
-        while not self.stop_display.is_set():
-            with self.lock:
-                image_path = self.current_image_path
+    # def _image_display_loop(self):
+    #     """
+    #     Continuously display the image, updating whenever `current_image_path` is changed.
+    #     """
+    #     while not self.stop_display.is_set():
+    #         with self.lock:
+    #             image_path = self.current_image_path
 
-            if image_path and os.path.exists(image_path):
-                color_image = cv2.imread(image_path)
-                if color_image is not None:
-                    height, width = color_image.shape[:2]
-                    resized_image = cv2.resize(color_image, (width // 2, height // 2))
-                    cv2.imshow("Image Viewer", resized_image)
-                else:
-                    print(f"Failed to load image: {image_path}")
-            else:
-                # If no valid image path, show a blank window
-                blank_image = np.zeros((500, 500, 3), dtype=np.uint8)
-                cv2.imshow("Image Viewer", blank_image)
+    #         if image_path and os.path.exists(image_path):
+    #             color_image = cv2.imread(image_path)
+    #             if color_image is not None:
+    #                 height, width = color_image.shape[:2]
+    #                 resized_image = cv2.resize(color_image, (width // 2, height // 2))
+    #                 cv2.imshow("Image Viewer", resized_image)
+    #             else:
+    #                 print(f"Failed to load image: {image_path}")
+    #         else:
+    #             # If no valid image path, show a blank window
+    #             blank_image = np.zeros((500, 500, 3), dtype=np.uint8)
+    #             cv2.imshow("Image Viewer", blank_image)
 
-            if cv2.waitKey(500) == ord('q'):  # Refresh every 500ms, press 'q' to quit
-                self.stop_display.set()
-                break
+    #         if cv2.waitKey(500) == ord('q'):  # Refresh every 500ms, press 'q' to quit
+    #             self.stop_display.set()
+    #             break
 
-        cv2.destroyAllWindows()
+    #     cv2.destroyAllWindows()
 
-    def show_image(self, prompt_idx, pose_idx):
-        """
-        Update the displayed image to the one specified by `prompt_idx` and `pose_idx`.
-        """
-        try:
-            data_entry = self.data_list[prompt_idx]
-            color_file = data_entry['color_files'][pose_idx]
-            color_file_path = os.path.join(self.resource_path, color_file)
+    # def show_image(self, prompt_idx, pose_idx):
+    #     """
+    #     Update the displayed image to the one specified by `prompt_idx` and `pose_idx`.
+    #     """
+    #     try:
+    #         data_entry = self.data_list[prompt_idx]
+    #         color_file = data_entry['color_files'][pose_idx]
+    #         color_file_path = os.path.join(self.resource_path, color_file)
 
-            if not os.path.exists(color_file_path):
-                print(f"File not found: {color_file_path}")
-                return
-            if not self.display_thread is None:
-                with self.lock:
-                    self.current_image_path = color_file_path
+    #         if not os.path.exists(color_file_path):
+    #             print(f"File not found: {color_file_path}")
+    #             return
+    #         if not self.display_thread is None:
+    #             with self.lock:
+    #                 self.current_image_path = color_file_path
 
-        except IndexError:
-            print("Invalid prompt_idx or pose_idx.")
+    #     except IndexError:
+    #         print("Invalid prompt_idx or pose_idx.")
 
-    def start_display_thread(self):
-        """
-        Start the image display thread if it's not already running.
-        """
-        if self.display_thread is None or not self.display_thread.is_alive():
-            self.stop_display.clear()
-            self.display_thread = threading.Thread(target=self._image_display_loop, daemon=True)
-            self.display_thread.start()
+    # def start_display_thread(self):
+    #     """
+    #     Start the image display thread if it's not already running.
+    #     """
+    #     if self.display_thread is None or not self.display_thread.is_alive():
+    #         self.stop_display.clear()
+    #         self.display_thread = threading.Thread(target=self._image_display_loop, daemon=True)
+    #         self.display_thread.start()
 
-    def stop_display_thread(self):
-        """
-        Stop the display thread and close the OpenCV window.
-        """
-        self.stop_display.set()
-        if self.display_thread:
-            self.display_thread.join()
-        cv2.destroyAllWindows()
+    # def stop_display_thread(self):
+    #     """
+    #     Stop the display thread and close the OpenCV window.
+    #     """
+    #     self.stop_display.set()
+    #     if self.display_thread:
+    #         self.display_thread.join()
+    #     cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":
@@ -317,34 +323,3 @@ if __name__ == "__main__":
     time.sleep(1)
     data_collection.show_image(prompt_idx=0, pose_idx=2)
     data_collection.stop_display_thread()
-    # data_collection.stop_showing()
-    # # Test data
-    # test_color = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
-    # test_depth = np.random.rand(100, 100).astype(np.float32)
-    # test_bbox = {'xmin': 0, 'xmax': 1, 'ymin': 0, 'ymax': 1, 'zmin': 0, 'zmax': 1}
-    # test_point_cloud = np.random.rand(100, 7).astype(np.float32)
-    # test_point_cloud[:, 3:6] = (test_point_cloud[:, 3:6] * 255).astype(np.uint8)
-
-    # # Append new data
-    # data_collection.append("Prompt A", [1, 2, 3], bbox_dict=test_bbox, color=test_color, depth=test_depth,
-    #                        point_cloud=test_point_cloud)
-    # data_collection.append("Prompt A", [13, 2, 3], bbox_dict=test_bbox, color=test_color, depth=test_depth,
-    #                        point_cloud=test_point_cloud)
-    # data_collection.append("Prompt A", [1, 2, 33], bbox_dict=test_bbox, color=test_color, depth=test_depth,
-    #                        point_cloud=test_point_cloud)
-    # data_collection.append("Prompt B", [1, 23, 3], bbox_dict=test_bbox, color=test_color, depth=test_depth,
-    #                        point_cloud=test_point_cloud)
-    # data_collection.append("Prompt V", [1, 2, 23], bbox_dict=test_bbox, color=test_color, depth=test_depth,
-    #                        point_cloud=test_point_cloud)
-
-    # # Save JSON data
-    # data_collection.save()
-    # print("Data saved.")
-
-    # # Test popping data
-    # data_collection.pop_pose(0, 1)  # Remove second pose of first prompt
-    # data_collection.pop(1)          # Remove second prompt entirely
-
-    # # Save changes
-    # data_collection.save()
-    # print("Data updated and saved.")

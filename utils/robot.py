@@ -87,7 +87,27 @@ class RobotInterface:
             return R_g2b, t_g2b
         else:    
             return cpose
-    
+        
+    def get_cam_space_gripper_pose(self, t_cam_to_base=None):
+        pose = self.capture_gripper_to_base(sep=False)
+        t_xyz, r_xyz = pose[0:3], pose[3:6]
+        if t_cam_to_base is None:
+            logger.warning("Camera to base matrix did not detected, use robot pose instead!")
+            return pose
+        # rotation_matrix, _ = cv2.Rodrigues(rvecs)
+        rotation_matrix = R.from_euler('xyz', r_xyz.reshape(1, 3), degrees=False).as_matrix().reshape(3, 3)
+        T_end_to_base = np.eye(4)
+        T_end_to_base[:3, :3] = rotation_matrix
+        T_end_to_base[:3, 3] = t_xyz.ravel()
+        T_base_to_cam =  np.linalg.inv(self.T_cam_to_base)
+        T_cam_to_end = T_base_to_cam @ T_end_to_base
+        # R.from_rotvec
+        new_r = R.from_matrix(T_cam_to_end[:3, :3]).as_euler('xyz', degrees=False)
+        new_t = T_cam_to_end[:3, 3]
+        xyzrxrzry = np.hstack((new_r, new_t.reshape(-1)))
+        # Add the robot frame to the frame elements for visualization
+        return xyzrxrzry
+
     def pose_dict_to_array(self, pose_quaternion_dict):
         # logger.debug("original pose: ", pose_quaternion_dict)
         # logger.debug("array pose: ", trs)
@@ -153,6 +173,7 @@ class RobotInterface:
                 self.lebai.end_teach_mode()
             except Exception as e:
                 logging.info(f"Failed to end teach mode: {e}")
+
     
 
 if __name__ == "__main__":

@@ -26,8 +26,6 @@ class CameraInterface:
         self.live_feedback_thread = None
         self.live_feedback_running = False
         self.calibration_data = calibration_data  # Use CalibrationData
-        self.camera_matrix = None
-        self.dist_coeffs = None
 
     def start_live_feedback(self):
         self.live_feedback_running = True
@@ -76,13 +74,8 @@ class CameraInterface:
         else:
             self.calibration_data.append(image)
 
-    # def calibrate_camera(self):
-    #     logger.info("Starting camera calibration...")
-    #     self.calibration_data.calibrate_camera()
-    #     self.camera_matrix = self.calibration_data.camera_matrix
-    #     self.dist_coeffs = self.calibration_data.dist_coeffs
 
-    def _process_and_display_frame(self, frame, camera_matrix=None, dist_coeffs=None, axis_length=0.1, ret_vecs=False):
+    def _process_and_display_frame(self, frame, axis_length=0.1, ret_vecs=False):
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         rvec, tvec = None, None
         ret, _, _ = self.calibration_data.board_dectect(frame_rgb)
@@ -92,21 +85,18 @@ class CameraInterface:
                 cv2.aruco.drawDetectedMarkers(frame_rgb, marker_corners, marker_ids)
             if charuco_corners is not None and charuco_ids is not None:
                 cv2.aruco.drawDetectedCornersCharuco(frame_rgb, charuco_corners, charuco_ids)
+                if self.camera_matrix is not None and self.dist_coeffs is not None:
 
-                if camera_matrix is not None and dist_coeffs is not None:
-                    # Use matchImagePoints to get object and image points for pose estimation
                     object_points, image_points = self.charuco_board.matchImagePoints(charuco_corners, charuco_ids)
-
-                    # Estimate pose using solvePnP
                     try:
                         success, rvec, tvec = cv2.solvePnP(
-                            object_points, image_points, camera_matrix, dist_coeffs
+                            object_points, image_points, self.camera_matrix, self.dist_coeffs
                         )
                     except Exception as e:
                         logger.warning(f"solvePnP failed: {e}")
                         success = False
                     if success:
-                        cv2.drawFrameAxes(frame_rgb, camera_matrix, dist_coeffs, rvec, tvec, axis_length)
+                        cv2.drawFrameAxes(frame_rgb, self.camera_matrix, self.dist_coeffs, rvec, tvec, axis_length)
             else:
                 logger.warning("No valid Charuco corners detected for pose estimation")
         else:
@@ -115,12 +105,17 @@ class CameraInterface:
             return frame_rgb, rvec, tvec
         return frame_rgb
 
+    @property
+    def camera_matrix(self):
+        return self.calibration_data.camera_matrix
 
+    @property
+    def dist_coeffs(self):
+        return self.calibration_data.dist_coeffs
 
     def clear(self):
         self.calibration_data.reset()
-        self.camera_matrix = None
-        self.dist_coeffs = None
+
 
 
 def camera_test(params):
