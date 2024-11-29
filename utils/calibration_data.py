@@ -23,14 +23,13 @@ class CalibrationData:
         self.camera_to_board_tvecs: list[np.ndarray] = []
         self.__manage_list: list[str] = []
         self.save_dir = Path(save_dir) if save_dir else None
-        self.camera_matrix = None
-        self.dist_coeffs = None
+
         self.calibration_results = {}
         self.image_size = None
 
     @property
     def display_str_list(self) -> list[str]:
-        if self.camera_matrix is None:
+        if not hasattr(self, 'camera_matrix'):
             logger.warning("Camera matrix is not available.")
             if any(x is None for x in self.robot_poses):
                 return ["p_cam:"+str(i) for i in range(len(self.images))]
@@ -63,6 +62,7 @@ class CalibrationData:
         self.camera_matrix = None
         self.dist_coeffs = None
         self.calibration_results = {}
+        del self.camera_matrix, self.dist_coeffs
 
     def __len__(self):
         return len(self.images)
@@ -119,15 +119,13 @@ class CalibrationData:
             )
             if ret:
                 logger.info("Camera calibration successful")
-                # logger.info(f"Camera matrix:\n{self.camera_matrix}")
-                # logger.info(f"Distortion coefficients:\n{self.dist_coeffs}")
             else:
                 logger.warning("Camera calibration failed")
         else:
             logger.warning("Not enough object points and image points for calibration")
 
     def board_pose_calculation(self):
-        if self.camera_matrix is not None and self.dist_coeffs is not None:
+        if hasattr(self, 'camera_matrix') and hasattr(self, 'dist_coeffs'):
             invalid_index = []
             self.camera_to_board_rvecs = []
             self.camera_to_board_tvecs = []
@@ -222,7 +220,7 @@ class CalibrationData:
         self.calibration_results = calibration_results
 
     def save_calibration_data(self, path: str):
-        if self.camera_matrix is None or self.dist_coeffs is None or len(self.calibration_results) == 0:
+        if not hasattr(self, 'camera_matrix') or not hasattr(self, 'dist_coeffs') or len(self.calibration_results) == 0:
             logger.warning("Camera matrix and distortion coefficients are not available.")
             return
         calibration_data = {

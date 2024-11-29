@@ -76,21 +76,28 @@ class PCDStreamer(PCDStreamerUI):
         self.params = params
         self.rectangle_geometry = None
         self.prev_frame_time = time.time()
-        self.capturing = False  # Initialize capturing flag
-        self.acq_mode = False  # Initialize acquisition mode flag
         self.frame_num = 0
         self.real_fps = 0
-        self.streaming = False  # Streaming flag
+
         self.frame = None
+    
         self.callback_bindings()
         self.palettes = self.get_num_of_palette(80)
-        self.init_scene_objects()
-        self.init_bbox()
+        self.__init_scene_objects()
+        self.__init_bbox()
+        self.__init_signals()
         self.streamer = PCDStreamerFromCamera(params=params)
         self.pcd_updater = PCDUpdater(self.renderer)
         self.streamer.camera_frustrum.register_renderer(self.renderer)
         self.callbacks = {name: getattr(self, name) for name in _callback_names}
 
+    def __init_signals(self):
+        self.streaming = False  # Streaming flag
+        self.show_axis = False
+        self.capturing = False  # Initialize capturing flag
+        self.acq_mode = False  # Initialize acquisition mode flag
+        self.collect_calib_data = False
+        self.collect_dataset = False
         
     def init_bbox_controls(self, layout:QtWidgets.QVBoxLayout):
         self.bbox_groupbox = QtWidgets.QGroupBox("Bounding Box Controls")
@@ -125,18 +132,12 @@ class PCDStreamer(PCDStreamerUI):
     def set_disable_before_stream_init(self):
         self.capture_toggle.setEnabled(False)
         self.seg_model_init_toggle.setEnabled(False)
-        self.handeye_calib_init_button.setEnabled(False)
-        # self.save_pcd_button.setEnabled(False)
-        # self.save_rgbd_button.setEnabled(False)
         self.detect_board_toggle.setEnabled(False)
         self.data_collect_button.setEnabled(False)
 
     def set_enable_after_stream_init(self):
         self.capture_toggle.setEnabled(True)
         self.seg_model_init_toggle.setEnabled(True)
-        self.handeye_calib_init_button.setEnabled(True)
-        # self.save_pcd_button.setEnabled(True)
-        # self.save_rgbd_button.setEnabled(True)
         self.detect_board_toggle.setEnabled(True)
         self.data_collect_button.setEnabled(True)
         
@@ -157,7 +158,7 @@ class PCDStreamer(PCDStreamerUI):
         self.calib_collect_button.clicked.connect(self.on_calib_collect_button_clicked)
         self.calib_button.clicked.connect(self.on_calib_button_clicked)
         self.detect_board_toggle.stateChanged.connect(self.on_detect_board_toggle_state_changed)
-
+        self.show_axis_in_scene_button.clicked.connect(self.on_show_axis_in_scene_button_clicked)
         # BBox sliders and edits are connected in init_bbox()
 
         # Data Tab
@@ -247,6 +248,22 @@ class PCDStreamer(PCDStreamerUI):
             'fps': round(self.real_fps, 2),  # Assuming 30 FPS for fake camera
         }
 
+        if self.collect_calib_data and hasattr(self, 'calibration_data'):
+            robot_pose = None
+            if hasattr(self, 'robot'):
+                robot_pose = self.robot.capture_gripper_to_base(sep=False)
+            
+            if isinstance(frame['color'], o3d.geometry.Image):
+                frame['color'] = np.array(frame['color'])
+            elif isinstance(frame['color'], o3d.t.geometry.Image):
+                frame['color'] = np.array(frame['color'].cpu())
+
+            self.calibration_data.append(frame['color'], robot_pose=robot_pose)
+            self.collect_calib_data = False
+
+        # if 
+            
+
         frame_elements.update(frame)
         self.update(frame_elements)
 
@@ -312,25 +329,67 @@ class PCDStreamer(PCDStreamerUI):
     def on_robot_init_button_clicked(self):
         from utils import RobotInterface
         self.robot =  RobotInterface()
-        logger.debug("Robot init button clicked")
+        try:
+            # self.robot.find_device()
+            # self.robot.connect()
+            ip = self.robot.ip_address
+            msg = f'Robot: Connected [{ip}]'
+            self.robot_init_button.setStyleSheet("background-color: green;")
+            if hasattr(self, 'calibration_data'):
+                self.calibration_data.reset()
+        except Exception as e:
+            msg = f'Robot: Connection failed'
+            del self.robot
+            logger.error(msg+f' [{e}]')
+            self.robot_init_button.setStyleSheet("background-color: red;")
+            self.flag_robot_init = False
+        # logger.debug("Robot init button clicked")
 
     def on_cam_calib_init_button_clicked(self):
-        if not hasattr(self, 'calibration_data'):
-            from utils import CalibrationData
-            charuco_dict = cv2.aruco.getPredefinedDictionary(ARUCO_BOARD[self.params['board_type']])
-            charuco_board = cv2.aruco.CharucoBoard(
-                self.params['board_shape'],
-                squareLength=self.params['board_square_size'] / 1000, # to meter
-                markerLength=self.params['board_marker_size'] / 1000, # to meter
-                dictionary=charuco_dict
-            )
-            self.calibration_data = CalibrationData(charuco_board, save_dir=self.params['folder_path'])
-            logger.debug("Camera calibration init button clicked")
-        else:
-            square_size = 
-            
+        try:
+            if not hasattr(self, 'calibration_data'):
+                from utils import CalibrationData
+                charuco_dict = cv2.aruco.getPredefinedDictionary(ARUCO_BOARD[self.params['board_type']])
+                charuco_board = cv2.aruco.CharucoBoard(
+                    self.params['board_shape'],
+                    squareLength=self.params['board_square_size'] / 1000,
+                    markerLength=self.params['board_marker_size'] / 1000,
+                    dictionary=charuco_dict
+                )
+                self.calibration_data = CalibrationData(charuco_board, save_dir=self.params['folder_path'])
+                logger.debug("Camera calibration init button clicked")
+            else:
+                from utils import CalibrationData
+                square_size = self.board_square_size_num_edit.value()
+                marker_size = self.board_marker_size_num_edit.value()
+                board_col = self.board_col_num_edit.value()
+                board_row = self.board_row_num_edit.value()
+                board_type = self.board_type_combobox.currentText()
+                board_shape = (board_col, board_row)
+                logger.debug(f"Reinit camera calibration with Board type: {board_type}, shape: {board_shape}, square size: {square_size}, marker size: {marker_size}")
+                self.params['board_type'] = board_type
+                self.params['board_shape'] = board_shape
+                self.params['board_square_size'] = square_size
+                self.params['board_marker_size'] = marker_size
+                charuco_dict = cv2.aruco.getPredefinedDictionary(ARUCO_BOARD[self.params['board_type']])
+                charuco_board = cv2.aruco.CharucoBoard(
+                    self.params['board_shape'],
+                    squareLength=self.params['board_square_size'] / 1000, # to meter
+                    markerLength=self.params['board_marker_size'] / 1000, # to meter
+                    dictionary=charuco_dict
+                )
+                self.calibration_data = CalibrationData(charuco_board, save_dir=self.params['folder_path'])
+            if hasattr(self, 'robot'):
+                self.handeye_calib_init_button.setEnabled(True)
+            self.detect_board_toggle.setEnabled(True)
+            self.cam_calib_init_button.setStyleSheet("background-color: green;")
+        except Exception as e:
+            self.cam_calib_init_button.setStyleSheet("background-color: red;")
+            logger.error(f"Failed to init camera calibration: {e}")
+        
 
     def on_calib_collect_button_clicked(self):
+        self.collect_calib_data = True
         logger.debug("Calibration collect button clicked")
 
     def on_calib_button_clicked(self):
@@ -393,10 +452,10 @@ class PCDStreamer(PCDStreamerUI):
             elif isinstance(depth_image, o3d.t.geometry.Image):
                 self.update_depth_image(np.array(depth_image.cpu()))
 
-    def init_scene_objects(self):
+    def __init_scene_objects(self):
         """Initialize scene objects in the VTK renderer."""
         # Robot base frame
-        size = [0.02]*3
+        size = [0.06]*3
         colors = vtkNamedColors()
         self.robot_base_frame = vtkAxesActor()
         self.robot_base_frame.AxisLabelsOff()
@@ -415,7 +474,11 @@ class PCDStreamer(PCDStreamerUI):
         self.board_pose_frame.SetTotalLength(*size)
         self.renderer.AddActor(self.board_pose_frame)
 
-    def init_bbox(self):
+        self.robot_base_frame.SetVisibility(0)
+        self.robot_end_frame.SetVisibility(0)
+        self.board_pose_frame.SetVisibility(0)
+
+    def __init_bbox(self):
         """Initialize bounding box visualization."""
         # Initialize bounding box parameters
         self.bbox_params = {'xmin': -0.5, 'xmax': 0.5,
@@ -523,8 +586,6 @@ class PCDStreamer(PCDStreamerUI):
             self.on_cam_calib_init_button()
         if 'robot_init' in startup_params and startup_params['robot_init']:
             self.on_robot_init_button()
-        if 'handeye_calib_init' in startup_params and startup_params['handeye_calib_init']:
-            self.on_handeye_calib_init_button()
         if 'calib_check' in startup_params and startup_params['calib_check']:
             self.on_calib_check_button()
         if 'collect_data_viewer' in startup_params and startup_params['collect_data_viewer']:
@@ -678,49 +739,6 @@ class PCDStreamer(PCDStreamerUI):
 
         # return gui.Widget.EventCallbackResult.IGNORED
         pass
-
-    @callback
-    def on_robot_init_button(self):
-        logger.debug("on_robot_init_button")
-        # ret, msg, msg_color = self.pipeline_model.robot_init()
-
-        # if self.pipeline_model.flag_robot_init and self.pipeline_model.flag_camera_init:
-        #     self.pipeline_view.scene_widgets.handeye_calib_init_button.enabled = True
-        
-        # self.pipeline_view.scene_widgets.robot_msg.text = msg
-        # self.pipeline_view.scene_widgets.robot_msg.text_color = msg_color
-        # self.calibration_data.reset()
-        # self.pipeline_view.scene_widgets.frame_list_view.set_items(['Click "Collect Current Frame" to start'])
-        pass
-
-    @callback
-    def on_cam_calib_init_button(self):
-        logger.debug("on_cam_calib_init_button")
-        # ret, msg, msg_color = self.pipeline_model.camera_calibration_init()
-        
-        # if self.pipeline_model.flag_robot_init and self.pipeline_model.flag_camera_init:
-        #     self.pipeline_view.scene_widgets.handeye_calib_init_button.enabled = True
-        
-        # self.pipeline_view.scene_widgets.calibration_msg.text = msg
-        # self.pipeline_view.scene_widgets.calibration_msg.text_color = msg_color
-        # self.pipeline_view.scene_widgets.detect_board_toggle.enabled = True
-        # self.calibration_data = self.pipeline_model.calibration_data_init()
-        # self.pipeline_view.scene_widgets.frame_list_view.set_items(['Click "Collect Current Frame" to start'])
-        pass
-
-    @callback
-    def on_handeye_calib_init_button(self):
-        logger.debug("on_handeye_calib_init_button")
-        # ret, msg, msg_color = self.pipeline_model.handeye_calibration_init()
-        # if ret:
-        #     self.pipeline_model.flag_handeye_calib_init = True
-        #     self.pipeline_view.scene_widgets.calibration_msg.text = msg
-        #     self.pipeline_view.scene_widgets.calibration_msg.text_color = msg_color
-        #     self.calibration_data = self.pipeline_model.calibration_data_init()
-        #     self.pipeline_view.scene_widgets.frame_list_view.set_items(['Click "Collect Current Frame" to start'])
-            # self.pipeline_view.scene_widgets.he_calibreate_button.enabled = False
-        pass
-
 
     @callback
     def on_camera_view_button(self):
@@ -1052,16 +1070,6 @@ class PCDStreamer(PCDStreamerUI):
         pass
     
     @callback
-    def on_calib_collect_button(self):
-        logger.debug("on_calib_collect_button")
-        # logger.debug(self.calibration_data.display_str_list)
-        # self.pipeline_model.flag_calib_collect = True
-        # self.pipeline_view.scene_widgets.frame_list_view.set_items(
-        #     self.calibration_data.display_str_list)
-        # logger.debug("Collecting calibration data")
-        pass
-
-    @callback
     def on_calib_list_remove_button(self):
         logger.debug("on_calib_list_remove_button")
         # self.calibration_data.pop(self.pipeline_view.scene_widgets.frame_list_view.selected_index)
@@ -1137,16 +1145,25 @@ class PCDStreamer(PCDStreamerUI):
         # logger.debug(f"Detecting board: {is_on}")
         pass
 
-    @callback 
-    def on_show_axis_in_scene_toggle(self, is_on):
-        logger.debug("on_show_axis_in_scene_toggle")
-        # self.pipeline_model.flag_calib_axis_to_scene = is_on
-        # self.pipeline_view.pcdview.scene.show_geometry('board_pose', is_on)
-        # self.pipeline_view.pcdview.scene.show_geometry('robot_base_frame', is_on)
-        # self.pipeline_view.pcdview.scene.show_geometry('robot_end_frame', is_on)
-
-        # logger.debug(f"Show axis in scene: {is_on}")
-        pass
+    # @callback 
+    def on_show_axis_in_scene_button_clicked(self):
+        logger.debug(f"on_show_axis {self.show_axis}")
+        if self.show_axis:
+            # Stop streaming
+            self.show_axis = False
+            self.show_axis_in_scene_button.setText("Show Axis in Scene")
+            self.robot_base_frame.SetVisibility(0)
+            self.robot_end_frame.SetVisibility(0)
+            self.board_pose_frame.SetVisibility(0)
+        else:
+            # Start streaming
+            self.show_axis = True
+            self.show_axis_in_scene_button.setText("Hide Axis in Scene")
+            self.robot_base_frame.SetVisibility(1)
+            self.robot_end_frame.SetVisibility(1)
+            self.board_pose_frame.SetVisibility(1)
+        self.renderer.GetRenderWindow().Render()
+        # logger.debug("on_show_axis_in_scene_button_clicked")
 
     @callback
     def on_frame_list_view_changed(self, new_val, is_dbl_click):
