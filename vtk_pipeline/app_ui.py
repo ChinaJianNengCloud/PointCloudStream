@@ -3,6 +3,7 @@ import logging
 
 from PyQt5 import QtWidgets, QtCore
 
+
 from vtkmodules.vtkRenderingCore import (
     vtkRenderer,
     vtkActor,
@@ -378,8 +379,8 @@ class PCDStreamerUI(QtWidgets.QMainWindow):
         self.cam_calib_init_button = QtWidgets.QPushButton("Cam Calib Init")
         h_layout.addWidget(self.cam_calib_init_button)
 
-        self.handeye_calib_init_button = QtWidgets.QPushButton("HandEye Calib Init")
-        h_layout.addWidget(self.handeye_calib_init_button)
+        # self.handeye_calib_init_button = QtWidgets.QPushButton("HandEye Calib Init")
+        # h_layout.addWidget(self.handeye_calib_init_button)
 
     def init_calibration_settings(self, layout:QtWidgets.QVBoxLayout):
         groupbox = QtWidgets.QGroupBox("Calibration Settings")
@@ -449,8 +450,8 @@ class PCDStreamerUI(QtWidgets.QMainWindow):
         group_layout.addLayout(h_layout)
         self.detect_board_toggle = QtWidgets.QCheckBox("Detect Board")
         h_layout.addWidget(self.detect_board_toggle)
-        self.show_axis_in_scene_toggle = QtWidgets.QCheckBox("Show Axis in Scene")
-        h_layout.addWidget(self.show_axis_in_scene_toggle)
+        self.show_axis_in_scene_button = QtWidgets.QPushButton("Show Axis in Scene")
+        h_layout.addWidget(self.show_axis_in_scene_button)
 
     def init_calibration_collect_layout(self, layout:QtWidgets.QVBoxLayout):
         self.calib_collect_button = QtWidgets.QPushButton("Collect Current Frame (Space)")
