@@ -298,6 +298,24 @@ class PCDStreamerUI(QtWidgets.QMainWindow):
         self.depth_video.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         self.depth_video.setAlignment(QtCore.Qt.AlignCenter)
         group_layout.addWidget(self.depth_video)
+        
+    def init_calib_color_image_display(self, layout:QtWidgets.QVBoxLayout):
+        self.calib_groupbox = QtWidgets.QGroupBox("Calibration image")
+        self.calib_groupbox.setCheckable(True)
+        self.calib_groupbox.setChecked(True)
+        group_layout = QtWidgets.QVBoxLayout()
+        self.calib_groupbox.setLayout(group_layout)
+        layout.addWidget(self.calib_groupbox)
+
+        self.calib_video = QtWidgets.QLabel()
+        group_layout.addWidget(self.calib_video)
+
+        h_layout = QtWidgets.QHBoxLayout()
+        group_layout.addLayout(h_layout)
+        self.detect_board_toggle = QtWidgets.QCheckBox("Detect Board")
+        h_layout.addWidget(self.detect_board_toggle)
+        self.show_axis_in_scene_button = QtWidgets.QPushButton("Show Axis in Scene")
+        h_layout.addWidget(self.show_axis_in_scene_button)
 
     def init_scene_info(self, layout:QtWidgets.QVBoxLayout):
         self.scene_info = QtWidgets.QGroupBox("Scene Info")
@@ -435,31 +453,13 @@ class PCDStreamerUI(QtWidgets.QMainWindow):
         self.board_row_num_edit.setValue(6)
         h_layout.addWidget(self.board_row_num_edit)
 
-    def init_calib_color_image_display(self, layout:QtWidgets.QVBoxLayout):
-        self.calib_groupbox = QtWidgets.QGroupBox("Calibration image")
-        self.calib_groupbox.setCheckable(True)
-        self.calib_groupbox.setChecked(True)
-        group_layout = QtWidgets.QVBoxLayout()
-        self.calib_groupbox.setLayout(group_layout)
-        layout.addWidget(self.calib_groupbox)
-
-        self.calib_video = QtWidgets.QLabel()
-        group_layout.addWidget(self.calib_video)
-
-        h_layout = QtWidgets.QHBoxLayout()
-        group_layout.addLayout(h_layout)
-        self.detect_board_toggle = QtWidgets.QCheckBox("Detect Board")
-        h_layout.addWidget(self.detect_board_toggle)
-        self.show_axis_in_scene_button = QtWidgets.QPushButton("Show Axis in Scene")
-        h_layout.addWidget(self.show_axis_in_scene_button)
-
     def init_calibration_collect_layout(self, layout:QtWidgets.QVBoxLayout):
         self.calib_collect_button = QtWidgets.QPushButton("Collect Current Frame (Space)")
         layout.addWidget(self.calib_collect_button)
 
-        self.frame_list_view = QtWidgets.QListWidget()
-        self.frame_list_view.addItem('Click "Collect Current Frame" to start')
-        layout.addWidget(self.frame_list_view)
+        self.calib_data_list = QtWidgets.QListWidget()
+        self.calib_data_list.addItem('Click "Collect Current Frame" to start')
+        layout.addWidget(self.calib_data_list)
 
         h_layout = QtWidgets.QHBoxLayout()
         layout.addLayout(h_layout)

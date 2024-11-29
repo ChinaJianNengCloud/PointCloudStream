@@ -143,8 +143,11 @@ class PCDStreamerFromCamera:
         self.square_size = 0.015
         self.camera = None
         self.flag_normals = False
-        self.__intrinsic_matrix:np.ndarray = np.array([[600, 0, 320], [0, 600, 240], [0, 0, 1]])
+        self.__intrinsic_matrix:np.ndarray = np.array([[600, 0, 320], 
+                                                       [0, 600, 240], 
+                                                       [0, 0, 1]])
         self.__extrinsics:np.ndarray = np.eye(4)  # Example extrinsics (camera at origin)
+        self.dist_coeffs = np.array([0.0, 0.0, 0.0, 0.0])
         self.size = (1280, 720)
         # self.extrinsics = o3d.core.Tensor.eye(4, dtype=o3d.core.Dtype.Float32,
         #                                       device=self.o3d_device)
