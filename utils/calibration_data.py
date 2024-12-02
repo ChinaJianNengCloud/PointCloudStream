@@ -26,9 +26,17 @@ class CalibrationData(QObject):
         self.camera_to_board_rvecs: list[np.ndarray] = []
         self.camera_to_board_tvecs: list[np.ndarray] = []
         self.__manage_list: list[str] = []
-        self.save_dir = Path(save_dir) if save_dir else None
+        self.__save_dir:Path = None
         self.calibration_results = {}
         self.image_size = None
+
+    @property
+    def save_dir(self) -> Path:
+        return self.__save_dir
+
+    @save_dir.setter
+    def save_dir(self, value):
+        self.__save_dir = Path(value)
 
     @property
     def display_str_list(self) -> list[str]:
@@ -37,7 +45,9 @@ class CalibrationData(QObject):
             if any(x is None for x in self.robot_poses):
                 return ["p_cam:"+str(i) for i in range(len(self.images))]
             else:
-                return ["p_cam:"+str(i) + " p_arm:"+str(i) for i in range(len(self.images))]
+                return ["p_cam:"+str(idx) + " p_arm:"+np.array2string(value[0:3], 
+                                                                      formatter={'float_kind': lambda x: f"{x:.2f}"}) 
+                                                                      for idx, value in enumerate(self.robot_poses)]
             
         if len(self.camera_to_board_tvecs) > 0:
             logger.info("Camera matrix is available.")
@@ -50,8 +60,11 @@ class CalibrationData(QObject):
                 robot_tvec_string = [np.array2string(value[0:3], 
                                         formatter={'float_kind': lambda x: f"{x:.2f}"}) 
                                         for value in self.robot_poses]
-                
             return ["p_cam:" + cam + " p_arm:" + robot for cam, robot in zip(cam_tvec_string, robot_tvec_string)]
+        else:
+            return ["p_cam:"+str(idx) + " p_arm:"+np.array2string(value[0:3], 
+                                                                      formatter={'float_kind': lambda x: f"{x:.2f}"}) 
+                                                                      for idx, value in enumerate(self.robot_poses)]
 
         return ['No Data Collected']
 

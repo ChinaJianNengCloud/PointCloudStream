@@ -436,9 +436,9 @@ class PCDStreamerUI(QtWidgets.QMainWindow):
         h_layout = QtWidgets.QHBoxLayout()
         layout.addLayout(h_layout)
 
-        self.center_to_base_toggle = QtWidgets.QCheckBox("Center to Base")
-        self.center_to_base_toggle.setEnabled(False)
-        h_layout.addWidget(self.center_to_base_toggle)
+        self.center_to_robot_base_toggle = QtWidgets.QCheckBox("Center to Base")
+        self.center_to_robot_base_toggle.setEnabled(False)
+        h_layout.addWidget(self.center_to_robot_base_toggle)
 
     def init_display_mode(self, layout:QtWidgets.QVBoxLayout):
         h_layout = QtWidgets.QHBoxLayout()

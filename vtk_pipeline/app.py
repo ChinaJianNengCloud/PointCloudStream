@@ -12,6 +12,7 @@ from typing import Callable, Union, List
 from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtCore import pyqtSignal, QObject, QThread, QTimer
 from PyQt5.QtGui import QImage, QPixmap
+from scipy.spatial.transform import Rotation as R
 from functools import wraps
 
 # Import specific modules from vtkmodules
@@ -176,6 +177,7 @@ class PCDStreamer(PCDStreamerUI):
         self.seg_model_init_toggle.stateChanged.connect(self.on_seg_model_init_toggle_state_changed)
         self.acq_mode_toggle.stateChanged.connect(self.on_acq_mode_toggle_state_changed)
         self.display_mode_combobox.currentTextChanged.connect(self.on_display_mode_combobox_changed)
+        self.center_to_robot_base_toggle.stateChanged.connect(self.on_center_to_robot_base_toggle_state_changed)
 
         # Calibration Tab
         self.cam_calib_init_button.clicked.connect(self.on_cam_calib_init_button_clicked)
@@ -283,9 +285,42 @@ class PCDStreamer(PCDStreamerUI):
         if hasattr(self, 'camera_interface') and self.detect_board_toggle.isChecked():
             rgb_with_pose, rvec, tvec = self.camera_interface._process_and_display_frame(
                 self.img_to_array(frame['color']), ret_vecs=True)
-            self.T_CamToBoard[:3, :3] = cv2.Rodrigues(rvec)[0]
-            self.T_CamToBoard[:3, 3] = tvec.ravel()
-            self.board_pose_frame.SetUserMatrix(rvec, tvec)
+            if rvec is None or tvec is None:
+                logger.warning("Failed to detect board.")
+            else:
+                cam_to_board = np.eye(4)
+                cam_to_board[:3, :3] = cv2.Rodrigues(rvec)[0]
+                cam_to_board[:3, 3] = tvec.ravel()
+                if self.center_to_robot_base_toggle.isChecked():
+                    if hasattr(self, 'T_CamToBase'):
+                        base_to_board = self.T_CamToBase @ cam_to_board
+                        self.board_pose_frame.SetUserMatrix(self._numpy_to_vtk_matrix_4x4(base_to_board))
+                else:
+                    self.board_pose_frame.SetUserMatrix(self._numpy_to_vtk_matrix_4x4(cam_to_board))
+
+            
+        if hasattr(self, 'robot'):
+            robot_pose = self.robot.capture_gripper_to_base(sep=False)
+            t_xyz, r_xyz = robot_pose[0:3], robot_pose[3:6]
+            base_to_end = np.eye(4)
+            base_to_end[:3, :3] = R.from_euler('xyz', r_xyz, degrees=False).as_matrix()
+            base_to_end[:3, 3] = t_xyz
+            if not self.center_to_robot_base_toggle.isChecked():
+                if hasattr(self, 'T_CamToBase'):
+                    cam_to_end = self.T_BaseToCam @ base_to_end
+                    xyzrxryrz = np.hstack((cam_to_end[:3, 3],  # x, y, z
+                                           R.from_matrix(cam_to_end[:3, :3]).as_euler('xyz', degrees=False))) # rx, ry, rz
+                    frame_elements['robot_pose'] = xyzrxryrz
+                    self.robot_end_frame.SetUserMatrix(self._numpy_to_vtk_matrix_4x4(cam_to_end,))
+                    self.robot_base_frame.SetUserMatrix(self._numpy_to_vtk_matrix_4x4(self.T_BaseToCam))
+                else:
+                    logger.error("No robot calibration data detected, collect robot space data.")
+            else:
+                self.robot_end_frame.SetUserMatrix(self._numpy_to_vtk_matrix_4x4(base_to_end))
+                self.robot_base_frame.SetUserMatrix(self._numpy_to_vtk_matrix_4x4(np.eye(4)))
+                frame_elements['robot_pose'] = robot_pose
+
+
         frame_elements.update(frame)
         self.current_frame = frame_elements
         self.update(frame_elements)
@@ -355,6 +390,13 @@ class PCDStreamer(PCDStreamerUI):
         self.display_mode = text
         logger.debug(f"Display mode changed to: {text}")
 
+    def on_center_to_robot_base_toggle_state_changed(self):
+        logger.debug("Center to robot base state changed")
+        if self.center_to_robot_base_toggle.isChecked():
+            self.streamer.extrinsics = self.T_BaseToCam
+        else:
+            self.streamer.extrinsics = np.eye(4)
+
     def on_robot_init_button_clicked(self):
         from utils import RobotInterface
         self.robot =  RobotInterface()
@@ -418,6 +460,16 @@ class PCDStreamer(PCDStreamerUI):
         self.calibration_data.save_calibration_data(path)
         logger.debug(f"Calibration saved: {path}")
 
+    @property
+    def T_CamToBase(self):
+        return self._T_CamToBase
+    
+    @T_CamToBase.setter
+    def T_CamToBase(self, value: np.ndarray):
+        assert value.shape == (4, 4)
+        self._T_CamToBase = value
+        self.T_BaseToCam = np.linalg.inv(value)
+
     def on_calib_combobox_changed(self, text):
         if text != "":
             self.T_CamToBase = np.array(self.calib.get('calibration_results').get(text).get('transformation_matrix'))
@@ -440,7 +492,7 @@ class PCDStreamer(PCDStreamerUI):
             self.calib_combobox.setCurrentIndex(0)
             curent_selected = self.calib_combobox.currentText()
             self.T_CamToBase = np.array(self.calib.get('calibration_results').get(curent_selected).get('transformation_matrix'))
-            self.center_to_base_toggle.setEnabled(True)
+            self.center_to_robot_base_toggle.setEnabled(True)
             
         except Exception as e:
             logger.error(f"Failed to load calibration data: {e}")
@@ -477,7 +529,10 @@ class PCDStreamer(PCDStreamerUI):
                     markerLength=self.params['board_marker_size'] / 1000, # to meter
                     dictionary=cv2.aruco.getPredefinedDictionary(ARUCO_BOARD[self.params['board_type']])
                 )
-                self.calibration_data = CalibrationData(charuco_board, save_dir=self.params['folder_path'])
+                self.calibration_data.reset()
+                self.calibration_data.board = charuco_board
+                self.calibration_data.save_dir = self.params['folder_path']
+
 
             if not hasattr(self, 'camera_interface'):
                 from utils import CameraInterface
@@ -544,18 +599,15 @@ class PCDStreamer(PCDStreamerUI):
             logger.error("Robot not initialized")
             self.timer.start()
             return
-        if not self.center_to_base_toggle.isChecked():
-            robot_pose = self.robot.capture_gripper_to_base(sep=False)
-        else:
-            if hasattr(self, 'T_CamToBase'):
-                robot_pose = self.robot.get_cam_space_gripper_pose(self.T_CamToBase)
-            else:
-                logger.error("No robot calibration data detected")
-                return
+        if 'robot_pose' not in self.current_frame:
+            logger.error("No current robot frame, please start streaming first.")
+            return
+
+        robot_pose = self.current_frame['robot_pose']
         
         color = self.img_to_array(self.current_frame['color'])
         depth = self.img_to_array(self.current_frame['depth'])
-        pcd =  self.current_frame['pcd'].to_legacy()
+        pcd =  self.current_frame['pcd']
         seg = self.current_frame.get('seg', np.zeros(pcd.points.shape[0]))
         xyz = np.asarray(pcd.points)
         rgb = (np.asarray(pcd.colors) * 255).astype(np.uint8)
@@ -723,14 +775,10 @@ class PCDStreamer(PCDStreamerUI):
         self.robot_end_frame.SetVisibility(0)
         self.board_pose_frame.SetVisibility(0)
 
-    def axis_pose_to_matrix(self, axis:vtkAxesActor, matrix: np.ndarray):
+    def axis_set_to_matrix(self, axis:vtkAxesActor, matrix: np.ndarray):
         """Convert axis pose to matrix."""
         # Assuming axis pose is a 4x4 numpy array
-        vtk_matrix = vtkMatrix4x4()
-        for i in range(4):
-            for j in range(4):
-                vtk_matrix.SetElement(i, j, matrix[i, j])
-        axis.SetUserMatrix(vtk_matrix)
+        axis.SetUserMatrix(self._numpy_to_vtk_matrix_4x4(matrix, axis))
 
     def __init_bbox(self):
         """Initialize bounding box visualization."""
@@ -793,24 +841,14 @@ class PCDStreamer(PCDStreamerUI):
         self.bbox_sliders[param].setValue(int(self.bbox_params[param] * 100))
         self.update_bounding_box()
 
-    def transform_geometry(self, name, transform=None):
-        """Apply transformation to the specified actor."""
-        actor = None
-        if name == 'robot_base_frame':
-            actor = self.robot_base_frame
-        elif name == 'robot_end_frame':
-            actor = self.robot_end_frame
-        elif name == 'board_pose':
-            actor = self.board_pose_frame
+    def _numpy_to_vtk_matrix_4x4(self, matrix: np.ndarray):
+        assert matrix.shape == (4, 4)
+        vtk_matrix = vtkMatrix4x4()
+        for i in range(4):
+            for j in range(4):
+                vtk_matrix.SetElement(i, j, matrix[i, j])
+        return vtk_matrix
 
-        if actor and transform is not None:
-            # Assuming transform is a 4x4 numpy array
-            matrix = vtkMatrix4x4()
-            for i in range(4):
-                for j in range(4):
-                    matrix.SetElement(i, j, transform[i, j])
-            actor.SetUserMatrix(matrix)
-            self.vtk_widget.GetRenderWindow().Render()
 
     def get_num_of_palette(self, num_colors):
         """Generate a color palette."""
