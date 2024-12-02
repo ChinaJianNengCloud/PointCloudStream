@@ -78,11 +78,10 @@ class CameraInterface:
     def _process_and_display_frame(self, frame, axis_length=0.1, ret_vecs=False):
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         rvec, tvec = None, None
-        ret, _, _ = self.calibration_data.board_dectect(frame_rgb)
-        if ret:
-            charuco_corners, charuco_ids, marker_corners, marker_ids = self.charuco_detector.detectBoard(frame_rgb)
-            if marker_ids is not None:
-                cv2.aruco.drawDetectedMarkers(frame_rgb, marker_corners, marker_ids)
+
+        charuco_corners, charuco_ids, marker_corners, marker_ids = self.charuco_detector.detectBoard(frame_rgb)
+        if marker_ids is not None:
+            cv2.aruco.drawDetectedMarkers(frame_rgb, marker_corners, marker_ids)
             if charuco_corners is not None and charuco_ids is not None:
                 cv2.aruco.drawDetectedCornersCharuco(frame_rgb, charuco_corners, charuco_ids)
                 if self.camera_matrix is not None and self.dist_coeffs is not None:
@@ -101,16 +100,22 @@ class CameraInterface:
                 logger.warning("No valid Charuco corners detected for pose estimation")
         else:
             logger.warning("No board detected in the current frame.")
+        
+        
         if ret_vecs:
             return frame_rgb, rvec, tvec
         return frame_rgb
 
     @property
     def camera_matrix(self):
+        if not hasattr(self.calibration_data, 'camera_matrix'):
+            return None
         return self.calibration_data.camera_matrix
 
     @property
     def dist_coeffs(self):
+        if not hasattr(self.calibration_data, 'dist_coeffs'):
+            return None
         return self.calibration_data.dist_coeffs
 
     def clear(self):
