@@ -44,7 +44,10 @@ def main():
             'calib_check': True,
             'collect_data_viewer': True
         },
-        'use_fake_camera': True
+        'use_fake_camera': True,
+        # Agent server params
+        "service_type": "_agent._tcp.local.",
+        "discovery_timeout": 2,
     }
     app = QtWidgets.QApplication(sys.argv)
 

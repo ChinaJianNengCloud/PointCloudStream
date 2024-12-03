@@ -238,6 +238,7 @@ class PCDStreamerUI(QtWidgets.QMainWindow):
         self.init_calibration_tab()
         self.init_bbox_tab()
         self.init_data_tab()
+        self.init_agent_tab()  # Add the new Robot tab
 
         # Set initial states
         self.set_disable_before_stream_init()
@@ -623,6 +624,55 @@ class PCDStreamerUI(QtWidgets.QMainWindow):
 
         self.data_save_button = QtWidgets.QPushButton("Save Data")
         layout.addWidget(self.data_save_button)
+
+    def init_agent_tab(self):
+        self.agent_tab = QtWidgets.QWidget()
+        self.tab_view.addTab(self.agent_tab, "Agent")
+        robot_layout = QtWidgets.QVBoxLayout(self.agent_tab)
+
+        # Create LLM Server group
+        llm_server_group = QtWidgets.QGroupBox("Agent Server")
+        connection_layout = QtWidgets.QHBoxLayout()
+        llm_server_group.setLayout(connection_layout)
+        
+        # IP section
+        ip_label = QtWidgets.QLabel("IP:")
+        self.ip_editor = QtWidgets.QLineEdit("192.168.1.49")
+        # self.ip_editor.setFixedHeight(25)
+        
+        # Port section
+        port_label = QtWidgets.QLabel("Port:")
+        self.port_editor = QtWidgets.QLineEdit("65432")
+        # self.port_editor.setFixedHeight(25)
+        
+        # Scan button
+        self.scan_button = QtWidgets.QPushButton("Scan")
+        # self.scan_button.setFixedHeight(25)
+        
+        # Add all widgets to connection layout
+        connection_layout.addWidget(ip_label)
+        connection_layout.addWidget(self.ip_editor)
+        connection_layout.addWidget(port_label)
+        connection_layout.addWidget(self.port_editor)
+        connection_layout.addWidget(self.scan_button)
+        
+        # Add LLM Server group to main layout
+        robot_layout.addWidget(llm_server_group)
+
+        # Create prompt label and text editor
+        prompt_label = QtWidgets.QLabel("Prompt:")
+        self.agent_prompt_editor = QtWidgets.QTextEdit()
+        self.agent_prompt_editor.setMinimumHeight(100)
+
+        # Create send button
+        self.send_button = QtWidgets.QPushButton("Send")
+        self.send_button.setMaximumWidth(100)
+
+        # Add widgets to layout
+        robot_layout.addWidget(prompt_label)
+        robot_layout.addWidget(self.agent_prompt_editor)
+        robot_layout.addWidget(self.send_button)
+        robot_layout.addStretch()  # Add stretch to keep widgets at the top
 
 def main():
     app = QtWidgets.QApplication(sys.argv)

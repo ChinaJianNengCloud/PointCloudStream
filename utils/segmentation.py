@@ -5,14 +5,33 @@ import open3d.core as o3c
 import cv2
 import torch.utils
 import torch.utils.dlpack
+from ultralytics import YOLO
 
-def segment_pcd_from_2d(model, pcd, color, intrinsic, extrinsic=np.eye(4)):
+def segment_pcd_from_2d(model: YOLO, pcd, color, intrinsic, extrinsic=np.eye(4)):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # 1. Run the model to get the segmentation masks
     # color_torch = torch.from_numpy(color).permute(2, 0, 1).unsqueeze(0).to(device)  # Shape: (1, 3, H, W)
-    res = model.predict(source=color)
-    masks = res[0].masks.data  # Shape: (num_masks, H', W')
+    if isinstance(color, o3d.geometry.Image):
+        color = np.asarray(color)
+    elif isinstance(color, o3d.t.geometry.Image):
+        color = np.asarray(color.cpu())
+
+    res = model.predict(source=color, verbose=False)
+        # 2. Get the 3D points from the point cloud
+    if isinstance(pcd, o3d.geometry.PointCloud):
+        points_3d = torch.from_numpy(np.asarray(pcd.points))
+    elif isinstance(pcd, o3d.t.geometry.PointCloud):
+        points_3d = pcd.point["positions"]
+        points_3d = o3d_t_to_torch(points_3d).to(device)
+    else:
+        points_3d = torch.from_numpy(np.asarray(pcd.points)).to(device)  # Shape: (N, 3)
+    N = points_3d.shape[0]
+
+    try:
+        masks = res[0].masks.data  # Shape: (num_masks, H', W')
+    except:
+        return np.zeros(N, dtype=np.int64)
 
     # Resize the masks to the original image size
     if not isinstance(color, np.ndarray):
@@ -25,13 +44,7 @@ def segment_pcd_from_2d(model, pcd, color, intrinsic, extrinsic=np.eye(4)):
         align_corners=False
     ).squeeze(1)  # Shape: (num_masks, H, W)
 
-    # 2. Get the 3D points from the point cloud
-    if isinstance(pcd.point["positions"], o3c.Tensor):
-        points_3d = pcd.point["positions"]
-        points_3d = o3d_t_to_torch(points_3d).to(device)
-    else:
-        points_3d = torch.from_numpy(np.asarray(pcd.points)).to(device)  # Shape: (N, 3)
-    N = points_3d.shape[0]
+
 
     # 3. Project the 3D points into the 2D image plane
     ones = torch.ones((N, 1), device=device)

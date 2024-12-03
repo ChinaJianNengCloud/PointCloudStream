@@ -1,8 +1,8 @@
 from .calibration_process import CalibrationProcess
-from .calibration_data import CalibrationData
+from .data_manager.calibration_data import CalibrationData
 from .robot import RobotInterface
 from .camera import CameraInterface
-from .collect_data import CollectedData
+from .data_manager.collect_data import CollectedData
 from .calibration_process import ARUCO_BOARD
 
 __all__ = [
