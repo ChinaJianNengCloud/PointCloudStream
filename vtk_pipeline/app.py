@@ -8,6 +8,8 @@ import open3d as o3d
 import open3d.core as o3c
 import cv2
 import copy
+import socket
+import pickle
 from typing import Callable, Union, List
 from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtCore import pyqtSignal, QObject, QThread, QTimer
@@ -36,6 +38,9 @@ from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 
 from utils import RobotInterface, CameraInterface, ARUCO_BOARD
 from utils import CalibrationData, CollectedData
+from utils.segmentation import segment_pcd_from_2d
+from utils.net.client import send_message, discover_server
+
 from .pcd_streamer import PCDStreamerFromCamera, PCDUpdater
 from .app_ui import PCDStreamerUI
 # Import constants
@@ -204,6 +209,10 @@ class PCDStreamer(PCDStreamerUI):
         self.data_tree_view_remove_button.clicked.connect(self.on_data_tree_view_remove_button_clicked)
         self.data_tree_view.set_on_selection_changed(self.on_tree_selection_changed)
         self.collected_data.data_changed.connect(self._data_tree_view_update)
+
+        # Agent Tab
+        self.scan_button.clicked.connect(self.on_scan_button_clicked)
+        self.send_button.clicked.connect(self.on_send_button_clicked)
         # Key press events
         self.vtk_widget.AddObserver("KeyPressEvent", self.on_key_press)
 
@@ -281,7 +290,39 @@ class PCDStreamer(PCDStreamerUI):
         frame_elements = {
             'fps': round(self.real_fps, 2),  # Assuming 30 FPS for fake camera
         }
+        
+        self.board_pose_update(frame)
+        self.robot_pose_update(frame)
+        self.segment_pcd_from_yolo(frame)
 
+
+        frame_elements.update(frame)
+        self.current_frame = frame_elements
+        self.update(frame_elements)
+
+    def robot_pose_update(self, frame):
+        if hasattr(self, 'robot'):
+            robot_pose = self.robot.capture_gripper_to_base(sep=False)
+            t_xyz, r_xyz = robot_pose[0:3], robot_pose[3:6]
+            base_to_end = np.eye(4)
+            base_to_end[:3, :3] = R.from_euler('xyz', r_xyz, degrees=False).as_matrix()
+            base_to_end[:3, 3] = t_xyz
+            if not self.center_to_robot_base_toggle.isChecked():
+                if hasattr(self, 'T_CamToBase'):
+                    cam_to_end = self.T_BaseToCam @ base_to_end
+                    xyzrxryrz = np.hstack((cam_to_end[:3, 3],  # x, y, z
+                                           R.from_matrix(cam_to_end[:3, :3]).as_euler('xyz', degrees=False))) # rx, ry, rz
+                    frame['robot_pose'] = xyzrxryrz
+                    self.robot_end_frame.SetUserMatrix(self._numpy_to_vtk_matrix_4x4(cam_to_end,))
+                    self.robot_base_frame.SetUserMatrix(self._numpy_to_vtk_matrix_4x4(self.T_BaseToCam))
+                else:
+                    logger.error("No robot calibration data detected, collect robot space data.")
+            else:
+                self.robot_end_frame.SetUserMatrix(self._numpy_to_vtk_matrix_4x4(base_to_end))
+                self.robot_base_frame.SetUserMatrix(self._numpy_to_vtk_matrix_4x4(np.eye(4)))
+                frame['robot_pose'] = robot_pose
+
+    def board_pose_update(self, frame):
         if hasattr(self, 'camera_interface') and self.detect_board_toggle.isChecked():
             rgb_with_pose, rvec, tvec = self.camera_interface._process_and_display_frame(
                 self.img_to_array(frame['color']), ret_vecs=True)
@@ -297,40 +338,29 @@ class PCDStreamer(PCDStreamerUI):
                         self.board_pose_frame.SetUserMatrix(self._numpy_to_vtk_matrix_4x4(base_to_board))
                 else:
                     self.board_pose_frame.SetUserMatrix(self._numpy_to_vtk_matrix_4x4(cam_to_board))
-
-            
-        if hasattr(self, 'robot'):
-            robot_pose = self.robot.capture_gripper_to_base(sep=False)
-            t_xyz, r_xyz = robot_pose[0:3], robot_pose[3:6]
-            base_to_end = np.eye(4)
-            base_to_end[:3, :3] = R.from_euler('xyz', r_xyz, degrees=False).as_matrix()
-            base_to_end[:3, 3] = t_xyz
-            if not self.center_to_robot_base_toggle.isChecked():
-                if hasattr(self, 'T_CamToBase'):
-                    cam_to_end = self.T_BaseToCam @ base_to_end
-                    xyzrxryrz = np.hstack((cam_to_end[:3, 3],  # x, y, z
-                                           R.from_matrix(cam_to_end[:3, :3]).as_euler('xyz', degrees=False))) # rx, ry, rz
-                    frame_elements['robot_pose'] = xyzrxryrz
-                    self.robot_end_frame.SetUserMatrix(self._numpy_to_vtk_matrix_4x4(cam_to_end,))
-                    self.robot_base_frame.SetUserMatrix(self._numpy_to_vtk_matrix_4x4(self.T_BaseToCam))
-                else:
-                    logger.error("No robot calibration data detected, collect robot space data.")
-            else:
-                self.robot_end_frame.SetUserMatrix(self._numpy_to_vtk_matrix_4x4(base_to_end))
-                self.robot_base_frame.SetUserMatrix(self._numpy_to_vtk_matrix_4x4(np.eye(4)))
-                frame_elements['robot_pose'] = robot_pose
-
-
-        frame_elements.update(frame)
-        self.current_frame = frame_elements
-        self.update(frame_elements)
-
-
     
     def update(self, frame_elements: dict):
         """Update visualization with point cloud and images."""
+        if 'seg_labels' in frame_elements:
+            if self.display_mode_combobox.currentText() == "Segmentation":
+                self.palettes
+                seg_labels = frame_elements['seg_labels']
+                num_points = seg_labels.shape[0]
+                colors = np.zeros((num_points, 3))
+                valid_idx = seg_labels >= 0
+                colors[valid_idx] = np.array(self.palettes)[seg_labels[valid_idx]] / 255.0
+
+
         if 'pcd' in frame_elements:
-            self.update_pcd_geometry(frame_elements['pcd'])
+            if 'seg_labels' in frame_elements and self.display_mode_combobox.currentText() == "Segmentation":
+                seg_labels = frame_elements['seg_labels']
+                num_points = seg_labels.shape[0]
+                colors = np.zeros((num_points, 3))
+                valid_idx = seg_labels >= 0
+                colors[valid_idx] = np.array(self.palettes)[seg_labels[valid_idx]] / 255.0
+                self.update_pcd_geometry(frame_elements['pcd'], colors)
+            else:
+                self.update_pcd_geometry(frame_elements['pcd'])
 
         if 'color' in frame_elements:
             self.update_color_image(frame_elements['color'])
@@ -350,17 +380,33 @@ class PCDStreamer(PCDStreamerUI):
         #         self.robot_end_frame.SetUserMatrix(frame_elements['robot_pose'])
 
         self.frame_num += 1
-        logger.debug(f"Frame: {self.frame_num}")
+        # logger.debug(f"Frame: {self.frame_num}")
 
-    def update_pcd_geometry(self, pcd):
+    def update_pcd_geometry(self, pcd, lb_colors: np.ndarray = None):
         """Update the point cloud visualization with Open3D point cloud data."""
         if not isinstance(pcd, o3d.geometry.PointCloud):
             logger.error("Input to update_pcd_geometry is not a valid Open3D PointCloud")
             return
-        self.pcd_updater.update_pcd(pcd)
+        self.pcd_updater.update_pcd(pcd, lb_colors)
         self.vtk_widget.GetRenderWindow().Render()
 
-        logger.debug("Point cloud visualization updated.")
+        # logger.debug("Point cloud visualization updated.")
+
+    def segment_pcd_from_yolo(self, frame: dict):
+        if self.seg_model_init_toggle.isChecked():
+            if not hasattr(self, 'pcd_seg_model'):
+                logger.error("Segmentation model not initialized")
+                return
+            try:
+                labels = segment_pcd_from_2d(self.pcd_seg_model, 
+                                    frame['pcd'], frame['color'], 
+                                    self.streamer.intrinsic_matrix, 
+                                    self.streamer.extrinsics)
+            except Exception as e:
+                logger.error(f"Segmentation failed: {e}")
+                frame['seg_labels'] = np.zeros((frame['pcd'].points.shape[0], 1), dtype=np.int64)
+                return
+            frame['seg_labels'] = labels
 
     # Implement other callback methods as needed (even if they are empty for now)
     def on_toggle_record_state_changed(self):
@@ -624,6 +670,72 @@ class PCDStreamer(PCDStreamerUI):
                 self.timer.start()
         logger.debug("Data collect button clicked")
 
+    def on_send_button_clicked(self):
+        try:
+            prompt = self.agent_prompt_editor.toPlainText()
+            frame = copy.deepcopy(self.current_frame)
+            colors = np.asarray(frame['pcd'].colors)
+            points = np.asarray(frame['pcd'].points)
+            labels = np.asarray(frame['seg_labels'])
+            pcd_with_labels = np.hstack((points, colors, labels.reshape(-1, 1)))
+            image = np.asarray(frame['color'].cpu())
+            pose = frame['robot_pose']
+            past_actions = []
+            msg_dict = {'prompt': prompt, 
+                        'pcd': pcd_with_labels, 
+                        'image': image, 
+                        'pose': pose, 
+                        'past_actions': past_actions, 
+                        'command': "process_pcd"}
+            
+            self.sendingThread  = DataSendToServerThread(ip=self.ip_editor.text(), 
+                                                    port=int(self.port_editor.text()), 
+                                                    msg_dict=msg_dict)
+            self.sendingThread.progress.connect(self.on_send_progress)
+            self.sendingThread.finished.connect(self.on_finish_sending_thread)
+            self.send_button.setEnabled(False)
+            self.sendingThread.start()
+            logger.debug("Send button clicked")
+        except Exception as e:
+            logger.error(f"Failed to send data: {e}")
+
+    def on_finish_sending_thread(self):
+        self.send_button.setEnabled(True)
+        logger.debug("Sending thread finished")
+
+
+    def refresh_line_progress(self, progress):
+        """
+        Refresh the terminal line with the current progress.
+        :param progress: Tuple of (status, percentage)
+        """
+        status, percentage = progress
+        bar_length = 40  # Length of the progress bar
+        filled_length = int(bar_length * percentage / 100)
+        bar = "#" * filled_length + "-" * (bar_length - filled_length)
+        if percentage < 100:
+            sys.stdout.write(f"\r[{bar}] {percentage:.2f}% - {status}  ")
+            sys.stdout.flush()
+        else:
+            sys.stdout.write(f"\r[{bar}] {percentage:.2f}% - {status}  \n")
+            sys.stdout.flush()
+
+    def on_send_progress(self, progress):
+        # logger.debug(f"Send progress: {progress}")  # Log progress for debugging
+        self.refresh_line_progress(progress)  # Update the line progress bar
+
+    def on_scan_button_clicked(self):
+        try:
+            ip, port = discover_server(self.params)
+            self.ip_editor.setText(ip)
+            self.port_editor.setText(str(port))
+            self.scan_button.setStyleSheet("background-color: green;")
+        except Exception as e:
+            self.scan_button.setStyleSheet("background-color: red;")
+            logger.error(f"Failed to discover server: {e}")
+        
+        logger.debug("Scan button clicked")
+
     def _data_tree_view_update(self):
         """
         Updates the tree view with data from `shown_data_json`.
@@ -871,17 +983,7 @@ class PCDStreamer(PCDStreamerUI):
         
 
     def load_in_startup(self):
-        startup_params = self.params.get('load_in_startup', {})
-        if 'camera_init' in startup_params and startup_params['camera_init']:
-            self.on_stream_init_button()
-        if 'camera_calib_init' in startup_params and startup_params['camera_calib_init']:
-            self.on_cam_calib_init_button()
-        if 'robot_init' in startup_params and startup_params['robot_init']:
-            self.on_robot_init_button()
-        if 'calib_check' in startup_params and startup_params['calib_check']:
-            self.on_calib_check_button()
-        if 'collect_data_viewer' in startup_params and startup_params['collect_data_viewer']:
-            self.collected_data.start_display_thread()
+        pass
 
     def transform_element(self, elements:dict, element_name: str):
         pass
@@ -913,10 +1015,14 @@ class PCDStreamer(PCDStreamerUI):
         logger.debug("Exiting main window")
         if hasattr(self, 'timer'):
             self.timer.stop()
+        if hasattr(self, 'pcd_seg_model'):
+            self.pcd_seg_model = None
+        
+        if hasattr(self, 'sendingThread'):
+            self.sendingThread = None
         self.streamer = None
         self.current_frame = None
         super().closeEvent(event) 
-
 
 
 class CalibrationThread(QThread):
@@ -933,3 +1039,67 @@ class CalibrationThread(QThread):
             self.robot.move_to_pose(each_pose)
             self.progress.emit(idx)
         self.robot.set_teach_mode(True)
+
+
+class DataSendToServerThread(QThread):
+    progress = pyqtSignal(tuple)  # Signal to communicate progress updates (step, progress)
+
+    def __init__(self, ip, port, msg_dict: dict):
+        self.ip = ip
+        self.port = port
+        self.msg_dict = msg_dict
+        super().__init__()
+
+    def run(self):
+        try:
+            logger.debug("Sending data to server")
+            # Serialize the message dictionary
+            data = pickle.dumps(self.msg_dict)
+            data_length = len(data)
+
+            with socket.create_connection((self.ip, int(self.port))) as client_socket:
+                start_time = time.time()
+                client_socket.sendall(data_length.to_bytes(4, byteorder='big'))
+                self.progress.emit(("Sending Length", 100))  # Mark step as complete
+
+                bytes_sent = 0
+                chunk_size = 4096 
+                while bytes_sent < data_length:
+                    chunk = data[bytes_sent:bytes_sent + chunk_size]
+                    sent = client_socket.send(chunk)
+                    bytes_sent += sent
+                    progress = (bytes_sent / data_length) * 100
+                    self.progress.emit(("Sending Data", progress))
+
+                # Ensure sending step reaches 100%
+                self.progress.emit(("Sending Data", 100))
+
+                # Step 3: Receiving the response length
+                response_length = int.from_bytes(client_socket.recv(4), byteorder='big')
+                self.progress.emit(("Receiving Length", 100))  # Mark step as complete
+
+                # Step 4: Receiving the response data
+                response_data = b""
+                bytes_received = 0
+                while len(response_data) < response_length:
+                    packet = client_socket.recv(4096)
+                    if not packet:
+                        break
+                    response_data += packet
+                    bytes_received = len(response_data)
+                    progress = (bytes_received / response_length) * 100
+                    self.progress.emit(("Receiving Data", progress))
+
+                # Ensure receiving step reaches 100%
+                self.progress.emit(("Receiving Data", 100))
+                # Deserialize the response
+                self.__response = pickle.loads(response_data)
+                end_time = time.time() - start_time
+                logger.debug(f"Response from server: {self.__response}")
+                logger.debug(f"Total time: {end_time:.2f} s")
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            self.progress.emit(("Error", 0))  # Emit an error state if something goes wrong
+    
+    def get_response(self):
+        return self.__response

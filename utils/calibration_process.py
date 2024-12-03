@@ -14,11 +14,11 @@ import open3d as o3d
 try:
     from utils.robot import RobotInterface
     from utils.camera import CameraInterface
-    from utils.calibration_data import CalibrationData
+    from utils.data_manager.calibration_data import CalibrationData
 except ImportError:
     from robot import RobotInterface
     from camera import CameraInterface
-    from calibration_data import CalibrationData
+    from data_manager.calibration_data import CalibrationData
 
 # Configure logging
 # logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(levelname)s] %(message)s')

@@ -54,10 +54,13 @@ class PCDUpdater:
         actor.GetProperty().SetPointSize(point_size)
         self.renderer.AddActor(actor)
     
-    def update_pcd(self, pcd: o3d.geometry.PointCloud):
+    def update_pcd(self, pcd: o3d.geometry.PointCloud, lb_colors: np.ndarray = None):
         # Convert Open3D point cloud to numpy arrays
         points = np.asarray(pcd.points)
-        colors = (np.asarray(pcd.colors) * 255).astype(np.uint8)
+        if lb_colors is not None:
+            colors = lb_colors
+        else:
+            colors = (np.asarray(pcd.colors) * 255).astype(np.uint8)
 
         vtk_points_array = vtkPoints()
         vtk_points_array.SetData(numpy_to_vtk(points))

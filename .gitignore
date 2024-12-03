@@ -2,7 +2,7 @@
 *.pyc
 *.png
 *.pdf
-data*/
+data/
 testoutput/
 *test*.py
 wandb/
