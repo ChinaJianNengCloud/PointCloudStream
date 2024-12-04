@@ -679,9 +679,9 @@ class PCDStreamerUI(QtWidgets.QMainWindow):
         self.agent_prompt_editor = QtWidgets.QTextEdit()
         single_line_height = 30
         self.agent_prompt_editor.setMinimumHeight(single_line_height)
-        self.agent_prompt_editor.setMaximumHeight(single_line_height)
+        self.agent_prompt_editor.setMaximumHeight(100)  # Allow growth up to 100 pixels
         self.agent_prompt_editor.document().documentLayout().documentSizeChanged.connect(
-            lambda size: self.agent_prompt_editor.setMinimumHeight(int(min(size.height(), 100)))
+            lambda size: self.agent_prompt_editor.setFixedHeight(max(single_line_height, int(min(size.height() + 5, 100))))
         )
         robot_layout.addWidget(self.agent_prompt_editor)
         
