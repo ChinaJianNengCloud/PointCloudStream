@@ -37,7 +37,7 @@ from vtkmodules.util.numpy_support import numpy_to_vtk, numpy_to_vtkIdTypeArray
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 
 from utils import RobotInterface, CameraInterface, ARUCO_BOARD
-from utils import CalibrationData, CollectedData
+from utils import CalibrationData, CollectedData, ConversationData
 from utils.segmentation import segment_pcd_from_2d
 from utils.net.client import send_message, discover_server
 
@@ -90,7 +90,7 @@ class PCDStreamer(PCDStreamerUI):
         self.streamer.camera_frustrum.register_renderer(self.renderer)
         self.callbacks = {name: getattr(self, name) for name in _callback_names}
         self.palettes = self.get_num_of_palette(80)
-
+        self.conversation_data = ConversationData()
         self.__init_scene_objects()
         self.__init_bbox()
         self.__init_signals()
@@ -298,29 +298,49 @@ class PCDStreamer(PCDStreamerUI):
 
         frame_elements.update(frame)
         self.current_frame = frame_elements
-        self.update(frame_elements)
+        self.point_cloud_update(frame_elements)
 
     def robot_pose_update(self, frame):
-        if hasattr(self, 'robot'):
-            robot_pose = self.robot.capture_gripper_to_base(sep=False)
-            t_xyz, r_xyz = robot_pose[0:3], robot_pose[3:6]
-            base_to_end = np.eye(4)
-            base_to_end[:3, :3] = R.from_euler('xyz', r_xyz, degrees=False).as_matrix()
-            base_to_end[:3, 3] = t_xyz
-            if not self.center_to_robot_base_toggle.isChecked():
-                if hasattr(self, 'T_CamToBase'):
-                    cam_to_end = self.T_BaseToCam @ base_to_end
-                    xyzrxryrz = np.hstack((cam_to_end[:3, 3],  # x, y, z
-                                           R.from_matrix(cam_to_end[:3, :3]).as_euler('xyz', degrees=False))) # rx, ry, rz
-                    frame['robot_pose'] = xyzrxryrz
-                    self.robot_end_frame.SetUserMatrix(self._numpy_to_vtk_matrix_4x4(cam_to_end,))
+        if self.show_axis:
+            ret, _, pose_matrix = self.get_robot_pose()
+            if ret:
+                self.robot_end_frame.SetUserMatrix(self._numpy_to_vtk_matrix_4x4(pose_matrix))
+                if not self.center_to_robot_base_toggle.isChecked():
                     self.robot_base_frame.SetUserMatrix(self._numpy_to_vtk_matrix_4x4(self.T_BaseToCam))
                 else:
-                    logger.error("No robot calibration data detected, collect robot space data.")
+                    self.robot_base_frame.SetUserMatrix(self._numpy_to_vtk_matrix_4x4(np.eye(4)))
+            
+
+
+    def get_robot_pose(self):
+        """
+        Get the current pose of the robot's end-effector.
+        
+        Returns:
+            bool: Whether the robot pose was successfully retrieved.
+            list or None: The pose as a list of length 6, containing the translation (x, y, z) and rotation (rx, ry, rz) components in the camera frame if robot calibration data is available.
+            np.ndarray or None: The pose as a 4x4 numpy array in the camera frame if robot calibration data is available.
+        """
+        if not hasattr(self, 'robot'):
+            logger.error("Robot not initialized.")
+            return False, None, None
+        
+        robot_pose = self.robot.capture_gripper_to_base(sep=False)
+        t_xyz, r_xyz = robot_pose[0:3], robot_pose[3:6]
+        base_to_end = np.eye(4)
+        base_to_end[:3, :3] = R.from_euler('xyz', r_xyz, degrees=False).as_matrix()
+        base_to_end[:3, 3] = t_xyz
+        if not self.center_to_robot_base_toggle.isChecked():
+            if hasattr(self, 'T_CamToBase'):
+                cam_to_end = self.T_BaseToCam @ base_to_end
+                xyzrxryrz = np.hstack((cam_to_end[:3, 3],
+                                    R.from_matrix(cam_to_end[:3, :3]).as_euler('xyz', degrees=False)))
+                return True, xyzrxryrz, cam_to_end
             else:
-                self.robot_end_frame.SetUserMatrix(self._numpy_to_vtk_matrix_4x4(base_to_end))
-                self.robot_base_frame.SetUserMatrix(self._numpy_to_vtk_matrix_4x4(np.eye(4)))
-                frame['robot_pose'] = robot_pose
+                logger.error("No robot calibration data detected.")
+                return False, None, None
+        else:
+            return True, robot_pose, base_to_end
 
     def board_pose_update(self, frame):
         if hasattr(self, 'camera_interface') and self.detect_board_toggle.isChecked():
@@ -339,7 +359,7 @@ class PCDStreamer(PCDStreamerUI):
                 else:
                     self.board_pose_frame.SetUserMatrix(self._numpy_to_vtk_matrix_4x4(cam_to_board))
     
-    def update(self, frame_elements: dict):
+    def point_cloud_update(self, frame_elements: dict):
         """Update visualization with point cloud and images."""
         if 'seg_labels' in frame_elements:
             if self.display_mode_combobox.currentText() == "Segmentation":
@@ -424,8 +444,7 @@ class PCDStreamer(PCDStreamerUI):
     def on_seg_model_init_toggle_state_changed(self):
         if not hasattr(self, 'pcd_seg_model'):
             from ultralytics import YOLO, SAM
-            self.pcd_seg_model = YOLO("yolo11x-seg.pt")
-
+            self.pcd_seg_model = YOLO(self.params['yolo_model_path'])
         logger.debug(f"Segmentation model state changed:{self.seg_model_init_toggle.isChecked()}")
 
     def on_acq_mode_toggle_state_changed(self):
@@ -591,20 +610,13 @@ class PCDStreamer(PCDStreamerUI):
             logger.error(f"Failed to init camera calibration: {e}")
         
     def on_calib_collect_button_clicked(self):
-        if self.streaming:
-            if hasattr(self, 'timer'):
-                self.timer.start()
-
         if hasattr(self, 'calibration_data'):
-            robot_pose = None
-            if hasattr(self, 'robot'):
-                robot_pose = self.robot.capture_gripper_to_base(sep=False)
-            color = self.img_to_array(self.current_frame['color'])
-            self.calibration_data.append(color, robot_pose=robot_pose)
-
-        if self.streaming:
-            if hasattr(self, 'timer'):
-                self.timer.start()
+            ret, robot_pose, _ = self.get_robot_pose()
+            if ret:
+                color = self.img_to_array(self.current_frame['color'])
+                self.calibration_data.append(color, robot_pose=robot_pose)
+            else:
+                logger.error("Failed to get robot pose")
         logger.debug("Calibration collect button clicked")
     
     def on_calib_list_remove_button_clicked(self):
@@ -639,68 +651,71 @@ class PCDStreamer(PCDStreamerUI):
         logger.debug("Detect board state changed to:")
 
     def on_data_collect_button_clicked(self):
-        if self.streaming:
-            self.timer.stop()
-        if not hasattr(self, 'robot'):
-            logger.error("Robot not initialized")
-            self.timer.start()
-            return
-        if 'robot_pose' not in self.current_frame:
-            logger.error("No current robot frame, please start streaming first.")
-            return
+        ret, robot_pose, _ = self.get_robot_pose()
+        if ret:
+            color = self.img_to_array(self.current_frame['color'])
+            depth = self.img_to_array(self.current_frame['depth'])
+            pcd =  self.current_frame['pcd']
+            
+            xyz = np.asarray(pcd.points)
+            rgb = (np.asarray(pcd.colors) * 255).astype(np.uint8)
+            seg = self.current_frame.get('seg', np.zeros(xyz.shape[0]))
+            pcd_with_labels = np.hstack((xyz, rgb, seg.reshape(-1, 1)))
 
-        robot_pose = self.current_frame['robot_pose']
-        
-        color = self.img_to_array(self.current_frame['color'])
-        depth = self.img_to_array(self.current_frame['depth'])
-        pcd =  self.current_frame['pcd']
-        seg = self.current_frame.get('seg', np.zeros(pcd.points.shape[0]))
-        xyz = np.asarray(pcd.points)
-        rgb = (np.asarray(pcd.colors) * 255).astype(np.uint8)
-        pcd_with_labels = np.hstack((xyz, rgb, seg.reshape(-1, 1)))
+            self.collected_data.append(prompt=self.prompt_text.text(),
+                                    color=color,
+                                    depth=depth,
+                                    point_cloud=pcd_with_labels,
+                                    pose=robot_pose,
+                                    bbox_dict=self.bbox_params)
+            logger.debug("Data collected")
+        else:
+            logger.error("Failed to get robot pose")
 
-        self.collected_data.append(prompt=self.prompt_text.text(),
-                                   color=color,
-                                   depth=depth,
-                                   point_cloud=pcd_with_labels,
-                                   robot_pose=robot_pose,
-                                   bbox_dict=self.bbox_params)
-        if self.streaming:
-            if hasattr(self, 'timer'):
-                self.timer.start()
         logger.debug("Data collect button clicked")
 
     def on_send_button_clicked(self):
         try:
-            prompt = self.agent_prompt_editor.toPlainText()
-            frame = copy.deepcopy(self.current_frame)
-            colors = np.asarray(frame['pcd'].colors)
-            points = np.asarray(frame['pcd'].points)
-            labels = np.asarray(frame['seg_labels'])
-            pcd_with_labels = np.hstack((points, colors, labels.reshape(-1, 1)))
-            image = np.asarray(frame['color'].cpu())
-            pose = frame['robot_pose']
-            past_actions = []
-            msg_dict = {'prompt': prompt, 
-                        'pcd': pcd_with_labels, 
-                        'image': image, 
-                        'pose': pose, 
-                        'past_actions': past_actions, 
-                        'command': "process_pcd"}
-            
-            self.sendingThread  = DataSendToServerThread(ip=self.ip_editor.text(), 
-                                                    port=int(self.port_editor.text()), 
-                                                    msg_dict=msg_dict)
-            self.sendingThread.progress.connect(self.on_send_progress)
-            self.sendingThread.finished.connect(self.on_finish_sending_thread)
-            self.send_button.setEnabled(False)
-            self.sendingThread.start()
-            logger.debug("Send button clicked")
+            ret, robot_pose, _ = self.get_robot_pose()
+            if ret:
+                prompt = self.agent_prompt_editor.toPlainText()
+                frame = copy.deepcopy(self.current_frame)
+                colors = np.asarray(frame['pcd'].colors)
+                points = np.asarray(frame['pcd'].points)
+                labels = np.asarray(frame['seg_labels'])
+                pcd_with_labels = np.hstack((points, colors, labels.reshape(-1, 1)))
+                image = np.asarray(frame['color'].cpu())
+                # pose = frame['robot_pose']
+                past_actions = []
+                msg_dict = {'prompt': prompt, 
+                            'pcd': pcd_with_labels, 
+                            'image': image, 
+                            'pose': robot_pose, 
+                            'past_actions': past_actions, 
+                            'command': "process_pcd"}
+                
+                self.sendingThread  = DataSendToServerThread(ip=self.ip_editor.text(), 
+                                                        port=int(self.port_editor.text()), 
+                                                        msg_dict=msg_dict)
+                self.conversation_data.append('User', prompt)
+                self.sendingThread.progress.connect(self.on_send_progress)
+                self.sendingThread.finished.connect(self.on_finish_sending_thread)
+                self.send_button.setEnabled(False)
+                self.sendingThread.start()
+                logger.debug("Send button clicked")
+            else:
+                logger.error("Failed to get robot pose")
         except Exception as e:
             logger.error(f"Failed to send data: {e}")
 
     def on_finish_sending_thread(self):
         self.send_button.setEnabled(True)
+        response = self.sendingThread.get_response()
+        if response['status'] == 'action':
+            self.conversation_data.append('Agent', str(response['message']))
+        elif response['status'] == 'no_action':
+            self.conversation_data.append('Agent', str(response['message']))
+        logger.info(self.conversation_data.get_terminal_conversation())
         logger.debug("Sending thread finished")
 
 
@@ -733,28 +748,22 @@ class PCDStreamer(PCDStreamerUI):
         except Exception as e:
             self.scan_button.setStyleSheet("background-color: red;")
             logger.error(f"Failed to discover server: {e}")
-        
         logger.debug("Scan button clicked")
 
     def _data_tree_view_update(self):
         """
         Updates the tree view with data from `shown_data_json`.
         """
-        # Clear the tree widget
+
         self.data_tree_view.clear()
-        
-        # Iterate through the shown_data_json dictionary
+
         for key, value in self.collected_data.shown_data_json.items():
-            # Add the root node for each key
             root_id = self.data_tree_view.add_item(parent_item=None, text=key, level=1)
             prompt_id = self.data_tree_view.add_item(parent_item=root_id, text="Prompt", level=2, root_text=key)
             self.data_tree_view.add_item(parent_item=prompt_id, text=value["prompt"], level=3, root_text=key)
             bbox_id = self.data_tree_view.add_item(parent_item=root_id, text="Bbox", level=2, root_text=key)
-
             bbox_text = f"[{','.join(f'{v:.2f}' for v in value['bboxes'])}]"
-
             self.data_tree_view.add_item(parent_item=bbox_id, text=bbox_text, level=3, root_text=key)
-
             pose_id = self.data_tree_view.add_item(parent_item=root_id, text="Pose", level=2, root_text=key)
             
             for i, pose in enumerate(value["pose"]):
@@ -765,7 +774,6 @@ class PCDStreamer(PCDStreamerUI):
                     level=3,
                     root_text=key
                 )
-
         self.data_tree_view.expandAll()
 
     def on_data_tree_view_load_button_clicked(self):
@@ -970,24 +978,9 @@ class PCDStreamer(PCDStreamerUI):
         return palettes
 
 
-    def init_settinngs_values(self):
-        # self.chessboard_dims = self.params.get('board_shape', (11, 6))
-        # self.pipeline_view.scene_widgets.board_col_num_edit.int_value = self.chessboard_dims[0]
-        # self.pipeline_view.scene_widgets.board_row_num_edit.int_value = self.chessboard_dims[1]
-        # self.pipeline_view.scene_widgets.board_square_size_num_edit.double_value = self.params.get('board_square_size', 0.023)
-        # self.pipeline_view.scene_widgets.board_marker_size_num_edit.double_value = self.params.get('board_marker_size', 0.0175)
-        # self.pipeline_view.scene_widgets.board_type_combobox.selected_text = self.params.get('board_type', "DICT_4X4_100")
-        # self.pipeline_view.scene_widgets.calib_save_text.text_value = self.params.get('calib_path', "")
-        pass
-        # self.pipeline_view.scene_widgets.data_folder_text.text_value = ""
-        
-
     def load_in_startup(self):
         pass
 
-    def transform_element(self, elements:dict, element_name: str):
-        pass
-        
 
     def on_show_axis_in_scene_button_clicked(self):
         logger.debug(f"on_show_axis {self.show_axis}")
@@ -1020,6 +1013,10 @@ class PCDStreamer(PCDStreamerUI):
         
         if hasattr(self, 'sendingThread'):
             self.sendingThread = None
+        if hasattr(self, 'calibration_data'):
+            self.calibration_data = None
+        if hasattr(self, 'collected_data'):
+            self.collected_data = None
         self.streamer = None
         self.current_frame = None
         super().closeEvent(event) 

@@ -8,10 +8,29 @@ import torch.utils.dlpack
 from ultralytics import YOLO
 
 def segment_pcd_from_2d(model: YOLO, pcd, color, intrinsic, extrinsic=np.eye(4)):
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    """
+    Segment a point cloud into classes given a segmentation model, a point cloud,
+    color image, intrinsic matrix, and extrinsic matrix.
 
-    # 1. Run the model to get the segmentation masks
-    # color_torch = torch.from_numpy(color).permute(2, 0, 1).unsqueeze(0).to(device)  # Shape: (1, 3, H, W)
+    Parameters
+    ----------
+    model : YOLO
+        Segmentation model
+    pcd : open3d.geometry.PointCloud or open3d.t.geometry.PointCloud or array
+        Point cloud with shape (N, 3)
+    color : open3d.geometry.Image or open3d.t.geometry.Image or str
+        Color image or path to color image
+    intrinsic : open3d.core.Tensor or numpy array
+        Intrinsic matrix with shape (3, 3)
+    extrinsic : open3d.core.Tensor or numpy array, optional
+        Extrinsic matrix with shape (4, 4), default is identity
+
+    Returns
+    -------
+    labels : numpy array
+        Labels for each point in the point cloud, shape (N,)
+    """
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     if isinstance(color, o3d.geometry.Image):
         color = np.asarray(color)
     elif isinstance(color, o3d.t.geometry.Image):

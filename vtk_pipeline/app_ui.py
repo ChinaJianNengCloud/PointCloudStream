@@ -223,12 +223,6 @@ class PCDStreamerUI(QtWidgets.QMainWindow):
         self.renderer.AddActor(actor)
 
     def init_widgets(self):
-        # Initialize fps label
-        self.init_fps_label(self.panel_layout)
-
-        # Initialize status message
-        self.init_status_message(self.panel_layout)
-
         # Initialize tab view
         self.init_tab_view(self.panel_layout)
 
@@ -239,6 +233,16 @@ class PCDStreamerUI(QtWidgets.QMainWindow):
         self.init_bbox_tab()
         self.init_data_tab()
         self.init_agent_tab()  # Add the new Robot tab
+
+        # Create System Info group
+        system_info_group = QtWidgets.QGroupBox("System Info")
+        system_info_layout = QtWidgets.QVBoxLayout()
+        system_info_group.setLayout(system_info_layout)
+        self.panel_layout.addWidget(system_info_group)
+
+        # Initialize fps label and status message within the group
+        self.init_fps_label(system_info_layout)
+        self.init_status_message(system_info_layout)
 
         # Set initial states
         self.set_disable_before_stream_init()
@@ -638,16 +642,13 @@ class PCDStreamerUI(QtWidgets.QMainWindow):
         # IP section
         ip_label = QtWidgets.QLabel("IP:")
         self.ip_editor = QtWidgets.QLineEdit("192.168.1.49")
-        # self.ip_editor.setFixedHeight(25)
         
         # Port section
         port_label = QtWidgets.QLabel("Port:")
         self.port_editor = QtWidgets.QLineEdit("65432")
-        # self.port_editor.setFixedHeight(25)
         
         # Scan button
         self.scan_button = QtWidgets.QPushButton("Scan")
-        # self.scan_button.setFixedHeight(25)
         
         # Add all widgets to connection layout
         connection_layout.addWidget(ip_label)
@@ -659,20 +660,41 @@ class PCDStreamerUI(QtWidgets.QMainWindow):
         # Add LLM Server group to main layout
         robot_layout.addWidget(llm_server_group)
 
-        # Create prompt label and text editor
-        prompt_label = QtWidgets.QLabel("Prompt:")
-        self.agent_prompt_editor = QtWidgets.QTextEdit()
-        self.agent_prompt_editor.setMinimumHeight(100)
+        # Add conversation label and editor
+        conversation_label = QtWidgets.QLabel("Conversation:")
+        robot_layout.addWidget(conversation_label)
+        self.conversation_editor = QtWidgets.QTextEdit()
+        self.conversation_editor.setMinimumHeight(60)
+        self.conversation_editor.document().documentLayout().documentSizeChanged.connect(
+            lambda size: self.conversation_editor.setMinimumHeight(int(min(size.height(), 300)))
+        )
+        robot_layout.addWidget(self.conversation_editor)
 
-        # Create send button
+        # Create prompt section with label
+        prompt_label = QtWidgets.QLabel("User:")
+        robot_layout.addWidget(prompt_label)
+        
+        # Add prompt editor
+        self.agent_prompt_editor = QtWidgets.QTextEdit()
+        single_line_height = 30
+        self.agent_prompt_editor.setMinimumHeight(single_line_height)
+        self.agent_prompt_editor.setMaximumHeight(single_line_height)
+        self.agent_prompt_editor.document().documentLayout().documentSizeChanged.connect(
+            lambda size: self.agent_prompt_editor.setMinimumHeight(int(min(size.height(), 100)))
+        )
+        robot_layout.addWidget(self.agent_prompt_editor)
+        
+        # Add send button with right alignment
+        send_button_layout = QtWidgets.QHBoxLayout()
         self.send_button = QtWidgets.QPushButton("Send")
         self.send_button.setMaximumWidth(100)
-
-        # Add widgets to layout
-        robot_layout.addWidget(prompt_label)
-        robot_layout.addWidget(self.agent_prompt_editor)
-        robot_layout.addWidget(self.send_button)
-        robot_layout.addStretch()  # Add stretch to keep widgets at the top
+        self.send_button.setMinimumHeight(30)
+        send_button_layout.addStretch()  # This pushes the button to the right
+        send_button_layout.addWidget(self.send_button)
+        robot_layout.addLayout(send_button_layout)
+        
+        # Add stretch to keep widgets at the top
+        robot_layout.addStretch()
 
 def main():
     app = QtWidgets.QApplication(sys.argv)

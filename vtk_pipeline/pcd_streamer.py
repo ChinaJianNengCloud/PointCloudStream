@@ -238,7 +238,7 @@ class PCDStreamerFromCamera:
             self.camera_frustrum.update_frustum(width=self.size[0], height=self.size[1], 
                                                 intrinsic_matrix=self.__intrinsic_matrix, 
                                                 extrinsics=self.__extrinsics)
-            logger.info("Intrinsic matrix:")
+            logger.info("Intrinsic matrix:\n")
             logger.info(self.__intrinsic_matrix)
             return True
         except Exception as e:
