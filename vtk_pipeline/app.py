@@ -715,6 +715,7 @@ class PCDStreamer(PCDStreamerUI):
             self.conversation_data.append('Agent', str(response['message']))
         elif response['status'] == 'no_action':
             self.conversation_data.append('Agent', str(response['message']))
+        self.conversation_editor.setText(self.conversation_data.get_qt_format_conversation())
         logger.info(self.conversation_data.get_terminal_conversation())
         logger.debug("Sending thread finished")
 

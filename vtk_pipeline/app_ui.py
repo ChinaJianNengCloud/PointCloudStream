@@ -664,6 +664,7 @@ class PCDStreamerUI(QtWidgets.QMainWindow):
         conversation_label = QtWidgets.QLabel("Conversation:")
         robot_layout.addWidget(conversation_label)
         self.conversation_editor = QtWidgets.QTextEdit()
+        # self.conversation_editor.setEnabled(False)
         self.conversation_editor.setMinimumHeight(60)
         self.conversation_editor.document().documentLayout().documentSizeChanged.connect(
             lambda size: self.conversation_editor.setMinimumHeight(int(min(size.height(), 300)))
