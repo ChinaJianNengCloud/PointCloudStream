@@ -36,15 +36,15 @@ def segment_pcd_from_2d(model: YOLO, pcd, color, intrinsic, extrinsic=np.eye(4))
     elif isinstance(color, o3d.t.geometry.Image):
         color = np.asarray(color.cpu())
 
-    res = model.predict(source=color, verbose=False)
+    res = model.predict(source=color)
         # 2. Get the 3D points from the point cloud
     if isinstance(pcd, o3d.geometry.PointCloud):
-        points_3d = torch.from_numpy(np.asarray(pcd.points))
+        points_3d = torch.from_numpy(np.asarray(pcd.points)).to(device).to(dtype=torch.float32)
     elif isinstance(pcd, o3d.t.geometry.PointCloud):
         points_3d = pcd.point["positions"]
-        points_3d = o3d_t_to_torch(points_3d).to(device)
+        points_3d = o3d_t_to_torch(points_3d).to(device).to(dtype=torch.float32)
     else:
-        points_3d = torch.from_numpy(np.asarray(pcd.points)).to(device)  # Shape: (N, 3)
+        points_3d = torch.from_numpy(np.asarray(pcd.points)).to(device).to(dtype=torch.float32)  # Shape: (N, 3)
     N = points_3d.shape[0]
 
     try:
@@ -71,7 +71,7 @@ def segment_pcd_from_2d(model: YOLO, pcd, color, intrinsic, extrinsic=np.eye(4))
     if isinstance(intrinsic, o3c.Tensor):
         intrinsic_torch = o3d_t_to_torch(intrinsic).to(device)
     elif isinstance(intrinsic, np.ndarray):
-        intrinsic_torch = torch.from_numpy(intrinsic)
+        intrinsic_torch = torch.from_numpy(intrinsic.copy())
 
     if isinstance(extrinsic, o3c.Tensor):
         extrinsic_torch = o3d_t_to_torch(extrinsic).to(device)

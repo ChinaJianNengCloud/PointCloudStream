@@ -361,15 +361,6 @@ class PCDStreamer(PCDStreamerUI):
     
     def point_cloud_update(self, frame_elements: dict):
         """Update visualization with point cloud and images."""
-        if 'seg_labels' in frame_elements:
-            if self.display_mode_combobox.currentText() == "Segmentation":
-                self.palettes
-                seg_labels = frame_elements['seg_labels']
-                num_points = seg_labels.shape[0]
-                colors = np.zeros((num_points, 3))
-                valid_idx = seg_labels >= 0
-                colors[valid_idx] = np.array(self.palettes)[seg_labels[valid_idx]] / 255.0
-
 
         if 'pcd' in frame_elements:
             if 'seg_labels' in frame_elements and self.display_mode_combobox.currentText() == "Segmentation":
@@ -377,7 +368,7 @@ class PCDStreamer(PCDStreamerUI):
                 num_points = seg_labels.shape[0]
                 colors = np.zeros((num_points, 3))
                 valid_idx = seg_labels >= 0
-                colors[valid_idx] = np.array(self.palettes)[seg_labels[valid_idx]] / 255.0
+                colors[valid_idx] = np.array(self.palettes)[seg_labels[valid_idx].reshape(-1)] / 255.0
                 self.update_pcd_geometry(frame_elements['pcd'], colors)
             else:
                 self.update_pcd_geometry(frame_elements['pcd'])
@@ -424,7 +415,6 @@ class PCDStreamer(PCDStreamerUI):
                                     self.streamer.extrinsics)
             except Exception as e:
                 logger.error(f"Segmentation failed: {e}")
-                frame['seg_labels'] = np.zeros((frame['pcd'].points.shape[0], 1), dtype=np.int64)
                 return
             frame['seg_labels'] = labels
 
@@ -611,12 +601,9 @@ class PCDStreamer(PCDStreamerUI):
         
     def on_calib_collect_button_clicked(self):
         if hasattr(self, 'calibration_data'):
-            ret, robot_pose, _ = self.get_robot_pose()
-            if ret:
-                color = self.img_to_array(self.current_frame['color'])
-                self.calibration_data.append(color, robot_pose=robot_pose)
-            else:
-                logger.error("Failed to get robot pose")
+            robot_pose = self.robot.capture_gripper_to_base(sep=False)
+            color = self.img_to_array(self.current_frame['color'])
+            self.calibration_data.append(color, robot_pose=robot_pose)
         logger.debug("Calibration collect button clicked")
     
     def on_calib_list_remove_button_clicked(self):
