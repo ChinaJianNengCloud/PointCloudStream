@@ -10,10 +10,14 @@ import cv2
 import copy
 import socket
 import pickle
+
 from typing import Callable, Union, List
 from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtCore import pyqtSignal, QObject, QThread, QTimer
 from PyQt5.QtGui import QImage, QPixmap
+from PyQt5.QtWidgets import QDialog, QLabel, QVBoxLayout
+from PyQt5.QtCore import Qt
+
 from scipy.spatial.transform import Rotation as R
 from functools import wraps
 
@@ -797,7 +801,40 @@ class PCDStreamer(PCDStreamerUI):
         self.prompt_text.setText(self.collected_data.shown_data_json.get(
                                 select_item.root_text
                                 ).get('prompt'))
+        if select_item.level == 3 and select_item.parent_text == "Pose":
+            self.show_image_popup(self.collected_data.resource_path + '/' + self.collected_data.saved_data_json.get(
+                                select_item.root_text
+                                ).get('color_files')[index_in_level])
 
+    def show_image_popup(self, image_path):
+        """
+        Show a pop-up window with an image.
+        """
+        # Create a QDialog for the image
+        self.image_dialog = QDialog()  # Store dialog as an instance variable
+        self.image_dialog.setWindowTitle("Selected Item Image")
+        self.image_dialog.setWindowFlags(self.image_dialog.windowFlags() | Qt.Window)  # Make it a standalone, draggable window
+
+        # Create a layout and QLabel to display the image
+        layout = QVBoxLayout()
+        image_label = QLabel(self.image_dialog)
+        image_label.setFixedSize(400, 300)  # Set the label size
+        image_label.setStyleSheet("border: 1px solid black;")  # Optional: Add a border for clarity
+
+        pixmap = QPixmap(image_path)
+        if not pixmap.isNull():
+            scaled_pixmap = pixmap.scaled(image_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            image_label.setPixmap(scaled_pixmap)
+
+        # Add QLabel to the layout and set the layout to the dialog
+        layout.addWidget(image_label)
+        self.image_dialog.setLayout(layout)
+
+        # Set a fixed size for the dialog
+        self.image_dialog.resize(420, 320)  # Slightly larger to account for padding
+
+        # Show the dialog as a non-modal window
+        self.image_dialog.show()
 
     def on_data_folder_select_button_clicked(self):
         from PyQt5.QtWidgets import QFileDialog
@@ -987,7 +1024,7 @@ class PCDStreamer(PCDStreamerUI):
             self.robot_end_frame.SetVisibility(1)
             self.board_pose_frame.SetVisibility(1)
         self.renderer.GetRenderWindow().Render()
-
+        
     def closeEvent(self, event):
         """Ensure the popup window is closed when the main window exits."""
         if hasattr(self, 'popup_window'):
@@ -1005,6 +1042,8 @@ class PCDStreamer(PCDStreamerUI):
             self.calibration_data = None
         if hasattr(self, 'collected_data'):
             self.collected_data = None
+        if hasattr(self, 'image_dialog'):
+            self.image_dialog = None
         self.streamer = None
         self.current_frame = None
         super().closeEvent(event) 
