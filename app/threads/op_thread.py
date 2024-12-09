@@ -13,35 +13,12 @@ import pickle
 
 from typing import Callable, Union, List
 # from PyQt5 import QtWidgets, QtCore
-from PyQt5.QtCore import pyqtSignal, QThread, QTimer
-from PyQt5.QtGui import QImage, QPixmap
-from PyQt5.QtWidgets import (QLabel,QDialog, QDoubleSpinBox, 
-                             QVBoxLayout, QHBoxLayout, QPushButton, 
-                             QGroupBox, QSlider)
-from PyQt5.QtCore import Qt
-
-from scipy.spatial.transform import Rotation as R
-from functools import wraps
+from PyQt5.QtCore import pyqtSignal, QThread
 
 # Import specific modules from vtkmodules
-from vtkmodules.vtkRenderingCore import (
-    vtkActor,
-    vtkPolyDataMapper,
-)
-from vtkmodules.vtkRenderingAnnotation import vtkAxesActor
-from vtkmodules.vtkCommonMath import vtkMatrix4x4
-from vtkmodules.vtkCommonColor import vtkNamedColors
-from vtkmodules.vtkFiltersSources import vtkCubeSource
 
-from app.utils import RobotInterface, CameraInterface, ARUCO_BOARD
-from app.utils import CalibrationData, CollectedData, ConversationData
-from app.utils.camera.segmentation_utils import segment_pcd_from_2d
-from app.utils.net.network_client import send_message, discover_server
 
-from ..viewers.pcd_viewer import PCDStreamerFromCamera, PCDUpdater
-from app.ui import PCDStreamerUI
-# Import constants
-from vtkmodules.vtkCommonCore import VTK_UNSIGNED_CHAR
+from app.utils import RobotInterface
 
 logger = logging.getLogger(__name__)
 

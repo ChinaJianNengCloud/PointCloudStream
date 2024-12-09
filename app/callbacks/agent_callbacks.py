@@ -2,7 +2,7 @@ import logging
 import sys
 
 from typing import TYPE_CHECKING
-from app.utils.net.network_client import send_message, discover_server
+from app.utils.networking import send_message, discover_server
 
 if TYPE_CHECKING:
     from app.main_app import PCDStreamer

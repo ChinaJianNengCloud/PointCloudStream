@@ -2,6 +2,7 @@ import logging
 import numpy as np
 from ultralytics import YOLO, SAM
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from app.main_app import PCDStreamer
 

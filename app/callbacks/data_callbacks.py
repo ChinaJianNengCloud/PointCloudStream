@@ -1,19 +1,9 @@
 import logging
-import cv2
-import json
-import copy
 import numpy as np
-from typing import Dict
-from ultralytics import YOLO, SAM
 from typing import TYPE_CHECKING
-from app.utils import RobotInterface, CameraInterface, ARUCO_BOARD
-from app.utils import CalibrationData
-from app.threads.op_thread import DataSendToServerThread, CalibrationThread
-from PyQt5.QtWidgets import (QLabel,QDialog, QDoubleSpinBox, 
-                             QVBoxLayout, QHBoxLayout, QPushButton, 
-                             QGroupBox, QSlider, QFileDialog)
-from PyQt5.QtGui import QImage, QPixmap
-from PyQt5.QtCore import pyqtSignal, QThread, QTimer, Qt
+from PyQt5.QtWidgets import QLabel,QDialog, QVBoxLayout, QFileDialog
+from PyQt5.QtGui import QPixmap
+from PyQt5.QtCore import  Qt
 
 if TYPE_CHECKING:
     from app.main_app import PCDStreamer
