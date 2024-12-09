@@ -12,7 +12,8 @@ from app.threads.op_thread import CalibrationThread
 if TYPE_CHECKING:
     from app.main_app import PCDStreamer
 
-logger = logging.getLogger(__name__)
+from app.utils.logger import setup_logger
+logger = setup_logger(__name__)
 
 def on_calib_combobox_changed(self: "PCDStreamer", text):
     if text != "":

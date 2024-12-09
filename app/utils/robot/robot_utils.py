@@ -12,7 +12,8 @@ from concurrent.futures import ThreadPoolExecutor
 import os
 import open3d as o3d
 
-logger = logging.getLogger(__name__)
+from app.utils.logger import setup_logger
+logger = setup_logger(__name__)
 class RobotInterface:
     def __init__(self, ip_address=None, port=None):
         # Initialize SDK and network parameters

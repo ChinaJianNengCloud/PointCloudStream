@@ -6,7 +6,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from app.main_app import PCDStreamer
 
-logger = logging.getLogger(__name__)
+from app.utils.logger import setup_logger
+logger = setup_logger(__name__)
 
 def on_capture_toggle_state_changed(self: "PCDStreamer"):
     logger.debug("Capture state changed")

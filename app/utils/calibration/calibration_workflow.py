@@ -22,7 +22,8 @@ except ImportError:
 
 # Configure logging
 # logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(levelname)s] %(message)s')
-logger = logging.getLogger(__name__)
+from app.utils.logger import setup_logger
+logger = setup_logger(__name__)
 
 MARKER_SIZE = [50, 100, 250, 1000]
 MARKER_GRID = [4, 5, 6]

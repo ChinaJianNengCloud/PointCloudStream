@@ -10,7 +10,8 @@ from vtkmodules.vtkFiltersSources import vtkCubeSource
 if TYPE_CHECKING:
     from app.main_app import PCDStreamer
 
-logger = logging.getLogger(__name__)
+from app.utils.logger import setup_logger
+logger = setup_logger(__name__)
 
 def update_bounding_box(self: 'PCDStreamer'):
     """Update the bounding box actor."""

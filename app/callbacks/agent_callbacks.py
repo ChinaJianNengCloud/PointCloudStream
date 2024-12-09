@@ -7,7 +7,8 @@ from app.utils.networking import send_message, discover_server
 if TYPE_CHECKING:
     from app.main_app import PCDStreamer
 
-logger = logging.getLogger(__name__)
+from app.utils.logger import setup_logger
+logger = setup_logger(__name__)
 
 def on_scan_button_clicked(self: 'PCDStreamer'):
     try:

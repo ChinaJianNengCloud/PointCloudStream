@@ -10,8 +10,8 @@ import threading
 import cv2
 from PyQt5.QtCore import pyqtSignal, QObject
 
-logger = logging.getLogger(__name__)
-
+from app.utils.logger import setup_logger
+logger = setup_logger(__name__)
 
 class CollectedData(QObject):
     data_changed = pyqtSignal()

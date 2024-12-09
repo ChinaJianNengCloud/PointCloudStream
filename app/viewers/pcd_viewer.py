@@ -18,7 +18,8 @@ from vtkmodules.util.numpy_support import numpy_to_vtk, numpy_to_vtkIdTypeArray
 
 from vtkmodules.vtkCommonCore import VTK_UNSIGNED_CHAR
 
-logger = logging.getLogger(__name__)
+from app.utils.logger import setup_logger
+logger = setup_logger(__name__)
 
 
 class PCDUpdater:

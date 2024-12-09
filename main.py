@@ -4,20 +4,9 @@ from PyQt5 import QtWidgets
 import time
 import logging
 # from Callbacks import WindowCallbacks
+from app.utils.logger import setup_logger
+logger = setup_logger(__name__)
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-
-# Create console handler and set level
-console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.DEBUG)
-
-# Create formatter and add it to the handler
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-console_handler.setFormatter(formatter)
-
-# Add handler to the logger
-logger.addHandler(console_handler)
 
 def main():
     params = {

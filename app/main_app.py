@@ -33,19 +33,8 @@ from app.viewers.pcd_viewer import PCDStreamerFromCamera, PCDUpdater
 from app.threads.op_thread import DataSendToServerThread, CalibrationThread
 from app.callbacks import *
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-
-# Create console handler and set level
-console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.DEBUG)
-
-# Create formatter and add it to the handler
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-console_handler.setFormatter(formatter)
-
-# Add handler to the logger
-logger.addHandler(console_handler)
+from app.utils.logger import setup_logger
+logger = setup_logger(__name__)
 
 class PCDStreamer(PCDStreamerUI):
     """Entry point for the app. Controls the PipelineModel object for IO and
@@ -71,10 +60,10 @@ class PCDStreamer(PCDStreamerUI):
         self.frame = None
         self.streamer = PCDStreamerFromCamera(params=params)
         self.pcd_updater = PCDUpdater(self.renderer)
-        self.robot: RobotInterface = None
-        self.calib_thread: CalibrationThread = None
+        # self.robot: RobotInterface = None
+        # self.calib_thread: CalibrationThread = None
         self.collected_data = CollectedData(self.params.get('data_path', './data'))
-        self.calibration_data: CalibrationData = None
+        # self.calibration_data: CalibrationData = None
         # self.T_CamToBase: np.ndarray = None
         # self.T_BaseToCam: np.ndarray = None
         self.calib: Dict = None
@@ -90,6 +79,15 @@ class PCDStreamer(PCDStreamerUI):
         self.__callback_bindings()
         self.set_disable_before_stream_init()
 
+    @property
+    def T_CamToBase(self):
+        return self._T_CamToBase
+    
+    @T_CamToBase.setter
+    def T_CamToBase(self, value: np.ndarray):
+        assert value.shape == (4, 4)
+        self._T_CamToBase = value
+        self.T_BaseToCam = np.linalg.inv(value)
 
     def __init_ui_values_from_params(self):
         self.calib_save_text.setText(self.params.get('calib_path', "Please_set_calibration_path"))
@@ -198,6 +196,9 @@ class PCDStreamer(PCDStreamerUI):
         self.data_tree_view_load_button.clicked.connect(partial(on_data_tree_view_load_button_clicked, self))
         self.data_folder_select_button.clicked.connect(partial(on_data_folder_select_button_clicked, self))
         self.data_tree_view_remove_button.clicked.connect(partial(on_data_tree_view_remove_button_clicked, self))
+        # self.data_tree_view.set_on_selection_changed(lambda item, level, index_in_level, parent_text, root_text: on_tree_selection_changed(self, item, level, 
+        #                                                                                   index_in_level, 
+        #                                                                                   parent_text, root_text))
         self.data_tree_view.set_on_selection_changed(partial(on_tree_selection_changed, self))
         self.collected_data.data_changed.connect(partial(on_data_tree_changed, self))
 
