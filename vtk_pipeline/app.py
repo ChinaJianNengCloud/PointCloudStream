@@ -3,42 +3,30 @@ import time
 import json
 import logging
 import numpy as np
-import torch
 import open3d as o3d
 import open3d.core as o3c
 import cv2
 import copy
-import socket
-import pickle
 
 from typing import Callable, Union, List
-from PyQt5 import QtWidgets, QtCore, QtGui
-from PyQt5.QtCore import pyqtSignal, QObject, QThread, QTimer
+# from PyQt5 import QtWidgets, QtCore
+from PyQt5.QtCore import pyqtSignal, QThread, QTimer, Qt
 from PyQt5.QtGui import QImage, QPixmap
-from PyQt5.QtWidgets import QDialog, QLabel, QVBoxLayout
-from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import (QLabel,QDialog, QDoubleSpinBox, 
+                             QVBoxLayout, QHBoxLayout, QPushButton, 
+                             QGroupBox, QSlider)
 
 from scipy.spatial.transform import Rotation as R
-from functools import wraps
 
-# Import specific modules from vtkmodules
+
 from vtkmodules.vtkRenderingCore import (
-    vtkRenderer,
     vtkActor,
     vtkPolyDataMapper,
-    vtkFollower
 )
 from vtkmodules.vtkRenderingAnnotation import vtkAxesActor
-from vtkmodules.vtkCommonDataModel import vtkPolyData, vtkCellArray, vtkLine
-from vtkmodules.vtkCommonCore import vtkPoints, vtkIdList, vtkUnsignedCharArray, vtkDataArray
 from vtkmodules.vtkCommonMath import vtkMatrix4x4
 from vtkmodules.vtkCommonColor import vtkNamedColors
-from vtkmodules.vtkRenderingFreeType import vtkVectorText
-from vtkmodules.vtkInteractionWidgets import vtkOrientationMarkerWidget 
-from vtkmodules.vtkInteractionStyle import vtkInteractorStyleTrackballCamera
 from vtkmodules.vtkFiltersSources import vtkCubeSource
-from vtkmodules.util.numpy_support import numpy_to_vtk, numpy_to_vtkIdTypeArray
-from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 
 from utils import RobotInterface, CameraInterface, ARUCO_BOARD
 from utils import CalibrationData, CollectedData, ConversationData
@@ -46,26 +34,24 @@ from utils.segmentation import segment_pcd_from_2d
 from utils.net.client import send_message, discover_server
 
 from .pcd_streamer import PCDStreamerFromCamera, PCDUpdater
-from .app_ui import PCDStreamerUI
+from ui.app_ui import PCDStreamerUI
 # Import constants
 from vtkmodules.vtkCommonCore import VTK_UNSIGNED_CHAR
-
-
+from .op_thread import DataSendToServerThread, CalibrationThread
 
 logger = logging.getLogger(__name__)
-_callback_names = []
+logger.setLevel(logging.DEBUG)
 
-@staticmethod
-def callback(func):
-    """Decorator to collect callback methods."""
-    _callback_names.append(func.__name__)
+# Create console handler and set level
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.DEBUG)
 
-    @wraps(func)
-    def wrapper(self, *args, **kwargs):
-        return func(self, *args, **kwargs)
-    # setattr(PipelineController, func.__name__, wrapper)
-    return wrapper
+# Create formatter and add it to the handler
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+console_handler.setFormatter(formatter)
 
+# Add handler to the logger
+logger.addHandler(console_handler)
 
 class PCDStreamer(PCDStreamerUI):
     """Entry point for the app. Controls the PipelineModel object for IO and
@@ -92,7 +78,6 @@ class PCDStreamer(PCDStreamerUI):
         self.pcd_updater = PCDUpdater(self.renderer)
         self.collected_data = CollectedData(self.params.get('data_path', './data'))
         self.streamer.camera_frustrum.register_renderer(self.renderer)
-        self.callbacks = {name: getattr(self, name) for name in _callback_names}
         self.palettes = self.get_num_of_palette(80)
         self.conversation_data = ConversationData()
         self.__init_scene_objects()
@@ -115,9 +100,9 @@ class PCDStreamer(PCDStreamerUI):
         self.streaming = False
         self.show_axis = False
 
-    def init_bbox_controls(self, layout:QtWidgets.QVBoxLayout):
-        self.bbox_groupbox = QtWidgets.QGroupBox("Bounding Box Controls")
-        group_layout = QtWidgets.QVBoxLayout()
+    def init_bbox_controls(self, layout:QVBoxLayout):
+        self.bbox_groupbox = QGroupBox("Bounding Box Controls")
+        group_layout = QVBoxLayout()
         self.bbox_groupbox.setLayout(group_layout)
         layout.addWidget(self.bbox_groupbox)
 
@@ -125,24 +110,24 @@ class PCDStreamer(PCDStreamerUI):
         self.bbox_edits = {}
         bbox_params = ['xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax']
         for param in bbox_params:
-            h_layout = QtWidgets.QHBoxLayout()
-            label = QtWidgets.QLabel(param)
+            h_layout = QHBoxLayout()
+            label = QLabel(param)
             h_layout.addWidget(label)
-            slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+            slider = QSlider(Qt.Orientation.Horizontal)
             slider.setRange(-500, 500)
             h_layout.addWidget(slider)
-            spin_box = QtWidgets.QDoubleSpinBox()
+            spin_box = QDoubleSpinBox()
             spin_box.setRange(-5.0, 5.0)
             h_layout.addWidget(spin_box)
             group_layout.addLayout(h_layout)
             self.bbox_sliders[param] = slider
             self.bbox_edits[param] = spin_box
 
-        h_layout = QtWidgets.QHBoxLayout()
+        h_layout = QHBoxLayout()
         group_layout.addLayout(h_layout)
-        self.save_bbox_button = QtWidgets.QPushButton("Save")
+        self.save_bbox_button = QPushButton("Save")
         h_layout.addWidget(self.save_bbox_button)
-        self.load_bbox_button = QtWidgets.QPushButton("Load")
+        self.load_bbox_button = QPushButton("Load")
         h_layout.addWidget(self.load_bbox_button)
 
     def set_disable_before_stream_init(self):
@@ -444,7 +429,6 @@ class PCDStreamer(PCDStreamerUI):
     def on_acq_mode_toggle_state_changed(self):
         logger.debug("Acquisition mode state changed")
     
-    @callback
     def on_display_mode_combobox_changed(self, text):
         self.display_mode = text
         logger.debug(f"Display mode changed to: {text}")
@@ -666,38 +650,49 @@ class PCDStreamer(PCDStreamerUI):
         logger.debug("Data collect button clicked")
 
     def on_send_button_clicked(self):
-        try:
-            ret, robot_pose, _ = self.get_robot_pose()
-            if ret:
-                prompt = self.agent_prompt_editor.toPlainText()
-                frame = copy.deepcopy(self.current_frame)
-                colors = np.asarray(frame['pcd'].colors)
-                points = np.asarray(frame['pcd'].points)
-                labels = np.asarray(frame['seg_labels'])
-                pcd_with_labels = np.hstack((points, colors, labels.reshape(-1, 1)))
-                image = np.asarray(frame['color'].cpu())
-                # pose = frame['robot_pose']
-                past_actions = []
-                msg_dict = {'prompt': prompt, 
-                            'pcd': pcd_with_labels, 
-                            'image': image, 
-                            'pose': robot_pose, 
-                            'past_actions': past_actions, 
-                            'command': "process_pcd"}
+        
+        text = self.agent_prompt_editor.toPlainText().strip()
+        if text:
+            self.chat_history.add_message(text, is_user=True)
+            
+            # self.chat_history.add_message("This is a response.", is_user=False)
+            # self.conversation_widget.add_message("User", text, is_user=True)
+            # self.agent_prompt_editor.clear()
+            # # Simulate a response
+            # QtCore.QTimer.singleShot(1000, lambda: self.conversation_widget.add_message("Agent", "This is a response.", is_user=False))
+
+        # try:
+        #     ret, robot_pose, _ = self.get_robot_pose()
+        #     if ret:
+        #         prompt = self.agent_prompt_editor.toPlainText()
+        #         frame = copy.deepcopy(self.current_frame)
+        #         colors = np.asarray(frame['pcd'].colors)
+        #         points = np.asarray(frame['pcd'].points)
+        #         labels = np.asarray(frame['seg_labels'])
+        #         pcd_with_labels = np.hstack((points, colors, labels.reshape(-1, 1)))
+        #         image = np.asarray(frame['color'].cpu())
+        #         # pose = frame['robot_pose']
+        #         past_actions = []
+        #         msg_dict = {'prompt': prompt, 
+        #                     'pcd': pcd_with_labels, 
+        #                     'image': image, 
+        #                     'pose': robot_pose, 
+        #                     'past_actions': past_actions, 
+        #                     'command': "process_pcd"}
                 
-                self.sendingThread  = DataSendToServerThread(ip=self.ip_editor.text(), 
-                                                        port=int(self.port_editor.text()), 
-                                                        msg_dict=msg_dict)
-                self.conversation_data.append('User', prompt)
-                self.sendingThread.progress.connect(self.on_send_progress)
-                self.sendingThread.finished.connect(self.on_finish_sending_thread)
-                self.send_button.setEnabled(False)
-                self.sendingThread.start()
-                logger.debug("Send button clicked")
-            else:
-                logger.error("Failed to get robot pose")
-        except Exception as e:
-            logger.error(f"Failed to send data: {e}")
+        #         self.sendingThread  = DataSendToServerThread(ip=self.ip_editor.text(), 
+        #                                                 port=int(self.port_editor.text()), 
+        #                                                 msg_dict=msg_dict)
+        #         self.conversation_data.append('User', prompt)
+        #         self.sendingThread.progress.connect(self.on_send_progress)
+        #         self.sendingThread.finished.connect(self.on_finish_sending_thread)
+        #         self.send_button.setEnabled(False)
+        #         self.sendingThread.start()
+        #         logger.debug("Send button clicked")
+        #     else:
+        #         logger.error("Failed to get robot pose")
+        # except Exception as e:
+        #     logger.error(f"Failed to send data: {e}")
 
     def on_finish_sending_thread(self):
         self.send_button.setEnabled(True)
@@ -874,9 +869,11 @@ class PCDStreamer(PCDStreamerUI):
                 height, width, channel = image.shape
                 bytes_per_line = 3 * width
                 
-                q_image = QImage(image.data.tobytes(), width, height, bytes_per_line, QImage.Format_RGB888)
+                q_image = QImage(image.data.tobytes(), width, height, bytes_per_line, QImage.Format.Format_RGB888)
                 pixmap = QPixmap.fromImage(q_image)
-                self.color_video.setPixmap(pixmap.scaled(self.color_video.size(), QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation))
+                self.color_video.setPixmap(pixmap.scaled(self.color_video.size(), 
+                                                         Qt.AspectRatioMode.KeepAspectRatio,
+                                                         Qt.TransformationMode.SmoothTransformation))
 
 
     def update_depth_image(self, depth_image):
@@ -887,10 +884,12 @@ class PCDStreamer(PCDStreamerUI):
             if image.shape[2] == 3:
                 height, width, channel = image.shape
                 bytes_per_line = 3 * width
-                q_image = QImage(image.data.tobytes(), width, height, bytes_per_line, QImage.Format_RGB888)
+                q_image = QImage(image.data.tobytes(), width, height, bytes_per_line, QImage.Format.Format_RGB888)
                 pixmap = QPixmap.fromImage(q_image)
                 
-                self.depth_video.setPixmap(pixmap.scaled(self.depth_video.size(), QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation))
+                self.depth_video.setPixmap(pixmap.scaled(self.depth_video.size(), 
+                                                         Qt.AspectRatioMode.KeepAspectRatio,
+                                                         Qt.TransformationMode.SmoothTransformation))
 
 
     def __init_scene_objects(self):
@@ -939,8 +938,8 @@ class PCDStreamer(PCDStreamerUI):
         bbox_params = ['xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax']
         for param in bbox_params:
             # Assuming sliders and spin boxes are named accordingly
-            slider: QtWidgets.QSlider = self.bbox_sliders[param]
-            spin_box: QtWidgets.QDoubleSpinBox = self.bbox_edits[param]
+            slider: QSlider = self.bbox_sliders[param]
+            spin_box: QDoubleSpinBox = self.bbox_edits[param]
             slider.setValue(int(self.bbox_params[param] * 100))
             spin_box.setValue(int(self.bbox_params[param]))
 
@@ -1035,7 +1034,6 @@ class PCDStreamer(PCDStreamerUI):
             self.timer.stop()
         if hasattr(self, 'pcd_seg_model'):
             self.pcd_seg_model = None
-        
         if hasattr(self, 'sendingThread'):
             self.sendingThread = None
         if hasattr(self, 'calibration_data'):
@@ -1048,82 +1046,3 @@ class PCDStreamer(PCDStreamerUI):
         self.current_frame = None
         super().closeEvent(event) 
 
-
-class CalibrationThread(QThread):
-    progress = pyqtSignal(int)  # Signal to communicate progress updates
-    def __init__(self, robot: RobotInterface, robot_poses: List[np.ndarray]):
-        self.robot = robot
-        self.robot_poses = robot_poses
-        super().__init__()
-
-    def run(self):
-        self.robot.set_teach_mode(False)
-        for idx, each_pose in enumerate(self.robot_poses):
-            logger.info(f"Moving to pose {idx}")
-            self.robot.move_to_pose(each_pose)
-            self.progress.emit(idx)
-        self.robot.set_teach_mode(True)
-
-
-class DataSendToServerThread(QThread):
-    progress = pyqtSignal(tuple)  # Signal to communicate progress updates (step, progress)
-
-    def __init__(self, ip, port, msg_dict: dict):
-        self.ip = ip
-        self.port = port
-        self.msg_dict = msg_dict
-        super().__init__()
-
-    def run(self):
-        try:
-            logger.debug("Sending data to server")
-            # Serialize the message dictionary
-            data = pickle.dumps(self.msg_dict)
-            data_length = len(data)
-
-            with socket.create_connection((self.ip, int(self.port))) as client_socket:
-                start_time = time.time()
-                client_socket.sendall(data_length.to_bytes(4, byteorder='big'))
-                self.progress.emit(("Sending Length", 100))  # Mark step as complete
-
-                bytes_sent = 0
-                chunk_size = 4096 
-                while bytes_sent < data_length:
-                    chunk = data[bytes_sent:bytes_sent + chunk_size]
-                    sent = client_socket.send(chunk)
-                    bytes_sent += sent
-                    progress = (bytes_sent / data_length) * 100
-                    self.progress.emit(("Sending Data", progress))
-
-                # Ensure sending step reaches 100%
-                self.progress.emit(("Sending Data", 100))
-
-                # Step 3: Receiving the response length
-                response_length = int.from_bytes(client_socket.recv(4), byteorder='big')
-                self.progress.emit(("Receiving Length", 100))  # Mark step as complete
-
-                # Step 4: Receiving the response data
-                response_data = b""
-                bytes_received = 0
-                while len(response_data) < response_length:
-                    packet = client_socket.recv(4096)
-                    if not packet:
-                        break
-                    response_data += packet
-                    bytes_received = len(response_data)
-                    progress = (bytes_received / response_length) * 100
-                    self.progress.emit(("Receiving Data", progress))
-
-                # Ensure receiving step reaches 100%
-                self.progress.emit(("Receiving Data", 100))
-                # Deserialize the response
-                self.__response = pickle.loads(response_data)
-                end_time = time.time() - start_time
-                logger.debug(f"Response from server: {self.__response}")
-                logger.debug(f"Total time: {end_time:.2f} s")
-        except Exception as e:
-            print(f"An error occurred: {e}")
-            self.progress.emit(("Error", 0))  # Emit an error state if something goes wrong
-    
-    def get_response(self):
-        return self.__response
