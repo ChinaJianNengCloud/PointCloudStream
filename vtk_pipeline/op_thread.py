@@ -35,11 +35,11 @@ from vtkmodules.vtkFiltersSources import vtkCubeSource
 
 from utils import RobotInterface, CameraInterface, ARUCO_BOARD
 from utils import CalibrationData, CollectedData, ConversationData
-from utils.segmentation import segment_pcd_from_2d
-from utils.net.client import send_message, discover_server
+from utils.segmentation_utils import segment_pcd_from_2d
+from utils.net.network_client import send_message, discover_server
 
 from .pcd_streamer import PCDStreamerFromCamera, PCDUpdater
-from ui.app_ui import PCDStreamerUI
+from ui.application_ui import PCDStreamerUI
 # Import constants
 from vtkmodules.vtkCommonCore import VTK_UNSIGNED_CHAR
 
