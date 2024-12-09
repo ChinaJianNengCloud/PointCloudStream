@@ -19,18 +19,7 @@ from vtkmodules.util.numpy_support import numpy_to_vtk, numpy_to_vtkIdTypeArray
 from vtkmodules.vtkCommonCore import VTK_UNSIGNED_CHAR
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
-# Create console handler and set level
-console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.DEBUG)
-
-# Create formatter and add it to the handler
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-console_handler.setFormatter(formatter)
-
-# Add handler to the logger
-logger.addHandler(console_handler)
 
 class PCDUpdater:
     def __init__(self, renderer: vtkRenderer, point_size: float = 2.0):

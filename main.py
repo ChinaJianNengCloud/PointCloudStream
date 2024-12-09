@@ -1,5 +1,5 @@
 import sys
-from vtk_pipeline.app import PCDStreamer
+from app.main_app import PCDStreamer
 from PyQt5 import QtWidgets
 import time
 import logging
@@ -53,16 +53,6 @@ def main():
 
     window = PCDStreamer(params=params)
 
-    # def safe_exit():
-    #     logger.info("Performing cleanup before exit...")
-    #     if window.streaming:
-    #         window.streaming = False
-    #         if hasattr(window.streamer, 'camera'):
-    #             window.streamer.camera.disconnect()
-    #     window.streamer = None
-    #     window.current_frame = None
-
-    # app.aboutToQuit.connect(safe_exit)
     window.show()
     sys.exit(app.exec_())
 
