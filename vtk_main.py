@@ -45,7 +45,7 @@ def main():
             'calib_check': True,
             'collect_data_viewer': True
         },
-        'use_fake_camera': False,
+        'use_fake_camera': True,
         "service_type": "_agent._tcp.local.",
         "discovery_timeout": 2,
     }
