@@ -28,9 +28,9 @@ from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 
 from utils import ARUCO_BOARD
 
-from .data_widget import DataTreeWidget
-from .stream_widget import ResizableImageLabel
-from .chat_widget import ChatHistoryWidget
+from .data_ui_widget import DataTreeWidget
+from .stream_ui_widget import ResizableImageLabel
+from .chat_ui_widget import ChatHistoryWidget
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)

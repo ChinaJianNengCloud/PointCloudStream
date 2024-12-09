@@ -27,17 +27,17 @@ from vtkmodules.vtkRenderingAnnotation import vtkAxesActor
 from vtkmodules.vtkCommonMath import vtkMatrix4x4
 from vtkmodules.vtkCommonColor import vtkNamedColors
 from vtkmodules.vtkFiltersSources import vtkCubeSource
+from vtkmodules.vtkCommonCore import VTK_UNSIGNED_CHAR
 
+from ui import PCDStreamerUI
 from utils import RobotInterface, CameraInterface, ARUCO_BOARD
 from utils import CalibrationData, CollectedData, ConversationData
-from utils.segmentation import segment_pcd_from_2d
-from utils.net.client import send_message, discover_server
+from utils.segmentation_utils import segment_pcd_from_2d
+from utils.net.network_client import send_message, discover_server
 
 from .pcd_streamer import PCDStreamerFromCamera, PCDUpdater
-from ui.app_ui import PCDStreamerUI
-# Import constants
-from vtkmodules.vtkCommonCore import VTK_UNSIGNED_CHAR
 from .op_thread import DataSendToServerThread, CalibrationThread
+
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -84,7 +84,7 @@ class PCDStreamer(PCDStreamerUI):
         self.__init_bbox()
         self.__init_signals()
         self.__init_ui_values_from_params()
-        self.callback_bindings()
+        self.__callback_bindings()
         self.set_disable_before_stream_init()
 
 
@@ -161,7 +161,7 @@ class PCDStreamer(PCDStreamerUI):
         self.calib_op_load_button.setEnabled(True)
         self.calib_op_run_button.setEnabled(True)
 
-    def callback_bindings(self):
+    def __callback_bindings(self):
         # Binding callbacks to GUI elements
         # General Tab
         self.stream_init_button.clicked.connect(self.on_stream_init_button_clicked)

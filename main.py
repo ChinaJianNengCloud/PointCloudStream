@@ -1,19 +1,25 @@
-# main.py
+import sys
+from vtk_pipeline.app import PCDStreamer
+from PyQt5 import QtWidgets
+import time
 import logging
-import click
-import json
-import numpy as np
-np.set_printoptions(precision=4, suppress=True)
-from pipeline import PipelineController
+# from Callbacks import WindowCallbacks
 
-@click.command()
-@click.option('--config', default='config.json', help='Path to configuration file')
-def main(config):
-    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(levelname)s] %(message)s')
-    logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
-    # Default configuration
-    
+# Create console handler and set level
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.DEBUG)
+
+# Create formatter and add it to the handler
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+console_handler.setFormatter(formatter)
+
+# Add handler to the logger
+logger.addHandler(console_handler)
+
+def main():
     params = {
         'directory': '.',
         'Image_Amount': 13,
@@ -29,7 +35,8 @@ def main(config):
         'camera_config': './camera_config.json',
         'rgbd_video': None,
         'board_type': 'DICT_4X4_100',
-        'data_path': './data',
+        'data_path': '/home/capre/disk_4/yutao/data',
+        'yolo_model_path': '/home/capre/Point-Cloud-Stream/runs/segment/train6/weights/best.pt',
         'load_in_startup': {
             'camera_init': True,
             'camera_calib_init': True,
@@ -38,25 +45,27 @@ def main(config):
             'calib_check': True,
             'collect_data_viewer': True
         },
-        'use_fake_camera': False
+        'use_fake_camera': True,
+        "service_type": "_agent._tcp.local.",
+        "discovery_timeout": 2,
     }
-    import open3d as o3d
-    import faulthandler
-    faulthandler.enable()
-    # # Load configuration from file if it exists
-    # try:
-    #     with open(config, 'r') as f:
-    #         file_params = json.load(f)
-    #         params.update(file_params)
-    # except FileNotFoundError:
-    #     logger.warning(f"Configuration file {config} not found. Using default parameters.")
-    #     # Save default configuration
-    #     with open(config, 'w') as f:
-    #         json.dump(params, f, indent=4)
-    # except json.JSONDecodeError:
-    #     logger.error(f"Error parsing configuration file {config}. Using default parameters.")
-    # with o3d.utility.VerbosityContextManager(o3d.utility.VerbosityLevel.Debug):
-    controller = PipelineController(params)
+    app = QtWidgets.QApplication(sys.argv)
+
+    window = PCDStreamer(params=params)
+
+    # def safe_exit():
+    #     logger.info("Performing cleanup before exit...")
+    #     if window.streaming:
+    #         window.streaming = False
+    #         if hasattr(window.streamer, 'camera'):
+    #             window.streamer.camera.disconnect()
+    #     window.streamer = None
+    #     window.current_frame = None
+
+    # app.aboutToQuit.connect(safe_exit)
+    window.show()
+    sys.exit(app.exec_())
+
 
 if __name__ == "__main__":
     main()
