@@ -12,13 +12,13 @@ from concurrent.futures import ThreadPoolExecutor
 import os
 import open3d as o3d
 try:
-    from utils.robot_utils import RobotInterface
-    from utils.camera_utils import CameraInterface
-    from utils.data_manager.calibration_data import CalibrationData
+    from app.utils.robot_utils import RobotInterface
+    from app.utils.camera_utils import CameraInterface
+    from app.utils.data_manager.calibration_data import CalibrationData
 except ImportError:
-    from utils.robot_utils import RobotInterface
-    from utils.camera_utils import CameraInterface
-    from data_manager.calibration_data import CalibrationData
+    from app.utils.robot_utils import RobotInterface
+    from app.utils.camera_utils import CameraInterface
+    from app.utils.data_manager.calibration_data import CalibrationData
 
 # Configure logging
 # logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(levelname)s] %(message)s')

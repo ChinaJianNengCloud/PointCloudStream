@@ -33,13 +33,13 @@ from vtkmodules.vtkCommonMath import vtkMatrix4x4
 from vtkmodules.vtkCommonColor import vtkNamedColors
 from vtkmodules.vtkFiltersSources import vtkCubeSource
 
-from utils import RobotInterface, CameraInterface, ARUCO_BOARD
-from utils import CalibrationData, CollectedData, ConversationData
-from utils.segmentation_utils import segment_pcd_from_2d
-from utils.net.network_client import send_message, discover_server
+from app.utils import RobotInterface, CameraInterface, ARUCO_BOARD
+from app.utils import CalibrationData, CollectedData, ConversationData
+from app.utils.segmentation_utils import segment_pcd_from_2d
+from app.utils.net.network_client import send_message, discover_server
 
-from .pcd_streamer import PCDStreamerFromCamera, PCDUpdater
-from ui.application_ui import PCDStreamerUI
+from ..viewers.pcd_viewer import PCDStreamerFromCamera, PCDUpdater
+from app.ui import PCDStreamerUI
 # Import constants
 from vtkmodules.vtkCommonCore import VTK_UNSIGNED_CHAR
 

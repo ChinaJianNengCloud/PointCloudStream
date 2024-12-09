@@ -26,10 +26,10 @@ from vtkmodules.vtkInteractionStyle import vtkInteractorStyleTrackballCamera
 
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 
-from utils import ARUCO_BOARD
+from app.utils import ARUCO_BOARD
 
 from .data_ui_widget import DataTreeWidget
-from .stream_ui_widget import ResizableImageLabel
+from ..viewers.image_viewer import ResizableImageLabel
 from .chat_ui_widget import ChatHistoryWidget
 
 logger = logging.getLogger(__name__)
@@ -53,6 +53,7 @@ class PCDStreamerUI(QMainWindow):
 
     def __init__(self):
         super().__init__()
+        self.vtk_widget: QVTKRenderWindowInteractor = None
         self.setWindowTitle("VTK GUI Application")
         self.resize(1200, 640)
         self.display_mode = 'Colors'  # Initialize display mode to 'Colors'
