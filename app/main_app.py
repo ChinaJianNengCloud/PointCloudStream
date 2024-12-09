@@ -27,7 +27,7 @@ from vtkmodules.vtkCommonColor import vtkNamedColors
 
 from app.ui import PCDStreamerUI
 from app.utils import CalibrationData, CollectedData, ConversationData
-from app.utils.segmentation_utils import segment_pcd_from_2d
+from app.utils.camera import segment_pcd_from_2d
 from app.viewers.pcd_viewer import PCDStreamerFromCamera, PCDUpdater
 from app.threads.op_thread import DataSendToServerThread, CalibrationThread
 from app.callbacks.general_callbacks import *
