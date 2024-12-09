@@ -9,7 +9,8 @@ import cv2
 import copy
 
 from functools import partial
-from typing import Callable, Union, List
+
+from typing import Callable, Union, List, Dict
 
 from PyQt5.QtCore import QTimer, Qt
 from PyQt5.QtGui import QImage, QPixmap
@@ -30,12 +31,7 @@ from app.utils import CalibrationData, CollectedData, ConversationData
 from app.utils.camera import segment_pcd_from_2d
 from app.viewers.pcd_viewer import PCDStreamerFromCamera, PCDUpdater
 from app.threads.op_thread import DataSendToServerThread, CalibrationThread
-from app.callbacks.general_callbacks import *
-from app.callbacks.view_callbacks import *
-from app.callbacks.calib_callbacks import *
-from app.callbacks.data_callbacks import *
-from app.callbacks.agent_callbacks import *
-from app.callbacks.bbox_callbacks import *
+from app.callbacks import *
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -56,7 +52,7 @@ class PCDStreamer(PCDStreamerUI):
     processing  and the PipelineView object for display and UI. All methods
     operate on the main thread.
     """
-    def __init__(self, params:dict=None):
+    def __init__(self, params:Dict=None):
         super().__init__()
         """Initialize.
 
@@ -79,7 +75,8 @@ class PCDStreamer(PCDStreamerUI):
         self.calib_thread: CalibrationThread = None
         self.collected_data = CollectedData(self.params.get('data_path', './data'))
         self.calibration_data: CalibrationData = None
-        self.T_CamToBase: np.ndarray = None
+        # self.T_CamToBase: np.ndarray = None
+        # self.T_BaseToCam: np.ndarray = None
         self.calib: Dict = None
         self.streamer.camera_frustrum.register_renderer(self.renderer)
         self.palettes = self.get_num_of_palette(80)
