@@ -8,7 +8,8 @@ from PyQt5.QtCore import  Qt
 if TYPE_CHECKING:
     from app.main_app import PCDStreamer
 
-logger = logging.getLogger(__name__)
+from app.utils.logger import setup_logger
+logger = setup_logger(__name__)
 
 def on_data_collect_button_clicked(self: "PCDStreamer"):
     ret, robot_pose, _ = self.get_robot_pose()
@@ -67,6 +68,7 @@ def on_tree_selection_changed(self: "PCDStreamer", item, level, index_in_level, 
     """
     Callback for when the selection changes.
     """
+    print("Clicked")
     logger.debug(f"Selected Item: {item.text(0)}, Level: {level}, Index in Level: {index_in_level}, Parent Text: {parent_text}, Root Text: {root_text}")
     select_item = self.data_tree_view.selected_item
     self.prompt_text.setText(self.collected_data.shown_data_json.get(

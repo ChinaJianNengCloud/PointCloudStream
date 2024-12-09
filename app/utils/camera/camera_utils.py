@@ -10,9 +10,9 @@ except ImportError:
     from app.utils.calibration.calibration_data import CalibrationData
 # Configure logging
 
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(levelname)s] %(message)s')
-logger = logging.getLogger(__name__)
-
+# logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(levelname)s] %(message)s')
+from app.utils.logger import setup_logger
+logger = setup_logger(__name__)
 
 
 class CameraInterface:

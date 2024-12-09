@@ -46,6 +46,7 @@ class DataTreeWidget(QTreeWidget):
 
         :param callback: A callable with the signature callback(item: QTreeWidgetItem, level: int, index_in_level: int, parent_text: str, root_text: str).
         """
+        self._on_selection_callback = callback
 
     def _on_item_clicked(self, item: QTreeWidgetItem, column: int) -> None:
         """
