@@ -35,7 +35,7 @@ from vtkmodules.vtkFiltersSources import vtkCubeSource
 
 from app.utils import RobotInterface, CameraInterface, ARUCO_BOARD
 from app.utils import CalibrationData, CollectedData, ConversationData
-from app.utils.segmentation_utils import segment_pcd_from_2d
+from app.utils.camera.segmentation_utils import segment_pcd_from_2d
 from app.utils.net.network_client import send_message, discover_server
 
 from ..viewers.pcd_viewer import PCDStreamerFromCamera, PCDUpdater

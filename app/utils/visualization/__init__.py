@@ -1,0 +1,1 @@
+from .color_palette import get_num_of_palette
