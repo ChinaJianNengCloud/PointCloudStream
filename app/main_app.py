@@ -9,7 +9,6 @@ import cv2
 import copy
 
 from functools import partial
-
 from typing import Callable, Union, List, Dict
 
 from PyQt5.QtCore import QTimer, Qt
@@ -54,7 +53,7 @@ class PCDStreamer(PCDStreamerUI):
         self.params = params
         self.rectangle_geometry = None
         self.prev_frame_time = time.time()
-        self.timer: QTimer = None
+        self.timer = QTimer()
         self.frame_num = 0
         self.real_fps = 0
         self.frame = None
@@ -196,9 +195,6 @@ class PCDStreamer(PCDStreamerUI):
         self.data_tree_view_load_button.clicked.connect(partial(on_data_tree_view_load_button_clicked, self))
         self.data_folder_select_button.clicked.connect(partial(on_data_folder_select_button_clicked, self))
         self.data_tree_view_remove_button.clicked.connect(partial(on_data_tree_view_remove_button_clicked, self))
-        # self.data_tree_view.set_on_selection_changed(lambda item, level, index_in_level, parent_text, root_text: on_tree_selection_changed(self, item, level, 
-        #                                                                                   index_in_level, 
-        #                                                                                   parent_text, root_text))
         self.data_tree_view.set_on_selection_changed(partial(on_tree_selection_changed, self))
         self.collected_data.data_changed.connect(partial(on_data_tree_changed, self))
 
