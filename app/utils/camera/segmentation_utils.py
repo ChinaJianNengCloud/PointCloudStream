@@ -43,6 +43,8 @@ def segment_pcd_from_2d(model: YOLO, pcd, color, intrinsic, extrinsic=np.eye(4))
     elif isinstance(pcd, o3d.t.geometry.PointCloud):
         points_3d = pcd.point["positions"]
         points_3d = o3d_t_to_torch(points_3d).to(device).to(dtype=torch.float32)
+    elif isinstance(pcd, np.ndarray):
+        points_3d = torch.from_numpy(pcd).to(device).to(dtype=torch.float32)
     else:
         points_3d = torch.from_numpy(np.asarray(pcd.points)).to(device).to(dtype=torch.float32)  # Shape: (N, 3)
     N = points_3d.shape[0]

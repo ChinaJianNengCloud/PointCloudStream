@@ -1,5 +1,4 @@
 import sys
-import logging
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (QLabel, QListWidget,
@@ -23,30 +22,15 @@ from vtkmodules.vtkCommonCore import vtkPoints, vtkUnsignedCharArray
 from vtkmodules.vtkRenderingFreeType import vtkVectorText
 from vtkmodules.vtkInteractionWidgets import vtkOrientationMarkerWidget 
 from vtkmodules.vtkInteractionStyle import vtkInteractorStyleTrackballCamera
-
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 
 from app.utils import ARUCO_BOARD
-
-from .data_ui_widget import DataTreeWidget
-from ..viewers.image_viewer import ResizableImageLabel
+from app.viewers.image_viewer import ResizableImageLabel
 from .chat_ui_widget import ChatHistoryWidget
+from .data_ui_widget import DataTreeWidget
 
 from app.utils.logger import setup_logger
 logger = setup_logger(__name__)
-# logger.setLevel(logging.DEBUG)
-
-# # Create console handler and set level
-# console_handler = logging.StreamHandler()
-# console_handler.setLevel(logging.DEBUG)
-
-# # Create formatter and add it to the handler
-# formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-# console_handler.setFormatter(formatter)
-
-# # Add handler to the logger
-# logger.addHandler(console_handler)
-
 
 
 class PCDStreamerUI(QMainWindow):
