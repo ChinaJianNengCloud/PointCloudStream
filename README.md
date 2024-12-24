@@ -29,11 +29,14 @@ Install other required Python packages:
 ```bash
 pip install numpy==1.26
 pip install open3d plyfile ipykernel pyqt5 opencv-python-headless zeroconf tqdm matplotlib lebai-sdk
+pip install vtk
 ```
 
 ---
 
 ## Features
+- There has a **data viewer** in *app.utils.data_management.data_viewer.py*, 
+  Since it's a individual app for data checking, please modified it in the code to set data path for checking (press A for view last scene, D for Next, X for label invalid scene, Q for Save and Exit)
 
 - **Point Cloud Streaming**: Utilizes Open3D and VTK for real-time processing and visualization of 3D point cloud data.
 - **Customizable UI**: Built with PyQt5 for a responsive and interactive user interface.
