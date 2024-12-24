@@ -1,6 +1,7 @@
 import logging
 import sys
-
+import numpy as np
+from copy import deepcopy
 from typing import TYPE_CHECKING
 from app.utils.networking import send_message, discover_server
 
@@ -8,6 +9,8 @@ if TYPE_CHECKING:
     from app.main_app import PCDStreamer
 
 from app.utils.logger import setup_logger
+from app.threads.op_thread import DataSendToServerThread
+
 logger = setup_logger(__name__)
 
 def on_scan_button_clicked(self: 'PCDStreamer'):
@@ -25,9 +28,25 @@ def on_scan_button_clicked(self: 'PCDStreamer'):
 def on_send_button_clicked(self: 'PCDStreamer'):
     
     text = self.agent_prompt_editor.toPlainText().strip()
+    frame = deepcopy(self.current_frame)
+    image = np.asarray(frame['color'].cpu())
+    self.sendingThread = DataSendToServerThread(ip=self.ip_editor.text(), 
+                                                    port=int(self.port_editor.text()), 
+                                                    msg_dict=msg_dict)
+    msg_dict = {
+        'prompt': text,
+        'image': image,
+        'command': "process_pcd"
+    }
+
+    self.sendingThread.progress.connect(lambda progress: on_send_progress(progress))
+    self.sendingThread.finished.connect(lambda: on_finish_sending_thread(self))
+    self.send_button.setEnabled(False)
+    self.sendingThread.start()
+    
     if text:
         self.chat_history.add_message(text, is_user=True)
-        
+
     #     self.chat_history.add_message("This is a response.", is_user=False)
     #     self.conversation_widget.add_message("User", text, is_user=True)
     #     self.agent_prompt_editor.clear()
@@ -37,7 +56,7 @@ def on_send_button_clicked(self: 'PCDStreamer'):
     # try:
     #     ret, robot_pose, _ = self.get_robot_pose()
     #     if ret:
-    #         prompt = self.agent_prompt_editor.toPlainText()
+            
     #         frame = copy.deepcopy(self.current_frame)
     #         colors = np.asarray(frame['pcd'].colors)
     #         points = np.asarray(frame['pcd'].points)
@@ -72,11 +91,11 @@ def on_finish_sending_thread(self: "PCDStreamer"):
     self.send_button.setEnabled(True)
     response = self.sendingThread.get_response()
     if response['status'] == 'action':
-        self.conversation_data.append('Agent', str(response['message']))
+        self.chat_history.add_message(f"{response['message'].shape[0]} actions generated", is_user=True)
     elif response['status'] == 'no_action':
-        self.conversation_data.append('Agent', str(response['message']))
-    self.conversation_editor.setText(self.conversation_data.get_qt_format_conversation())
-    logger.info(self.conversation_data.get_terminal_conversation())
+        self.chat_history.add_message("Something went wrong", is_user=True)
+
+    logger.info(f"Received response: {response}")
     logger.debug("Sending thread finished")
 
 

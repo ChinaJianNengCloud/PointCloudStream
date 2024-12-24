@@ -294,7 +294,7 @@ def batch_segment_and_label(model, point_clouds, color_images, intrinsics, extri
     for pcd, color, intrinsic, extrinsic in zip(point_clouds, color_images, intrinsics, extrinsics):
         res, H, W = segment_image_with_yolo(model, color)
         try:
-            labels = label_point_cloud_from_segmentation(res, pcd, intrinsic, extrinsic, H, W)
+            labels = label_point_cloud_from_segmentation(res, pcd[:, 0:3], intrinsic, extrinsic, H, W)
         except:
             labels = np.zeros(pcd.shape[0], dtype=np.int64)
         results.append(labels)
