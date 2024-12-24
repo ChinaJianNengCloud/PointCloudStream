@@ -27,7 +27,7 @@ from app.ui import PCDStreamerUI
 from app.utils import CalibrationData, CollectedData, ConversationData
 from app.utils.camera import segment_pcd_from_2d
 from app.viewers.pcd_viewer import PCDStreamerFromCamera, PCDUpdater
-from app.threads.op_thread import DataSendToServerThread, CalibrationThread
+from app.threads.op_thread import DataSendToServerThread, RobotOpThread
 from app.callbacks import *
 
 from app.utils.logger import setup_logger
@@ -58,7 +58,7 @@ class PCDStreamer(PCDStreamerUI):
         self.streamer = PCDStreamerFromCamera(params=params)
         self.pcd_updater = PCDUpdater(self.renderer)
         self.robot: RobotInterface = None
-        self.calib_thread: CalibrationThread = None
+        self.calib_thread: RobotOpThread = None
         self.collected_data = CollectedData(self.params.get('data_path', './data'))
         self.calibration_data: CalibrationData = None
         # self.T_CamToBase: np.ndarray = None
@@ -504,7 +504,8 @@ class PCDStreamer(PCDStreamerUI):
         self.vtk_widget.GetRenderWindow().Render()
         print(f"Added custom pose: {pose}")
 
-    def view_predicted_poses(self, poses):
+
+    def view_predicted_poses(self, poses:np.ndarray):
         """
         Visualize a sequence of predicted relative poses starting from self.current_pose using VTK.
         
@@ -531,20 +532,23 @@ class PCDStreamer(PCDStreamerUI):
         self.pose_actors.clear()
 
         # Start with the current pose
-        base_pose = np.array(robot_pose[:3])  # Extract (x, y, z) from current_pose
+        base_pose = np.array(robot_pose[:6])  # Extract (x, y, z) from current_pose
 
         points = vtkPoints()
         lines = vtkCellArray()
 
         # Add the starting point
-        points.InsertNextPoint(*base_pose)
+        points.InsertNextPoint(*base_pose[:3])
         previous_pose = base_pose.copy()
-
+        realpose = []
         # Add relative poses incrementally
         for i, pose in enumerate(poses):
-            dx, dy, dz, *_ = pose  # Extract relative (x, y, z) changes
-            current_pose = previous_pose + np.array([dx, dy, dz])
-            points.InsertNextPoint(*current_pose)
+            if pose[6] == 1:
+                break
+            dx, dy, dz, drx, dry, drz = pose[:6]  # Extract relative (x, y, z) changes
+            current_pose = previous_pose + np.array([dx, dy, dz, drx, dry, drz])
+            realpose.append(current_pose)
+            points.InsertNextPoint(*current_pose[:3])
             
             # Add a line between the previous and current pose
             line = vtkLine()
@@ -575,7 +579,26 @@ class PCDStreamer(PCDStreamerUI):
 
         # Render the updated scene
         self.renderer.GetRenderWindow().Render()
+        if not self.center_to_robot_base_toggle.isChecked():
+            realpose = self.transform_poses(realpose, self.T_CamToBase)
 
+        return realpose
+
+    def transform_poses(self, poses:np.ndarray, transform_marix:np.ndarray):
+        transformed_poses = []
+        for pose in poses:
+            t_xyz = pose[0:3]
+            r_xyz = pose[3:6]
+            pose_matrix = np.eye(4)
+            pose_matrix[:3, 3] = t_xyz
+            pose_matrix[:3, :3] = R.from_euler('xyz', r_xyz, degrees=False).as_matrix()
+
+            transformed_pose = transform_marix @ pose_matrix 
+            n_r_xyz = R.from_matrix(transformed_pose[:3, :3]).as_euler('xyz', degrees=False)
+            n_t_xyz = transformed_pose[:3, 3]
+            transformed_poses.append(np.hstack((n_t_xyz, n_r_xyz)))
+            # transformed_poses.append(transformed_pose)
+        return transformed_poses
 
     @staticmethod
     def _numpy_to_vtk_matrix_4x4(matrix: np.ndarray):

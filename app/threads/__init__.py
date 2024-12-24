@@ -1,3 +1,3 @@
-from .op_thread import DataSendToServerThread, CalibrationThread
+from .op_thread import DataSendToServerThread, RobotOpThread
 
-__all__ = ['DataSendToServerThread', 'CalibrationThread']
+__all__ = ['DataSendToServerThread', 'RobotOpThread']
