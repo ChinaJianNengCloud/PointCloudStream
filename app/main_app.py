@@ -1,15 +1,10 @@
-import sys
+
 import time
-import json
-import logging
 import numpy as np
 import open3d as o3d
-import open3d.core as o3c
 import cv2
-import copy
-
 from functools import partial
-from typing import Callable, Union, List, Dict
+from typing import *
 
 from PyQt5.QtCore import QTimer, Qt
 from PyQt5.QtGui import QImage, QPixmap
@@ -24,6 +19,9 @@ from vtkmodules.vtkRenderingCore import vtkActor
 from vtkmodules.vtkRenderingAnnotation import vtkAxesActor
 from vtkmodules.vtkCommonMath import vtkMatrix4x4
 from vtkmodules.vtkCommonColor import vtkNamedColors
+from vtkmodules.vtkCommonCore import vtkPoints
+from vtkmodules.vtkCommonDataModel import vtkPolyData, vtkLine, vtkCellArray
+
 
 from app.ui import PCDStreamerUI
 from app.utils import CalibrationData, CollectedData, ConversationData
@@ -59,10 +57,10 @@ class PCDStreamer(PCDStreamerUI):
         self.frame = None
         self.streamer = PCDStreamerFromCamera(params=params)
         self.pcd_updater = PCDUpdater(self.renderer)
-        # self.robot: RobotInterface = None
-        # self.calib_thread: CalibrationThread = None
+        self.robot: RobotInterface = None
+        self.calib_thread: CalibrationThread = None
         self.collected_data = CollectedData(self.params.get('data_path', './data'))
-        # self.calibration_data: CalibrationData = None
+        self.calibration_data: CalibrationData = None
         # self.T_CamToBase: np.ndarray = None
         # self.T_BaseToCam: np.ndarray = None
         self.calib: Dict = None
@@ -95,6 +93,7 @@ class PCDStreamer(PCDStreamerUI):
         self.board_square_size_num_edit.setValue(self.params.get('board_square_size', 0.023))
         self.board_marker_size_num_edit.setValue(self.params.get('board_marker_size', 0.0175))
         self.board_type_combobox.setCurrentText(self.params.get('board_type', "DICT_4X4_100"))
+        del self.robot, self.calib_thread, self.calibration_data
 
     def __init_signals(self):
         self.streaming = False
@@ -206,7 +205,7 @@ class PCDStreamer(PCDStreamerUI):
         self.vtk_widget.AddObserver("KeyPressEvent", self.on_key_press)
 
 
-    def set_vtk_camera_from_intrinsics(self, intrinsic_matrix, extrinsics):
+    def set_vtk_camera_from_intrinsics(self, intrinsic_matrix:np.ndarray, extrinsics):
         """
         Configure the VTK camera using intrinsic and extrinsic matrices.
         
@@ -275,7 +274,7 @@ class PCDStreamer(PCDStreamerUI):
                     self.robot_base_frame.SetUserMatrix(self._numpy_to_vtk_matrix_4x4(np.eye(4)))
             
 
-    def get_robot_pose(self):
+    def get_robot_pose(self) -> Tuple[bool, Optional[List[float]], Optional[np.ndarray]]:
         """
         Get the current pose of the robot's end-effector.
         
@@ -286,7 +285,7 @@ class PCDStreamer(PCDStreamerUI):
         """
         if not hasattr(self, 'robot'):
             logger.error("Robot not initialized.")
-            return False, None, None
+            return False, np.array([]), np.array([])
         
         robot_pose = self.robot.capture_gripper_to_base(sep=False)
         t_xyz, r_xyz = robot_pose[0:3], robot_pose[3:6]
@@ -301,7 +300,7 @@ class PCDStreamer(PCDStreamerUI):
                 return True, xyzrxryrz, cam_to_end
             else:
                 logger.error("No robot calibration data detected.")
-                return False, None, None
+                return False, np.array([]), np.array([])
         else:
             return True, robot_pose, base_to_end
 
@@ -459,7 +458,7 @@ class PCDStreamer(PCDStreamerUI):
     def axis_set_to_matrix(self, axis:vtkAxesActor, matrix: np.ndarray):
         """Convert axis pose to matrix."""
         # Assuming axis pose is a 4x4 numpy array
-        axis.SetUserMatrix(self._numpy_to_vtk_matrix_4x4(matrix, axis))
+        axis.SetUserMatrix(self._numpy_to_vtk_matrix_4x4(matrix))
 
     def __init_bbox(self):
         """Initialize bounding box visualization."""
@@ -483,6 +482,99 @@ class PCDStreamer(PCDStreamerUI):
             slider.valueChanged.connect(lambda value, p=param: on_bbox_slider_changed(self, value, p))
             spin_box.valueChanged.connect(lambda value, p=param: on_bbox_edit_changed(self, value, p))
 
+    def set_predict_pose(self, pose):
+        x, y, z, rx, ry, rz = pose[0:6]
+        transform_matrix = np.eye(4)
+        transform_matrix[:3, 3] = [x, y, z]
+        transform_matrix[:3, :3] = R.from_euler('xyz', [rx, ry, rz]).as_matrix()
+        transform = self._numpy_to_vtk_matrix_4x4(transform_matrix)
+        # Create a custom axis
+        if hasattr(self, 'predicted_pose_axes'):
+            self.predicted_pose_axes = vtkAxesActor()
+            self.predicted_pose_axes.SetXAxisLabelText("")
+            self.predicted_pose_axes.SetYAxisLabelText("Predicted")
+            self.predicted_pose_axes.SetZAxisLabelText("")
+            self.predicted_pose_axes.GetYAxisCaptionActor2D().SetWidth(0.1)
+            self.predicted_pose_axes.GetYAxisCaptionActor2D().GetCaptionTextProperty().SetColor(0, 0, 1)  # Green color
+            self.predicted_pose_axes.SetTotalLength(0, 0, 0.3)
+        # Apply rotation (rx, ry, rz in radians)
+
+        self.predicted_pose_axes.SetUserMatrix(transform)
+        self.renderer.AddActor(self.predicted_pose_axes)
+        self.vtk_widget.GetRenderWindow().Render()
+        print(f"Added custom pose: {pose}")
+
+    def view_predicted_poses(self, poses):
+        """
+        Visualize a sequence of predicted relative poses starting from self.current_pose using VTK.
+        
+        Args:
+            poses (list of tuples): List of (dx, dy, dz) relative poses representing incremental offsets.
+        """
+        ret, robot_pose, _ = self.get_robot_pose()
+        if not ret:
+            logger.error("Failed to get robot pose.")
+            return
+        if len(poses) < 1:
+            logger.error("Warning: At least one relative pose is required for visualization.")
+            return
+
+        if not hasattr(self, 'renderer') or self.renderer is None:
+            raise ValueError("Renderer is not initialized. Please initialize 'self.renderer' before calling this method.")
+        
+        # Clear previous pose actors if they exist
+        if not hasattr(self, 'pose_actors'):
+            self.pose_actors = []
+        
+        for actor in self.pose_actors:
+            self.renderer.RemoveActor(actor)
+        self.pose_actors.clear()
+
+        # Start with the current pose
+        base_pose = np.array(robot_pose[:3])  # Extract (x, y, z) from current_pose
+
+        points = vtkPoints()
+        lines = vtkCellArray()
+
+        # Add the starting point
+        points.InsertNextPoint(*base_pose)
+        previous_pose = base_pose.copy()
+
+        # Add relative poses incrementally
+        for i, pose in enumerate(poses):
+            dx, dy, dz, *_ = pose  # Extract relative (x, y, z) changes
+            current_pose = previous_pose + np.array([dx, dy, dz])
+            points.InsertNextPoint(*current_pose)
+            
+            # Add a line between the previous and current pose
+            line = vtkLine()
+            line.GetPointIds().SetId(0, i)
+            line.GetPointIds().SetId(1, i + 1)
+            lines.InsertNextCell(line)
+            
+            previous_pose = current_pose
+
+        # Create polydata
+        poly_data = vtkPolyData()
+        poly_data.SetPoints(points)
+        poly_data.SetLines(lines)
+
+        # Map polydata
+        mapper = vtkPolyDataMapper()
+        mapper.SetInputData(poly_data)
+
+        # Create an actor
+        actor = vtkActor()
+        actor.SetMapper(mapper)
+        actor.GetProperty().SetColor(1, 0, 0)  # Red color for the path
+        actor.GetProperty().SetLineWidth(2)    # Make lines thicker for better visibility
+
+        # Add new actor to the renderer and track it
+        self.renderer.AddActor(actor)
+        self.pose_actors.append(actor)
+
+        # Render the updated scene
+        self.renderer.GetRenderWindow().Render()
 
 
     @staticmethod
