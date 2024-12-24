@@ -81,11 +81,6 @@ def segment_pcd_from_2d(model: YOLO, pcd, color, intrinsic, extrinsic=np.eye(4))
         extrinsic = extrinsic.astype(np.float32)
         extrinsic_torch = torch.from_numpy(extrinsic).to(device)
 
-    # Convert intrinsic and extrinsic to torch tensors
-    # intrinsic_torch = o3d_t_to_torch(intrinsic) # Shape: (3, 3)
-    # extrinsic_torch = o3d_t_to_torch(extrinsic) # Shape: (4, 4)
-
-    # Transform points to camera coordinates
     points_cam_hom = (extrinsic_torch @ points_3d_hom.T).T  # Shape: (N, 4)
     points_cam = points_cam_hom[:, :3]  # Shape: (N, 3)
 
