@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from app.main_app import PCDStreamer
 
 from app.utils.logger import setup_logger
-from app.threads.op_thread import DataSendToServerThread
+from app.threads.op_thread import DataSendToServerThread, RobotOpThread
 
 logger = setup_logger(__name__)
 
@@ -28,16 +28,19 @@ def on_scan_button_clicked(self: 'PCDStreamer'):
 def on_send_button_clicked(self: 'PCDStreamer'):
     
     text = self.agent_prompt_editor.toPlainText().strip()
+    if not hasattr(self, 'current_frame'):
+        logger.error("No current frame, please start streaming first.")
+        return
     frame = deepcopy(self.current_frame)
     image = np.asarray(frame['color'].cpu())
-    self.sendingThread = DataSendToServerThread(ip=self.ip_editor.text(), 
-                                                    port=int(self.port_editor.text()), 
-                                                    msg_dict=msg_dict)
     msg_dict = {
         'prompt': text,
         'image': image,
         'command': "process_pcd"
-    }
+        }
+    self.sendingThread = DataSendToServerThread(ip=self.ip_editor.text(), 
+                                                    port=int(self.port_editor.text()), 
+                                                    msg_dict=msg_dict)
 
     self.sendingThread.progress.connect(lambda progress: on_send_progress(progress))
     self.sendingThread.finished.connect(lambda: on_finish_sending_thread(self))
@@ -89,11 +92,18 @@ def on_send_button_clicked(self: 'PCDStreamer'):
 
 def on_finish_sending_thread(self: "PCDStreamer"):
     self.send_button.setEnabled(True)
+    
     response = self.sendingThread.get_response()
     if response['status'] == 'action':
         self.chat_history.add_message(f"{response['message'].shape[0]} actions generated", is_user=True)
+        real_pose = self.view_predicted_poses(response['message'])
+        thread = RobotOpThread(self.robot, real_pose)
+        thread.start()
+
     elif response['status'] == 'no_action':
-        self.chat_history.add_message("Something went wrong", is_user=True)
+        self.chat_history.add_message("Something went wrong", is_user=False)
+    elif response['status'] == 'error':
+        self.chat_history.add_message("Something went wrong", is_user=False)
 
     logger.info(f"Received response: {response}")
     logger.debug("Sending thread finished")

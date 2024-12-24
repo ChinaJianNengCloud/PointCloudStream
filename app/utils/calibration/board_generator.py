@@ -1,10 +1,13 @@
+
+import os
+
+# from PIL import Image
+import cv2
 import cv2.aruco as aruco
 import numpy as np
-from reportlab.lib.pagesizes import landscape, portrait, A4
+from reportlab.lib.pagesizes import A4, landscape, portrait
 from reportlab.pdfgen import canvas
-from PIL import Image
-import cv2
-import os
+
 
 def generate_charuco_board_pdf(board_shape, square_size, marker_size, output_filename="charuco_board.pdf", dpi=72):
     """

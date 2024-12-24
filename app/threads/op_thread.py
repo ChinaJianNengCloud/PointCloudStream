@@ -1,17 +1,10 @@
-import sys
 import time
-import json
 import logging
 import numpy as np
-import torch
-import open3d as o3d
-import open3d.core as o3c
-import cv2
-import copy
 import socket
 import pickle
 
-from typing import Callable, Union, List
+from typing import *
 # from PyQt5 import QtWidgets, QtCore
 from PyQt5.QtCore import pyqtSignal, QThread
 
@@ -22,7 +15,7 @@ from app.utils import RobotInterface
 
 logger = logging.getLogger(__name__)
 
-class CalibrationThread(QThread):
+class RobotOpThread(QThread):
     progress = pyqtSignal(int)  # Signal to communicate progress updates
     def __init__(self, robot: RobotInterface, robot_poses: List[np.ndarray]):
         self.robot = robot
@@ -33,7 +26,11 @@ class CalibrationThread(QThread):
         self.robot.set_teach_mode(False)
         for idx, each_pose in enumerate(self.robot_poses):
             logger.info(f"Moving to pose {idx}")
-            self.robot.move_to_pose(each_pose)
+            try:
+                self.robot.move_to_pose(each_pose)
+            except Exception as e:
+                logger.error(f"Failed to move to pose {idx}: {e}")
+                logger.info(f"Skipping pose {idx}: {each_pose}")
             self.progress.emit(idx)
         self.robot.set_teach_mode(True)
 
@@ -95,6 +92,7 @@ class DataSendToServerThread(QThread):
                 logger.debug(f"Response from server: {self.__response}")
                 logger.debug(f"Total time: {end_time:.2f} s")
         except Exception as e:
+            self.__response = {"status": "error", "message": str(e)}
             print(f"An error occurred: {e}")
             self.progress.emit(("Error", 0))  # Emit an error state if something goes wrong
     
