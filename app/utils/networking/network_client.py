@@ -58,7 +58,8 @@ def send_message(message_dict, server_address):
 
 if __name__ == "__main__":
     # Discover server
-    server_address = discover_server(CONFIG)
+    # server_address = discover_server(CONFIG)
+    server_address= ("192.168.1.49", 65432)
     if not server_address:
         print("No server found!")
     else:
@@ -66,7 +67,8 @@ if __name__ == "__main__":
 
         # Example NumPy array
         array = np.random.rand(300000, 6)
+        fake_image = np.random.rand(224, 224, 3)
 
         # Send a message with a NumPy array to be processed
-        message_with_pcd = {"command": "process_pcd", "pcd": array}
+        message_with_pcd = {"command": "process_pcd", "image": fake_image, 'prompt': "check the left breast"}
         send_message(message_with_pcd, server_address)
