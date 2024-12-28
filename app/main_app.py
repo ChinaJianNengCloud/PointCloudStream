@@ -29,6 +29,7 @@ from app.utils.camera import segment_pcd_from_2d
 from app.viewers.pcd_viewer import PCDStreamerFromCamera, PCDUpdater
 from app.threads.op_thread import DataSendToServerThread, RobotOpThread
 from app.callbacks import *
+from app.utils.robot.matrix_pose_op import *
 
 from app.utils.logger import setup_logger
 logger = setup_logger(__name__)
@@ -545,8 +546,11 @@ class PCDStreamer(PCDStreamerUI):
         for i, pose in enumerate(poses):
             if pose[6] == 1:
                 break
-            dx, dy, dz, drx, dry, drz = pose[:6]  # Extract relative (x, y, z) changes
-            current_pose = previous_pose + np.array([dx, dy, dz, drx, dry, drz])
+            # dx, dy, dz, drx, dry, drz = pose[:6]  # Extract relative (x, y, z) changes
+            delta_pose = pose[:6]  # Extract relative (x, y, z) changes
+            current_pose = pose_to_next_pose(previous_pose, delta_pose)
+            # current_pose = previous_pose + np.array([dx, dy, dz, drx, dry, drz])
+
             realpose.append(current_pose)
             points.InsertNextPoint(*current_pose[:3])
             
