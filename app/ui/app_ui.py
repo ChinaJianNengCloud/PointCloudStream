@@ -526,7 +526,7 @@ class PCDStreamerUI(QMainWindow):
         llm_server_group.setLayout(connection_layout)
 
         ip_label = QLabel("IP:")
-        self.ip_editor = QLineEdit("192.168.1.49")
+        self.ip_editor = QLineEdit("localhost")
         self.ip_editor.setMinimumWidth(em * 10)
 
         port_label = QLabel("Port:")
