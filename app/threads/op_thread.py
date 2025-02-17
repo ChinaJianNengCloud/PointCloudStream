@@ -27,7 +27,7 @@ class RobotOpThread(QThread):
         for idx, each_pose in enumerate(self.robot_poses):
             logger.info(f"Moving to pose {idx}")
             try:
-                self.robot.move_to_pose(each_pose)
+                self.robot.set_tcp_pose(each_pose)
             except Exception as e:
                 logger.error(f"Failed to move to pose {idx}: {e}")
                 logger.info(f"Skipping pose {idx}: {each_pose}")

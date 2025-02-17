@@ -7,17 +7,18 @@ import numpy as np
 from typing import TYPE_CHECKING
 from app.utils import RobotInterface, CameraInterface, ARUCO_BOARD
 from app.utils import CalibrationData
+from app.utils.pose import Pose
 from app.threads.op_thread import RobotOpThread
 
 if TYPE_CHECKING:
-    from app.main_app import PCDStreamer
+    from app.entry import PCDStreamer
 
 from app.utils.logger import setup_logger
 logger = setup_logger(__name__)
 
 def on_calib_combobox_changed(self: "PCDStreamer", text):
     if text != "":
-        self.T_CamToBase = np.array(self.calib.get('calibration_results').get(text).get('transformation_matrix'))
+        self.T_CamToBase = Pose.from_matrix(np.array(self.calib.get('calibration_results').get(text).get('transformation_matrix')))
     logger.debug(f"Calibration combobox changed: {text}")
     
 def on_calib_data_list_changed(self: "PCDStreamer"):
@@ -37,11 +38,17 @@ def on_calib_check_button_clicked(self: "PCDStreamer"):
         self.streamer.dist_coeffs = dist_coeffs
         self.calibration_data.load_camera_parameters(intrinsic, dist_coeffs)
         self.calib_combobox.clear()
-        self.calib_combobox.addItems(self.calib.get('calibration_results').keys())
+        self.calib_combobox.addItems(
+            self.calib.get('calibration_results').keys())
         self.calib_combobox.setEnabled(True)
         self.calib_combobox.setCurrentIndex(0)
         curent_selected = self.calib_combobox.currentText()
-        self.T_CamToBase = np.array(self.calib.get('calibration_results').get(curent_selected).get('transformation_matrix'))
+        
+        self.T_CamToBase = Pose.from_matrix(
+            np.array(self.calib\
+                     .get('calibration_results')\
+                        .get(curent_selected)\
+                            .get('transformation_matrix')))
         self.center_to_robot_base_toggle.setEnabled(True)
         
     except Exception as e:
@@ -84,7 +91,7 @@ def on_cam_calib_init_button_clicked(self: "PCDStreamer"):
             self.calibration_data.save_dir = self.params['folder_path']
 
 
-        if not hasattr(self, 'camera_interface'):
+        if self.camera_interface is None:
             self.camera_interface = CameraInterface(self.streamer.camera, self.calibration_data)
         
         self.cam_calib_init_button.setStyleSheet("background-color: green;")
@@ -96,7 +103,7 @@ def on_cam_calib_init_button_clicked(self: "PCDStreamer"):
 def on_calib_collect_button_clicked(self: "PCDStreamer"):
     if hasattr(self, 'calibration_data'):
         robot_pose = self.robot.capture_gripper_to_base(sep=False)
-        color = self.img_to_array(self.current_frame['color'])
+        color = self._img_to_array(self.current_frame['color'])
         self.calibration_data.append(color, robot_pose=robot_pose)
     logger.debug("Calibration collect button clicked")
 
@@ -107,12 +114,12 @@ def on_calib_list_remove_button_clicked(self: "PCDStreamer"):
 def on_robot_move_button_clicked(self: "PCDStreamer"):
     idx = self.calib_data_list.currentIndex().row()
     try:
-        self.robot.move_to_pose(
+        self.robot.set_tcp_pose(
             self.calibration_data.robot_poses[idx])
         
         if hasattr(self, 'timer'):
             self.timer.stop()
-        self.calibration_data.modify(idx, self.img_to_array(self.current_frame['color']),
+        self.calibration_data.modify(idx, self._img_to_array(self.current_frame['color']),
                                     self.robot.capture_gripper_to_base(sep=False),
                                     copy.deepcopy(self.bbox_params))
         if hasattr(self, 'timer'):
@@ -183,7 +190,7 @@ def on_calib_op_save_button_clicked(self: "PCDStreamer"):
 
 
 def on_calib_op_run_button_clicked(self: "PCDStreamer"):
-    if not hasattr(self, 'robot'):
+    if self.robot is None:
         logger.error("Robot not initialized")
         return
     
@@ -205,7 +212,7 @@ def on_calib_save_button_clicked(self: "PCDStreamer"):
 
 def update_progress(self: "PCDStreamer", value):
     pose = self.robot.capture_gripper_to_base(sep=False)
-    img = self.img_to_array(self.current_frame['color'])
+    img = self._img_to_array(self.current_frame['color'])
     self.calibration_data.modify(value, img, pose)
     logger.debug(f"Robot Move Progress: {value} and update calibration data")
     # self.label.setText(f"Progress: {value}")

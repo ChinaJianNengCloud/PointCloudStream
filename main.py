@@ -1,8 +1,9 @@
 import sys
-from app.main_app import PCDStreamer
+from app.entry import PCDStreamer
 from PyQt5 import QtWidgets
 import time
 import logging
+import os
 # from Callbacks import WindowCallbacks
 from app.utils.logger import setup_logger
 logger = setup_logger(__name__)
@@ -34,7 +35,7 @@ def main():
             'calib_check': True,
             'collect_data_viewer': True
         },
-        'use_fake_camera': False,
+        'use_fake_camera': True,
         "service_type": "_agent._tcp.local.",
         "discovery_timeout": 2,
     }

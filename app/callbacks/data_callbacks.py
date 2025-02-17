@@ -6,7 +6,7 @@ from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import  Qt
 
 if TYPE_CHECKING:
-    from app.main_app import PCDStreamer
+    from app.entry import PCDStreamer
 
 from app.utils.logger import setup_logger
 logger = setup_logger(__name__)
@@ -14,8 +14,8 @@ logger = setup_logger(__name__)
 def on_data_collect_button_clicked(self: "PCDStreamer"):
     ret, robot_pose, _ = self.get_robot_pose()
     if ret:
-        color = self.img_to_array(self.current_frame['color'])
-        depth = self.img_to_array(self.current_frame['depth'])
+        color = self._img_to_array(self.current_frame['color'])
+        depth = self._img_to_array(self.current_frame['depth'])
         pcd =  self.current_frame['pcd']
         
         xyz = np.asarray(pcd.points)

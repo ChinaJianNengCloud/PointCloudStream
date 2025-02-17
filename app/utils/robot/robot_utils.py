@@ -56,17 +56,24 @@ class RobotInterface:
         self.time_running = time_running
         self.radius = radius
 
-    def get_position(self):
+    def get_joint_position(self):
+        """Retrieve the current position of the robot's joints."""
+        position = self.lebai.get_kin_data()
+        return position['actual_joint_pos']
+    
+
+    def get_tcp_pose(self):
         """Retrieve the current position of the robot's end-effector."""
         position = self.lebai.get_kin_data()
         return position['actual_tcp_pose']
     
-    def move_command(self, joint_pose):
+    def set_joint_position(self, joint_posistion, wait=True):
         """Send movement command to the robotic arm."""
         try:
-            self.lebai.movej(joint_pose, self.acceleration, self.velocity, self.time_running, self.radius)
-            logging.info(f"Robot moving to joint position: {joint_pose}")
-            self.lebai.wait_move()
+            self.lebai.movej(joint_posistion, self.acceleration, self.velocity, self.time_running, self.radius)
+            logging.info(f"Robot moving to joint position: {joint_posistion}")
+            if wait:
+                self.lebai.wait_move()
         except Exception as e:
             logging.info(f"Failed to send command: {e}")
 
@@ -140,19 +147,20 @@ class RobotInterface:
 
         for cartesian_poses_array in cartesian_poses_array_list:
             self.motion_flag = False
-            self.move_to_pose(cartesian_poses_array)
+            self.set_tcp_pose(cartesian_poses_array)
             
             print("current pose", self.pose_unit_change_to_store(
                 self.pose_dict_to_array(self.lebai.get_kin_data()['actual_tcp_pose'])))
             self.motion_flag = True
             # time.sleep(0.5)
 
-    def move_to_pose(self, pose_array: np.ndarray, wait=True):
-        joint_pose = self.lebai.kinematics_inverse(self.pose_array_to_dict(pose_array))
-        logger.info(f"Moving to joint position: {joint_pose}")
-        self.lebai.movej(joint_pose, self.acceleration, self.velocity, self.time_running, self.radius)
-        if wait:
-            self.lebai.wait_move()
+    def set_tcp_pose(self, pose_array: np.ndarray, wait=True):
+        try:
+            joint_position = self.lebai.kinematics_inverse(self.pose_array_to_dict(pose_array))
+            logger.info(f"Moving to joint position: {joint_position}")
+            self.set_joint_position(joint_position)
+        except:
+            logger.error("Kinematics inverse failed")
     
     def set_joint_limits(self, limit):
         if not limit:

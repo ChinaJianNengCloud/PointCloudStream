@@ -21,14 +21,16 @@ from vtkmodules.vtkCommonMath import vtkMatrix4x4
 from vtkmodules.vtkCommonColor import vtkNamedColors
 from vtkmodules.vtkCommonCore import vtkPoints
 from vtkmodules.vtkCommonDataModel import vtkPolyData, vtkLine, vtkCellArray
-
+from vtkmodules.vtkCommonCore import vtkEventDataAction
 
 from app.ui import PCDStreamerUI
 from app.utils import CalibrationData, CollectedData, ConversationData
-from app.utils.camera import segment_pcd_from_2d
+from app.utils.camera import segment_pcd_from_2d, CameraInterface
+from app.utils.robot import RobotInterface
 from app.viewers.pcd_viewer import PCDStreamerFromCamera, PCDUpdater
 from app.threads.op_thread import DataSendToServerThread, RobotOpThread
 from app.callbacks import *
+from app.utils.pose import Pose
 
 from app.utils.logger import setup_logger
 logger = setup_logger(__name__)
@@ -61,8 +63,11 @@ class PCDStreamer(PCDStreamerUI):
         self.calib_thread: RobotOpThread = None
         self.collected_data = CollectedData(self.params.get('data_path', './data'))
         self.calibration_data: CalibrationData = None
-        # self.T_CamToBase: np.ndarray = None
-        # self.T_BaseToCam: np.ndarray = None
+        self.robot: RobotInterface = None
+        self.camera_interface: CameraInterface = None
+        self.T_CamToBase: Pose = None
+        self.T_BaseToCam: Pose = None
+        self.pcd_seg_model = None
         self.calib: Dict = None
         self.streamer.camera_frustrum.register_renderer(self.renderer)
         self.palettes = self.get_num_of_palette(80)
@@ -77,14 +82,14 @@ class PCDStreamer(PCDStreamerUI):
         self.set_disable_before_stream_init()
 
     @property
-    def T_CamToBase(self):
+    def T_CamToBase(self) -> Pose:
         return self._T_CamToBase
     
     @T_CamToBase.setter
-    def T_CamToBase(self, value: np.ndarray):
-        assert value.shape == (4, 4)
-        self._T_CamToBase = value
-        self.T_BaseToCam = np.linalg.inv(value)
+    def T_CamToBase(self, value: Pose):
+        if value is not None:
+            self._T_CamToBase = value
+            self.T_BaseToCam = self._T_CamToBase.inv()
 
     def __init_ui_values_from_params(self):
         self.calib_save_text.setText(self.params.get('calib_path', "Please_set_calibration_path"))
@@ -246,35 +251,31 @@ class PCDStreamer(PCDStreamerUI):
             time_diff = current_frame_time - self.prev_frame_time
             if time_diff > 0:  # Avoid division by zero
                 self.real_fps = 10*(1.0 / time_diff)
-            self.prev_frame_time = current_frame_time
-        # Capture a frame from the fake camera
-        frame = self.streamer.get_frame(take_pcd=True)
-        
+            self.prev_frame_time = current_frame_time     
         frame_elements = {
             'fps': round(self.real_fps, 2),  # Assuming 30 FPS for fake camera
         }
-        
-        self.board_pose_update(frame)
-        self.robot_pose_update(frame)
-        self.segment_pcd_from_yolo(frame)
+        frame_elements.update(self.streamer.get_frame(take_pcd=True))
 
-
-        frame_elements.update(frame)
-        self.current_frame = frame_elements
+        self.board_pose_update(frame_elements)
+        self.robot_pose_update(frame_elements)
+        self.segment_pcd_from_yolo(frame_elements)
         self.point_cloud_update(frame_elements)
+        
+        self.current_frame = frame_elements
 
     def robot_pose_update(self, frame):
         if self.show_axis:
-            ret, _, pose_matrix = self.get_robot_pose()
+            ret, pose = self.get_robot_pose()
             if ret:
-                self.robot_end_frame.SetUserMatrix(self._numpy_to_vtk_matrix_4x4(pose_matrix))
+                self.robot_end_frame.SetUserMatrix(pose.vtk_matrix)
                 if not self.center_to_robot_base_toggle.isChecked():
-                    self.robot_base_frame.SetUserMatrix(self._numpy_to_vtk_matrix_4x4(self.T_BaseToCam))
+                    self.robot_base_frame.SetUserMatrix(self.T_BaseToCam.vtk_matrix)
                 else:
-                    self.robot_base_frame.SetUserMatrix(self._numpy_to_vtk_matrix_4x4(np.eye(4)))
+                    self.robot_base_frame.SetUserMatrix(Pose.from_1d_array(np.zeros(6)).vtk_matrix)
             
 
-    def get_robot_pose(self) -> Tuple[bool, Optional[List[float]], Optional[np.ndarray]]:
+    def get_robot_pose(self) -> Tuple[bool, Pose]:
         """
         Get the current pose of the robot's end-effector.
         
@@ -283,43 +284,37 @@ class PCDStreamer(PCDStreamerUI):
             list or None: The pose as a list of length 6, containing the translation (x, y, z) and rotation (rx, ry, rz) components in the camera frame if robot calibration data is available.
             np.ndarray or None: The pose as a 4x4 numpy array in the camera frame if robot calibration data is available.
         """
-        if not hasattr(self, 'robot'):
+        if self.robot is None:
             logger.error("Robot not initialized.")
-            return False, np.array([]), np.array([])
+            return False, None
         
         robot_pose = self.robot.capture_gripper_to_base(sep=False)
-        t_xyz, r_xyz = robot_pose[0:3], robot_pose[3:6]
-        base_to_end = np.eye(4)
-        base_to_end[:3, :3] = R.from_euler('xyz', r_xyz, degrees=False).as_matrix()
-        base_to_end[:3, 3] = t_xyz
+        base_to_end = Pose.from_1d_array(robot_pose, vector_type="euler", degrees=False)
+
         if not self.center_to_robot_base_toggle.isChecked():
-            if hasattr(self, 'T_CamToBase'):
-                cam_to_end = self.T_BaseToCam @ base_to_end
-                xyzrxryrz = np.hstack((cam_to_end[:3, 3],
-                                    R.from_matrix(cam_to_end[:3, :3]).as_euler('xyz', degrees=False)))
-                return True, xyzrxryrz, cam_to_end
+            if self.T_CamToBase is not None:
+                cam_to_end = base_to_end.apply_delta_pose(self.T_BaseToCam, on="base")
+                return True, cam_to_end
             else:
                 logger.error("No robot calibration data detected.")
-                return False, np.array([]), np.array([])
+                return False, None
         else:
-            return True, robot_pose, base_to_end
+            return True, base_to_end
 
     def board_pose_update(self, frame):
-        if hasattr(self, 'camera_interface') and self.detect_board_toggle.isChecked():
+        if self.camera_interface is not None and self.detect_board_toggle.isChecked():
             rgb_with_pose, rvec, tvec = self.camera_interface._process_and_display_frame(
-                self.img_to_array(frame['color']), ret_vecs=True)
+                self._img_to_array(frame['color']), ret_vecs=True)
             if rvec is None or tvec is None:
                 logger.warning("Failed to detect board.")
             else:
-                cam_to_board = np.eye(4)
-                cam_to_board[:3, :3] = cv2.Rodrigues(rvec)[0]
-                cam_to_board[:3, 3] = tvec.ravel()
+                cam_to_board = Pose.from_1d_array(np.hstack([tvec, rvec]), vector_type="rotvec", degrees=False)
                 if self.center_to_robot_base_toggle.isChecked():
-                    if hasattr(self, 'T_CamToBase'):
-                        base_to_board = self.T_CamToBase @ cam_to_board
-                        self.board_pose_frame.SetUserMatrix(self._numpy_to_vtk_matrix_4x4(base_to_board))
+                    if self.T_CamToBase is not None:
+                        base_to_board = cam_to_board.apply_delta_pose(self.T_CamToBase, on="base")
+                        self.board_pose_frame.SetUserMatrix(base_to_board.vtk_matrix)
                 else:
-                    self.board_pose_frame.SetUserMatrix(self._numpy_to_vtk_matrix_4x4(cam_to_board))
+                    self.board_pose_frame.SetUserMatrix(cam_to_board.vtk_matrix)
     
     def point_cloud_update(self, frame_elements: dict):
         """Update visualization with point cloud and images."""
@@ -367,7 +362,7 @@ class PCDStreamer(PCDStreamerUI):
 
     def segment_pcd_from_yolo(self, frame: dict):
         if self.seg_model_init_toggle.isChecked():
-            if not hasattr(self, 'pcd_seg_model'):
+            if self.pcd_seg_model is None:
                 logger.error("Segmentation model not initialized")
                 return
             try:
@@ -389,7 +384,7 @@ class PCDStreamer(PCDStreamerUI):
             pass  # Handle space key press if needed
 
     @staticmethod
-    def img_to_array(image: Union[np.ndarray, o3d.geometry.Image, o3d.t.geometry.Image]) -> np.ndarray:
+    def _img_to_array(image: Union[np.ndarray, o3d.geometry.Image, o3d.t.geometry.Image]) -> np.ndarray:
         if isinstance(image, np.ndarray):
             return image
         elif isinstance(image, o3d.geometry.Image):
@@ -400,7 +395,7 @@ class PCDStreamer(PCDStreamerUI):
     def update_color_image(self, color_image):
         """Update the color image display."""
         if self.color_groupbox.isChecked():
-            image = self.img_to_array(color_image)
+            image = self._img_to_array(color_image)
             # Convert color_image to QImage and display in QLabel
             if image.shape[2] == 3:
                 height, width, channel = image.shape
@@ -415,7 +410,7 @@ class PCDStreamer(PCDStreamerUI):
     def update_depth_image(self, depth_image):
         """Update the depth image display."""
         if self.depth_groupbox.isChecked():
-            image = self.img_to_array(depth_image)
+            image = self._img_to_array(depth_image)
             # Convert depth_image to QImage and display in QLabel
             if image.shape[2] == 3:
                 height, width, channel = image.shape
@@ -455,11 +450,6 @@ class PCDStreamer(PCDStreamerUI):
         self.robot_end_frame.SetVisibility(0)
         self.board_pose_frame.SetVisibility(0)
 
-    def axis_set_to_matrix(self, axis:vtkAxesActor, matrix: np.ndarray):
-        """Convert axis pose to matrix."""
-        # Assuming axis pose is a 4x4 numpy array
-        axis.SetUserMatrix(self._numpy_to_vtk_matrix_4x4(matrix))
-
     def __init_bbox(self):
         """Initialize bounding box visualization."""
         # Initialize bounding box parameters
@@ -482,13 +472,8 @@ class PCDStreamer(PCDStreamerUI):
             slider.valueChanged.connect(lambda value, p=param: on_bbox_slider_changed(self, value, p))
             spin_box.valueChanged.connect(lambda value, p=param: on_bbox_edit_changed(self, value, p))
 
-    def set_predict_pose(self, pose):
-        x, y, z, rx, ry, rz = pose[0:6]
-        transform_matrix = np.eye(4)
-        transform_matrix[:3, 3] = [x, y, z]
-        transform_matrix[:3, :3] = R.from_euler('xyz', [rx, ry, rz]).as_matrix()
-        transform = self._numpy_to_vtk_matrix_4x4(transform_matrix)
-        # Create a custom axis
+    def set_predict_pose(self, pose: np.ndarray):
+        pose_p = Pose.from_1d_array(pose[:6], vector_type="euler", degrees=False)
         if hasattr(self, 'predicted_pose_axes'):
             self.predicted_pose_axes = vtkAxesActor()
             self.predicted_pose_axes.SetXAxisLabelText("")
@@ -497,9 +482,8 @@ class PCDStreamer(PCDStreamerUI):
             self.predicted_pose_axes.GetYAxisCaptionActor2D().SetWidth(0.1)
             self.predicted_pose_axes.GetYAxisCaptionActor2D().GetCaptionTextProperty().SetColor(0, 0, 1)  # Green color
             self.predicted_pose_axes.SetTotalLength(0, 0, 0.3)
-        # Apply rotation (rx, ry, rz in radians)
 
-        self.predicted_pose_axes.SetUserMatrix(transform)
+        self.predicted_pose_axes.SetUserMatrix(pose_p.vtk_matrix)
         self.renderer.AddActor(self.predicted_pose_axes)
         self.vtk_widget.GetRenderWindow().Render()
         print(f"Added custom pose: {pose}")
@@ -539,31 +523,25 @@ class PCDStreamer(PCDStreamerUI):
 
         # Add the starting point
         points.InsertNextPoint(*base_pose[:3])
-        previous_pose = base_pose.copy()
+        previous_pose = Pose.from_1d_array(base_pose, vector_type="euler", degrees=False)
         realpose = []
         # Add relative poses incrementally
         for i, pose in enumerate(poses):
             if pose[6] == 1:
                 break
-            dx, dy, dz, drx, dry, drz = pose[:6]  # Extract relative (x, y, z) changes
-            current_pose = previous_pose + np.array([dx, dy, dz, drx, dry, drz])
-            realpose.append(current_pose)
-            points.InsertNextPoint(*current_pose[:3])
-            
-            # Add a line between the previous and current pose
+            delta_pose = Pose.from_1d_array(pose[:6], vector_type="euler", degrees=False)
+            current_pose = previous_pose.apply_delta_pose(delta_pose, on='ee')
+            realpose.append(current_pose.to_1d_array(vector_type="euler", degrees=False))
+            points.InsertNextPoint(*realpose[-1][:3])
             line = vtkLine()
             line.GetPointIds().SetId(0, i)
             line.GetPointIds().SetId(1, i + 1)
             lines.InsertNextCell(line)
-            
             previous_pose = current_pose
 
-        # Create polydata
         poly_data = vtkPolyData()
         poly_data.SetPoints(points)
         poly_data.SetLines(lines)
-
-        # Map polydata
         mapper = vtkPolyDataMapper()
         mapper.SetInputData(poly_data)
 
@@ -581,33 +559,15 @@ class PCDStreamer(PCDStreamerUI):
         self.renderer.GetRenderWindow().Render()
         if not self.center_to_robot_base_toggle.isChecked():
             realpose = self.transform_poses(realpose, self.T_CamToBase)
-
         return realpose
 
-    def transform_poses(self, poses:np.ndarray, transform_marix:np.ndarray):
+    def transform_poses(self, poses:np.ndarray, transform_pose: Pose):
         transformed_poses = []
         for pose in poses:
-            t_xyz = pose[0:3]
-            r_xyz = pose[3:6]
-            pose_matrix = np.eye(4)
-            pose_matrix[:3, 3] = t_xyz
-            pose_matrix[:3, :3] = R.from_euler('xyz', r_xyz, degrees=False).as_matrix()
-
-            transformed_pose = transform_marix @ pose_matrix 
-            n_r_xyz = R.from_matrix(transformed_pose[:3, :3]).as_euler('xyz', degrees=False)
-            n_t_xyz = transformed_pose[:3, 3]
-            transformed_poses.append(np.hstack((n_t_xyz, n_r_xyz)))
-            # transformed_poses.append(transformed_pose)
+            pose_p = Pose.from_1d_array(pose[:6], vector_type="euler", degrees=False)
+            transformed_pose = pose_p.apply_delta_pose(transform_pose, on="base")
+            transformed_poses.append(transformed_pose.to_1d_array(vector_type="euler", degrees=False))
         return transformed_poses
-
-    @staticmethod
-    def _numpy_to_vtk_matrix_4x4(matrix: np.ndarray):
-        assert matrix.shape == (4, 4)
-        vtk_matrix = vtkMatrix4x4()
-        for i in range(4):
-            for j in range(4):
-                vtk_matrix.SetElement(i, j, matrix[i, j])
-        return vtk_matrix
 
     @staticmethod
     def get_num_of_palette(num_colors):

@@ -2,7 +2,7 @@ from PyQt5.QtCore import QTimer
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from app.main_app import PCDStreamer
+    from app.entry import PCDStreamer
 
 def on_stream_init_button_clicked(self: "PCDStreamer"):
     if self.streaming:

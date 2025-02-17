@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from app.utils.networking import send_message, discover_server
 
 if TYPE_CHECKING:
-    from app.main_app import PCDStreamer
+    from app.entry import PCDStreamer
 
 from app.utils.logger import setup_logger
 from app.threads.op_thread import DataSendToServerThread, RobotOpThread
