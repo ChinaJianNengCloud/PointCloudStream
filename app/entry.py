@@ -31,6 +31,7 @@ from app.viewers.pcd_viewer import PCDStreamerFromCamera, PCDUpdater
 from app.threads.op_thread import DataSendToServerThread, RobotOpThread
 from app.callbacks import *
 from app.utils.pose import Pose
+from app.utils.robot.matrix_pose_op import *
 
 from app.utils.logger import setup_logger
 logger = setup_logger(__name__)
@@ -529,10 +530,12 @@ class PCDStreamer(PCDStreamerUI):
         for i, pose in enumerate(poses):
             if pose[6] == 1:
                 break
-            delta_pose = Pose.from_1d_array(pose[:6], vector_type="euler", degrees=False)
-            current_pose = previous_pose.apply_delta_pose(delta_pose, on='ee')
-            realpose.append(current_pose.to_1d_array(vector_type="euler", degrees=False))
-            points.InsertNextPoint(*realpose[-1][:3])
+            dx, dy, dz, drx, dry, drz = pose[:6]  # Extract relative (x, y, z) changes
+            current_pose = previous_pose + np.array([dx, dy, dz, drx, dry, drz])
+            realpose.append(current_pose)
+            points.InsertNextPoint(*current_pose[:3])
+            
+            # Add a line between the previous and current pose
             line = vtkLine()
             line.GetPointIds().SetId(0, i)
             line.GetPointIds().SetId(1, i + 1)
