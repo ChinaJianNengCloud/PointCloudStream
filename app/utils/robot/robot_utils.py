@@ -11,9 +11,14 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 import os
 import open3d as o3d
+try:
+    from app.utils.logger import setup_logger
+    logger = setup_logger(__name__)
+except ImportError:
+    import logging
+    logger = logging.getLogger(__name__)
+    # from ....app.utils.logger import setup_logger
 
-from app.utils.logger import setup_logger
-logger = setup_logger(__name__)
 class RobotInterface:
     def __init__(self, ip_address=None, port=None):
         # Initialize SDK and network parameters
@@ -21,8 +26,8 @@ class RobotInterface:
         self.port = port
         self.lebai = None
         # Initialize motion parameters
-        self.acceleration = 0.8
-        self.velocity = 0.4
+        self.acceleration = 2
+        self.velocity = 2
         self.time_running = 0
         self.radius = 0
         self.motion_flag = False
@@ -56,7 +61,7 @@ class RobotInterface:
         self.time_running = time_running
         self.radius = radius
 
-    def get_position(self):
+    def get_tcp_pose(self):
         """Retrieve the current position of the robot's end-effector."""
         position = self.lebai.get_kin_data()
         return position['actual_tcp_pose']

@@ -95,7 +95,7 @@ def on_finish_sending_thread(self: "PCDStreamer"):
     
     response = self.sendingThread.get_response()
     if response['status'] == 'action':
-        self.chat_history.add_message(f"{response['message'].shape[0]} actions generated", is_user=True)
+        self.chat_history.add_message(f"{response['message'].shape[0]} actions generated", is_user=False)
         real_pose = self.view_predicted_poses(response['message'])
         thread = RobotOpThread(self.robot, real_pose)
         thread.start()
