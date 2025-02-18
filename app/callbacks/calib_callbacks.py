@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from app.utils import RobotInterface, CameraInterface, ARUCO_BOARD
 from app.utils import CalibrationData
 from app.utils.pose import Pose
-from app.threads.op_thread import RobotOpThread
+from app.threads.op_thread import RobotTcpOpThread
 
 if TYPE_CHECKING:
     from app.entry import PCDStreamer
@@ -198,7 +198,7 @@ def on_calib_op_run_button_clicked(self: "PCDStreamer"):
         logger.error("No current frame, please start streaming first.")
         return
     
-    self.calib_thread = RobotOpThread(self.robot, self.calibration_data.robot_poses)
+    self.calib_thread = RobotTcpOpThread(self.robot, self.calibration_data.robot_poses)
     self.calib_thread.progress.connect(lambda value: update_progress(self, value))
     self.calib_thread.finished.connect(lambda: calibration_finished(self))
     self.calib_thread.start()

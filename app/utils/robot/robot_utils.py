@@ -11,9 +11,12 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 import os
 import open3d as o3d
-
-from app.utils.logger import setup_logger
-logger = setup_logger(__name__)
+try:
+    from app.utils.logger import setup_logger
+    logger = setup_logger(__name__)
+except ImportError:
+    import logging
+    logger = logging.getLogger(__name__)
 class RobotInterface:
     def __init__(self, ip_address=None, port=None):
         # Initialize SDK and network parameters
@@ -59,7 +62,7 @@ class RobotInterface:
     def get_joint_position(self):
         """Retrieve the current position of the robot's joints."""
         position = self.lebai.get_kin_data()
-        return position['actual_joint_pos']
+        return position['actual_joint_pose']
     
 
     def get_tcp_pose(self):
@@ -96,10 +99,10 @@ class RobotInterface:
         else:    
             return cpose
         
-    def get_cam_space_gripper_pose(self, t_cam_to_base=None):
+    def get_cam_space_gripper_pose(self, T_cam_to_base=None):
         pose = self.capture_gripper_to_base(sep=False)
         t_xyz, r_xyz = pose[0:3], pose[3:6]
-        if t_cam_to_base is None:
+        if T_cam_to_base is None:
             logger.warning("Camera to base matrix did not detected, use robot pose instead!")
             return pose
         # rotation_matrix, _ = cv2.Rodrigues(rvecs)
@@ -107,7 +110,7 @@ class RobotInterface:
         T_end_to_base = np.eye(4)
         T_end_to_base[:3, :3] = rotation_matrix
         T_end_to_base[:3, 3] = t_xyz.ravel()
-        T_base_to_cam =  np.linalg.inv(self.T_cam_to_base)
+        T_base_to_cam =  np.linalg.inv(T_cam_to_base)
         T_cam_to_end = T_base_to_cam @ T_end_to_base
         # R.from_rotvec
         new_r = R.from_matrix(T_cam_to_end[:3, :3]).as_euler('xyz', degrees=False)
@@ -121,7 +124,7 @@ class RobotInterface:
         # logger.debug("array pose: ", trs)
         return np.array([pose_quaternion_dict[key] for key in ['x', 'y', 'z', 'rx', 'ry', 'rz']])
     
-    def pose_array_to_dict(self, pose_array):
+    def pose_array_to_dict(self, pose_array: np.ndarray):
         pose_array = pose_array.tolist()
         pose_array = [float(x) for x in pose_array]
         keys = ['x', 'y', 'z', 'rx', 'ry', 'rz']
@@ -193,17 +196,20 @@ if __name__ == "__main__":
     path = "pose.txt"
     test_pose = np.array([-644, 30, 81, -36, -12, 137], dtype=np.float32)
     test_joint_pose = np.array([-19, -4, 27, -118, -46, 114], dtype=np.float32)
-    arm.set_teach_mode(True)
-    test_machine_joint_pose = np.deg2rad(test_joint_pose).tolist()
-    print("test_forward_pose", arm.lebai.kinematics_forward(test_machine_joint_pose))
-    test_machine_pose = arm.pose_unit_change_to_machine(test_pose)
-    print("test_machine_pose", test_machine_pose)
-    # arm.move_command(np.deg2rad(test_joint_pose).tolist())
-    print("dict_pose", arm.pose_array_to_dict(test_machine_pose))
-    # inversed_test_joint_pose = arm.lebai.kinematics_inverse(arm.pose_array_to_dict(test_machine_pose))
-    # print("inversed_test_joint_pose", inversed_test_joint_pose)
-    print("arm", arm.capture_gripper_to_base())
-    print("curr joint pose", arm.lebai.get_kin_data()['actual_joint_pose'])
+    print(arm.lebai.get_kin_data())
+    print(arm.get_joint_position())
+    print(np.rad2deg(arm.get_joint_position()))
+    # arm.set_teach_mode(True)
+    # test_machine_joint_pose = np.deg2rad(test_joint_pose).tolist()
+    # print("test_forward_pose", arm.lebai.kinematics_forward(test_machine_joint_pose))
+    # test_machine_pose = arm.pose_unit_change_to_machine(test_pose)
+    # print("test_machine_pose", test_machine_pose)
+    # # arm.move_command(np.deg2rad(test_joint_pose).tolist())
+    # print("dict_pose", arm.pose_array_to_dict(test_machine_pose))
+    # # inversed_test_joint_pose = arm.lebai.kinematics_inverse(arm.pose_array_to_dict(test_machine_pose))
+    # # print("inversed_test_joint_pose", inversed_test_joint_pose)
+    # print("arm", arm.capture_gripper_to_base())
+    # print("curr joint pose", arm.lebai.get_kin_data()['actual_joint_pose'])
     # print("curr joint pose", np.rad2deg(np.array(arm.lebai.get_kin_data()['actual_joint_pose'])))
     # print(test_pose)
     # test_machine_pose = arm.pose_unit_change_to_machine(test_pose)

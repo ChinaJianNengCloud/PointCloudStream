@@ -1,6 +1,6 @@
 import json
 import uuid
-from typing import Dict, List, AnyStr
+from typing import Dict, List, AnyStr, Union
 import numpy as np
 import os
 from PIL import Image
@@ -19,7 +19,7 @@ class CollectedData(QObject):
         super().__init__()
         self.dataids: List[AnyStr] = []
         self.resource_path = os.path.join(path, "resources")
-        self.data_list: List[Dict[AnyStr, Dict[AnyStr, List | AnyStr]]] = []
+        self.episode_list: List[Dict[AnyStr, Dict[AnyStr, List | AnyStr]]] = []
         self.bboxes: Dict[AnyStr, float] = {}
         self.__path = path
         os.makedirs(self.path, exist_ok=True)
@@ -39,7 +39,7 @@ class CollectedData(QObject):
         self.__path = path
 
     def __len__(self):
-        return len(self.data_list)
+        return len(self.episode_list)
 
     @property
     def img_list(self):
@@ -47,29 +47,36 @@ class CollectedData(QObject):
 
     @property
     def prompts(self):
-        return [data['prompt'] for data in self.data_list]
+        return [data['prompt'] for data in self.episode_list]
 
     @property
     def shown_data_json(self):
-        return {key: {k: v for k, v in value.items() if k not in ('color_files', 'depth_files', 'point_cloud_files')}
-                for key, value in zip(reversed(self.dataids), reversed(self.data_list))}
+        ext_key_for_show = ('color_files', 
+                            'depth_files', 
+                            'point_cloud_files', 
+                            # 'joint_positions',
+                            'joint_position_records',
+                            'pose_record',
+                            'bboxes')
+        return {key: {k: v for k, v in value.items() if k not in ext_key_for_show}
+                for key, value in zip(reversed(self.dataids), reversed(self.episode_list))}
 
     @property
     def saved_data_json(self):
         data = {}
-        for key, value in zip(self.dataids, self.data_list):
-            entry = {k: v for k, v in value.items() if k not in ('color_files', 'depth_files', 'point_cloud_files')}
-            poses = value['pose']
+        for id, episode in zip(self.dataids, self.episode_list):
+            entry = {k: v for k, v in episode.items() if k not in ('color_files', 'depth_files', 'point_cloud_files')}
+            poses = episode['pose']
             entry['poses'] = [{"pose0": poses[i], "pose1": poses[i + 1] if i + 1 < len(poses) else None} for i in
                               range(len(poses))]
-            entry['color_files'] = value['color_files']
-            entry['depth_files'] = value['depth_files']
-            entry['point_cloud_files'] = value['point_cloud_files']
-            data[key] = entry
+            entry['color_files'] = episode['color_files']
+            entry['depth_files'] = episode['depth_files']
+            entry['point_cloud_files'] = episode['point_cloud_files']
+            data[id] = entry
         return data
 
     def pop(self, idx):
-        data_entry = self.data_list.pop(idx)
+        data_entry = self.episode_list.pop(idx)
         id = self.dataids.pop(idx)
         for file_list in [data_entry.get('color_files', []), data_entry.get('depth_files', []),
                           data_entry.get('point_cloud_files', [])]:
@@ -80,7 +87,7 @@ class CollectedData(QObject):
         self.data_changed.emit()
 
     def pop_pose(self, prompt_idx, pose_idx=-1):
-        data_entry = self.data_list[prompt_idx]
+        data_entry = self.episode_list[prompt_idx]
         id = self.dataids[prompt_idx]
 
         # Remove files
@@ -97,35 +104,45 @@ class CollectedData(QObject):
         data_entry['pose'].pop(pose_idx)
 
         if not data_entry['pose']:
-            self.data_list.pop(prompt_idx)
+            self.episode_list.pop(prompt_idx)
             self.dataids.pop(prompt_idx)
 
         self.data_changed.emit()
 
-    def append(self, prompt, pose, bbox_dict: Dict[AnyStr, float] = None, color: np.ndarray = None,
-               depth: np.ndarray = None, point_cloud: np.ndarray = None):
+    def add_record(self, prompt, base_poses, t_base_to_cam, 
+                   joint_position, bbox_dict: Dict[AnyStr, float] = None, color: np.ndarray = None,
+               depth: np.ndarray = None, point_cloud: np.ndarray = None, record_stage=False):
         id = uuid.uuid4().hex
-        if isinstance(pose, np.ndarray):
-            pose = pose.tolist()
+        if isinstance(base_poses, np.ndarray):
+            base_poses = base_poses.tolist()
 
-        if prompt in self.prompts:
-            data_entry_idx = self.prompts.index(prompt)
-            data_entry = self.data_list[data_entry_idx]
-            id = self.dataids[data_entry_idx]
-            pose_idx = len(data_entry['pose'])
-            data_entry['pose'].append(pose)
-            data_entry['bboxes'] = self.box_from_dict(bbox_dict)
-        else:
+        if prompt not in self.prompts:
             self.dataids.append(id)
-            data_entry = {"prompt": prompt,
-                          "pose": [pose],
+            current_episode: Dict[str, Union[List, str]] = {"prompt": prompt,
+                          'pose': [base_poses],
+                          "pose_record": [],
                           'bboxes': self.box_from_dict(bbox_dict),
+                          't_base_to_cam': t_base_to_cam,
+                          'joint_positions': [joint_position],
+                          'joint_position_records': [],
                           'color_files': [],
                           'depth_files': [],
                           'point_cloud_files': []}
-            self.data_list.append(data_entry)
-            data_entry_idx = len(self.data_list) - 1
+            self.episode_list.append(current_episode)
+            data_entry_idx = len(self.episode_list) - 1
             pose_idx = 0
+        else:
+            data_entry_idx = self.prompts.index(prompt)
+            current_episode = self.episode_list[data_entry_idx]
+            id = self.dataids[data_entry_idx]
+            pose_idx = len(current_episode['pose'])
+            if record_stage:
+                current_episode['joint_position_records'].append(joint_position)
+                current_episode['pose_record'].append(base_poses)
+            else:
+                current_episode['joint_positions'].append(joint_position)
+                current_episode['pose'].append(base_poses)
+                current_episode['bboxes'] = self.box_from_dict(bbox_dict)
 
         # Generate file names
         color_file = f"{id}_color_{pose_idx}.png"
@@ -133,9 +150,7 @@ class CollectedData(QObject):
         point_cloud_file = f"{id}_point_cloud_{pose_idx}.ply"
 
         # Update data_entry with file names before starting the thread
-        data_entry['color_files'].append(color_file)
-        data_entry['depth_files'].append(depth_file)
-        data_entry['point_cloud_files'].append(point_cloud_file)
+
 
         # Save files in a separate thread
         def save_files(color, depth, point_cloud, color_file, depth_file, point_cloud_file):
@@ -143,19 +158,22 @@ class CollectedData(QObject):
                 Image.fromarray(color).save(os.path.join(self.resource_path, color_file))
             if depth is not None:
                 np.save(os.path.join(self.resource_path, depth_file), depth)
-            if point_cloud is not None:
-                vertex = np.array(
-                    [(x, y, z, r, g, b, s) for x, y, z, r, g, b, s in point_cloud],
-                    dtype=[('x', 'f4'), ('y', 'f4'), ('z', 'f4'), ('red', 'u1'), ('green', 'u1'), ('blue', 'u1'),
-                           ('segment_id', 'i4')]
-                )
-                ply = PlyData([PlyElement.describe(vertex, 'vertex')], text=True)
-                ply.write(os.path.join(self.resource_path, point_cloud_file))
+            # if point_cloud is not None:
+            #     vertex = np.array(
+            #         [(x, y, z, r, g, b, s) for x, y, z, r, g, b, s in point_cloud],
+            #         dtype=[('x', 'f4'), ('y', 'f4'), ('z', 'f4'), ('red', 'u1'), ('green', 'u1'), ('blue', 'u1'),
+            #                ('segment_id', 'i4')]
+            #     )
+            #     ply = PlyData([PlyElement.describe(vertex, 'vertex')], text=True)
+            #     ply.write(os.path.join(self.resource_path, point_cloud_file))
         
-        # Start the thread
-        thread = threading.Thread(target=save_files, args=(
-            color, depth, point_cloud, color_file, depth_file, point_cloud_file))
-        thread.start()
+        if record_stage:
+            current_episode['color_files'].append(color_file)
+            current_episode['depth_files'].append(depth_file)
+            # current_episode['point_cloud_files'].append(point_cloud_file)
+            thread = threading.Thread(target=save_files, args=(
+                color, depth, point_cloud, color_file, depth_file, point_cloud_file))
+            thread.start()
         self.data_changed.emit()
         return True
 
@@ -190,7 +208,7 @@ class CollectedData(QObject):
 
         # Populate dataids and data_list
         self.dataids = []
-        self.data_list = []
+        self.episode_list = []
 
         for data_id in saved_data.keys():
             entry = saved_data[data_id]
@@ -210,13 +228,13 @@ class CollectedData(QObject):
                 data_entry = {
                     'prompt': entry['prompt'],
                     'pose': [pose['pose0'] for pose in entry['poses']],
-                    'bboxes': self.box_from_dict(entry["bboxes"]),
+                    'bboxes': self.box_from_dict(bbox_dict_or_list=entry["bboxes"]),
                     'color_files': entry['color_files'],
                     'depth_files': entry['depth_files'],
                     'point_cloud_files': entry['point_cloud_files'],
                 }
                 self.dataids.append(data_id)
-                self.data_list.append(data_entry)
+                self.episode_list.append(data_entry)
             else:
                 # Files missing, skip this data_id
                 logger.info(f"Data entry {data_id} skipped due to missing files.")
@@ -238,70 +256,6 @@ class CollectedData(QObject):
     def bbox_to_dict(self):
         key_set = ('xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax')
         return {key: self.bboxes[idx] for idx, key in enumerate(key_set)}
-
-    # def _image_display_loop(self):
-    #     """
-    #     Continuously display the image, updating whenever `current_image_path` is changed.
-    #     """
-    #     while not self.stop_display.is_set():
-    #         with self.lock:
-    #             image_path = self.current_image_path
-
-    #         if image_path and os.path.exists(image_path):
-    #             color_image = cv2.imread(image_path)
-    #             if color_image is not None:
-    #                 height, width = color_image.shape[:2]
-    #                 resized_image = cv2.resize(color_image, (width // 2, height // 2))
-    #                 cv2.imshow("Image Viewer", resized_image)
-    #             else:
-    #                 print(f"Failed to load image: {image_path}")
-    #         else:
-    #             # If no valid image path, show a blank window
-    #             blank_image = np.zeros((500, 500, 3), dtype=np.uint8)
-    #             cv2.imshow("Image Viewer", blank_image)
-
-    #         if cv2.waitKey(500) == ord('q'):  # Refresh every 500ms, press 'q' to quit
-    #             self.stop_display.set()
-    #             break
-
-    #     cv2.destroyAllWindows()
-
-    # def show_image(self, prompt_idx, pose_idx):
-    #     """
-    #     Update the displayed image to the one specified by `prompt_idx` and `pose_idx`.
-    #     """
-    #     try:
-    #         data_entry = self.data_list[prompt_idx]
-    #         color_file = data_entry['color_files'][pose_idx]
-    #         color_file_path = os.path.join(self.resource_path, color_file)
-
-    #         if not os.path.exists(color_file_path):
-    #             print(f"File not found: {color_file_path}")
-    #             return
-    #         if not self.display_thread is None:
-    #             with self.lock:
-    #                 self.current_image_path = color_file_path
-
-    #     except IndexError:
-    #         print("Invalid prompt_idx or pose_idx.")
-
-    # def start_display_thread(self):
-    #     """
-    #     Start the image display thread if it's not already running.
-    #     """
-    #     if self.display_thread is None or not self.display_thread.is_alive():
-    #         self.stop_display.clear()
-    #         self.display_thread = threading.Thread(target=self._image_display_loop, daemon=True)
-    #         self.display_thread.start()
-
-    # def stop_display_thread(self):
-    #     """
-    #     Stop the display thread and close the OpenCV window.
-    #     """
-    #     self.stop_display.set()
-    #     if self.display_thread:
-    #         self.display_thread.join()
-    #     cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":

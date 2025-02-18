@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from app.entry import PCDStreamer
 
 from app.utils.logger import setup_logger
-from app.threads.op_thread import DataSendToServerThread, RobotOpThread
+from app.threads.op_thread import DataSendToServerThread, RobotTcpOpThread
 
 logger = setup_logger(__name__)
 
@@ -97,7 +97,7 @@ def on_finish_sending_thread(self: "PCDStreamer"):
     if response['status'] == 'action':
         self.chat_history.add_message(f"{response['message'].shape[0]} actions generated", is_user=True)
         real_pose = self.view_predicted_poses(response['message'])
-        thread = RobotOpThread(self.robot, real_pose)
+        thread = RobotTcpOpThread(self.robot, real_pose)
         thread.start()
 
     elif response['status'] == 'no_action':

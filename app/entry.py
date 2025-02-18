@@ -28,10 +28,10 @@ from app.utils import CalibrationData, CollectedData, ConversationData
 from app.utils.camera import segment_pcd_from_2d, CameraInterface
 from app.utils.robot import RobotInterface
 from app.viewers.pcd_viewer import PCDStreamerFromCamera, PCDUpdater
-from app.threads.op_thread import DataSendToServerThread, RobotOpThread
+from app.threads.op_thread import DataSendToServerThread, RobotTcpOpThread
 from app.callbacks import *
 from app.utils.pose import Pose
-from app.utils.robot.matrix_pose_op import *
+# from app.utils.robot.matrix_pose_op import *
 
 from app.utils.logger import setup_logger
 logger = setup_logger(__name__)
@@ -61,7 +61,8 @@ class PCDStreamer(PCDStreamerUI):
         self.streamer = PCDStreamerFromCamera(params=params)
         self.pcd_updater = PCDUpdater(self.renderer)
         self.robot: RobotInterface = None
-        self.calib_thread: RobotOpThread = None
+        self.calib_thread: RobotTcpOpThread = None
+        self.robot_joint_thread: RobotJointOpThread = None
         self.collected_data = CollectedData(self.params.get('data_path', './data'))
         self.calibration_data: CalibrationData = None
         self.robot: RobotInterface = None
@@ -202,6 +203,7 @@ class PCDStreamer(PCDStreamerUI):
         self.data_tree_view_remove_button.clicked.connect(partial(on_data_tree_view_remove_button_clicked, self))
         self.data_tree_view.set_on_selection_changed(partial(on_tree_selection_changed, self))
         self.collected_data.data_changed.connect(partial(on_data_tree_changed, self))
+        self.data_replay_and_save_button.clicked.connect(partial(on_data_replay_and_save_button_clicked, self))
 
         # Agent Tab
         self.scan_button.clicked.connect(partial(on_scan_button_clicked, self))
@@ -290,7 +292,7 @@ class PCDStreamer(PCDStreamerUI):
             return False, None
         
         robot_pose = self.robot.capture_gripper_to_base(sep=False)
-        base_to_end = Pose.from_1d_array(robot_pose, vector_type="euler", degrees=False)
+        base_to_end = Pose.from_1d_array(vector=robot_pose, vector_type="euler", degrees=False)
 
         if not self.center_to_robot_base_toggle.isChecked():
             if self.T_CamToBase is not None:
@@ -432,19 +434,16 @@ class PCDStreamer(PCDStreamerUI):
         self.robot_base_frame = vtkAxesActor()
         self.robot_base_frame.AxisLabelsOff()
         self.robot_base_frame.SetTotalLength(*size)
-        self.T_base = np.eye(4)
         self.renderer.AddActor(self.robot_base_frame)
 
         self.robot_end_frame = vtkAxesActor()
         self.robot_end_frame.AxisLabelsOff()
         self.robot_end_frame.SetTotalLength(*size)
-        self.T_End = np.eye(4)
         self.renderer.AddActor(self.robot_end_frame)
 
         self.board_pose_frame = vtkAxesActor()
         self.board_pose_frame.AxisLabelsOff()
         self.board_pose_frame.SetTotalLength(*size)
-        self.T_Board = np.eye(4)
         self.renderer.AddActor(self.board_pose_frame)
 
         self.robot_base_frame.SetVisibility(0)
@@ -521,17 +520,18 @@ class PCDStreamer(PCDStreamerUI):
 
         points = vtkPoints()
         lines = vtkCellArray()
-
-        # Add the starting point
         points.InsertNextPoint(*base_pose[:3])
+
         previous_pose = Pose.from_1d_array(base_pose, vector_type="euler", degrees=False)
         realpose = []
         # Add relative poses incrementally
         for i, pose in enumerate(poses):
             if pose[6] == 1:
                 break
-            dx, dy, dz, drx, dry, drz = pose[:6]  # Extract relative (x, y, z) changes
-            current_pose = previous_pose + np.array([dx, dy, dz, drx, dry, drz])
+            # dx, dy, dz, drx, dry, drz = pose[:6]  # Extract relative (x, y, z) changes
+            # current_pose = previous_pose + np.array([dx, dy, dz, drx, dry, drz])
+            delta_pose = Pose.from_1d_array(pose[:6], vector_type="euler", degrees=False)
+            current_pose = previous_pose.apply_delta_pose(delta_pose, on="base").to_1d_array(vector_type="euler", degrees=False)
             realpose.append(current_pose)
             points.InsertNextPoint(*current_pose[:3])
             

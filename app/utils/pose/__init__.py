@@ -1,1 +1,2 @@
 from .pose import Pose
+from .pose_interpolate import interpolate_joint_positions_equal_distance
