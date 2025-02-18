@@ -489,7 +489,7 @@ class PCDStreamerUI(QMainWindow):
         prompt_layout.addWidget(self.prompt_text)
 
         self.data_tree_view = DataTreeWidget()
-        self.data_tree_view.setHeaderLabel("Data Items")
+        self.data_tree_view.setHeaderLabel("Episodes:")
         layout.addWidget(self.data_tree_view)
 
         list_operation_layout = QHBoxLayout()
@@ -498,6 +498,8 @@ class PCDStreamerUI(QMainWindow):
         list_operation_layout.addWidget(self.data_tree_view_remove_button)
         self.data_tree_view_load_button = QPushButton("Load")
         list_operation_layout.addWidget(self.data_tree_view_load_button)
+        self.data_replay_and_save_button = QPushButton("Replay and Save")
+        list_operation_layout.addWidget(self.data_replay_and_save_button)
 
         data_folder_layout = QHBoxLayout()
         layout.addLayout(data_folder_layout)

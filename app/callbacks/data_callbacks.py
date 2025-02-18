@@ -1,40 +1,82 @@
 import logging
 import numpy as np
+import time
 from typing import TYPE_CHECKING
 from PyQt5.QtWidgets import QLabel,QDialog, QVBoxLayout, QFileDialog
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import  Qt
 
 if TYPE_CHECKING:
-    from app.main_app import PCDStreamer
+    from app.entry import PCDStreamer
 
+from app.threads.op_thread import RobotJointOpThread
+from app.utils.pose import interpolate_joint_positions_equal_distance
 from app.utils.logger import setup_logger
 logger = setup_logger(__name__)
 
+def on_data_replay_and_save_button_clicked(self: "PCDStreamer"):
+    select_item = self.data_tree_view.selected_item
+    fps = 15
+    if select_item is not None:
+        joint_posistions = self.collected_data.shown_data_json.get(
+                            select_item.root_text
+                            ).get('joint_positions')
+        interpolate_positions = interpolate_joint_positions_equal_distance(joint_posistions,
+                                                                           target_length=15, method='quadratic')
+        self.robot_joint_thread = RobotJointOpThread(self.robot, interpolate_positions, wait=True)
+        self.robot_joint_thread.start()
+        while self.robot_joint_thread.progress < len(interpolate_positions)-1:
+            if self.robot_joint_thread.progress > 0:      
+                robot_pose = self.robot.capture_gripper_to_base(sep=False)
+                joint_posistion = self.robot.get_joint_position()
+                color = self._img_to_array(self.current_frame['color'])
+                depth = self._img_to_array(self.current_frame['depth'])
+                pcd_with_labels =  None
+                # xyz = np.asarray(pcd.points)
+                # rgb = (np.asarray(pcd.colors) * 255).astype(np.uint8)
+                # seg = self.current_frame.get('seg', np.zeros(xyz.shape[0]))
+                # pcd_with_labels = np.hstack((xyz, rgb, seg.reshape(-1, 1)))
+
+                self.collected_data.add_record(prompt=self.prompt_text.text(),
+                                        color=color,
+                                        depth=depth,
+                                        point_cloud=pcd_with_labels,
+                                        base_poses=robot_pose,
+                                        bbox_dict=self.bbox_params,
+                                        joint_position=joint_posistion,
+                                        t_base_to_cam=self.T_BaseToCam,
+                                        record_stage=True)
+            time.sleep(1 / fps)
+    logger.debug("Data replay and save button clicked")
+
+
 def on_data_collect_button_clicked(self: "PCDStreamer"):
-    ret, robot_pose, _ = self.get_robot_pose()
-    if ret:
-        color = self.img_to_array(self.current_frame['color'])
-        depth = self.img_to_array(self.current_frame['depth'])
+    if self.robot is not None:
+        robot_pose = self.robot.capture_gripper_to_base(sep=False)
+        joint_posistion = self.robot.get_joint_position()
+        color = self._img_to_array(self.current_frame['color'])
+        depth = self._img_to_array(self.current_frame['depth'])
         pcd =  self.current_frame['pcd']
-        
         xyz = np.asarray(pcd.points)
         rgb = (np.asarray(pcd.colors) * 255).astype(np.uint8)
         seg = self.current_frame.get('seg', np.zeros(xyz.shape[0]))
         pcd_with_labels = np.hstack((xyz, rgb, seg.reshape(-1, 1)))
 
-        self.collected_data.append(prompt=self.prompt_text.text(),
+        self.collected_data.add_record(prompt=self.prompt_text.text(),
                                 color=color,
                                 depth=depth,
+                                joint_position=joint_posistion,
                                 point_cloud=pcd_with_labels,
-                                pose=robot_pose,
-                                bbox_dict=self.bbox_params)
+                                base_poses=robot_pose,
+                                bbox_dict=self.bbox_params,
+                                t_base_to_cam=self.T_BaseToCam,
+                                record_stage=False)
+        
         logger.debug("Data collected")
     else:
         logger.error("Failed to get robot pose")
 
     logger.debug("Data collect button clicked")
-
 
 def on_data_save_button_clicked(self: "PCDStreamer"):
     self.collected_data.save(self.data_folder_text.text())

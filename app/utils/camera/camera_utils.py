@@ -16,7 +16,7 @@ logger = setup_logger(__name__)
 
 
 class CameraInterface:
-    def __init__(self, camera, calibration_data:CalibrationData):
+    def __init__(self, camera, calibration_data: CalibrationData) -> None:
         self.camera = camera
         # self.charuco_dict = charuco_dict
         self.charuco_board = calibration_data.board

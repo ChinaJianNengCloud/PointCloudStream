@@ -8,7 +8,7 @@ from vtkmodules.vtkRenderingCore import (
 from vtkmodules.vtkFiltersSources import vtkCubeSource
 
 if TYPE_CHECKING:
-    from app.main_app import PCDStreamer
+    from app.entry import PCDStreamer
 
 from app.utils.logger import setup_logger
 logger = setup_logger(__name__)

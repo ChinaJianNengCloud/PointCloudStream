@@ -15,7 +15,7 @@ from app.utils import RobotInterface
 
 logger = logging.getLogger(__name__)
 
-class RobotOpThread(QThread):
+class RobotTcpOpThread(QThread):
     progress = pyqtSignal(int)  # Signal to communicate progress updates
     def __init__(self, robot: RobotInterface, robot_poses: List[np.ndarray]):
         self.robot = robot
@@ -27,13 +27,32 @@ class RobotOpThread(QThread):
         for idx, each_pose in enumerate(self.robot_poses):
             logger.info(f"Moving to pose {idx}")
             try:
-                self.robot.move_to_pose(each_pose)
+                self.robot.set_tcp_pose(each_pose)
             except Exception as e:
                 logger.error(f"Failed to move to pose {idx}: {e}")
                 logger.info(f"Skipping pose {idx}: {each_pose}")
             self.progress.emit(idx)
         self.robot.set_teach_mode(True)
 
+class RobotJointOpThread(QThread):
+    progress = pyqtSignal(int)  # Signal to communicate progress updates
+    def __init__(self, robot: RobotInterface, joint_positions: List[np.ndarray], wait=True):
+        self.robot = robot
+        self.joint_positions = joint_positions
+        self._wait = wait
+        super().__init__()
+
+    def run(self):
+        self.robot.set_teach_mode(False)
+        for idx, joint_position in enumerate(self.joint_positions):
+            logger.info(f"Moving to pose {idx}")
+            try:
+                self.robot.set_joint_position(joint_position, self._wait)
+            except Exception as e:
+                logger.error(f"Failed to move to pose {idx}: {e}")
+                logger.info(f"Skipping pose {idx}: {joint_position}")
+            self.progress.emit(idx)
+        self.robot.set_teach_mode(True)
 
 class DataSendToServerThread(QThread):
     progress = pyqtSignal(tuple)  # Signal to communicate progress updates (step, progress)
