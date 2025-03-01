@@ -5,9 +5,7 @@ import socket
 import pickle
 
 from typing import *
-# from PyQt5 import QtWidgets, QtCore
-from PyQt5.QtCore import pyqtSignal, QThread
-
+from PySide6.QtCore import QThread, Signal
 # Import specific modules from vtkmodules
 
 
@@ -16,7 +14,7 @@ from app.utils import RobotInterface
 logger = logging.getLogger(__name__)
 
 class RobotTcpOpThread(QThread):
-    progress = pyqtSignal(int)  # Signal to communicate progress updates
+    progress = Signal(int)  # Signal to communicate progress updates
     def __init__(self, robot: RobotInterface, robot_poses: List[np.ndarray]):
         self.robot = robot
         self.robot_poses = robot_poses
@@ -35,8 +33,8 @@ class RobotTcpOpThread(QThread):
         self.robot.set_teach_mode(True)
 
 class RobotJointOpThread(QThread):
-    progress = pyqtSignal(int)  # Signal to communicate progress updates
-    action_finished = pyqtSignal(bool)  # Signal to communicate that the action has finished
+    progress = Signal(int)  # Signal to communicate progress updates
+    action_finished = Signal(bool)  # Signal to communicate that the action has finished
     def __init__(self, robot: RobotInterface, joint_positions: List[np.ndarray], wait=True):
         self.robot = robot
         self.robot.update_motion_parameters(
@@ -64,7 +62,7 @@ class RobotJointOpThread(QThread):
         self.robot.set_teach_mode(True)
 
 class DataSendToServerThread(QThread):
-    progress = pyqtSignal(tuple)  # Signal to communicate progress updates (step, progress)
+    progress = Signal(tuple)  # Signal to communicate progress updates (step, progress)
 
     def __init__(self, ip, port, msg_dict: dict):
         self.ip = ip

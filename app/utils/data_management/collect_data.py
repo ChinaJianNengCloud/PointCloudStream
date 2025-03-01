@@ -8,13 +8,13 @@ from plyfile import PlyData, PlyElement
 import logging
 import threading
 import cv2
-from PyQt5.QtCore import pyqtSignal, QObject
+from PySide6.QtCore import Signal, QObject
 
 from app.utils.logger import setup_logger
 logger = setup_logger(__name__)
 
 class CollectedData(QObject):
-    data_changed = pyqtSignal()
+    data_changed = Signal()
     def __init__(self, path='data'):
         super().__init__()
         self.dataids: List[AnyStr] = []

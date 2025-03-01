@@ -1,7 +1,7 @@
 import sys
 
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import (QLabel, QListWidget,
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (QLabel, QListWidget,
                              QApplication,QDoubleSpinBox, QCheckBox,
                              QVBoxLayout, QHBoxLayout, QWidget, 
                              QPushButton, QSizePolicy, QTabWidget, 
@@ -34,7 +34,7 @@ logger = setup_logger(__name__)
 
 
 class PCDStreamerUI(QMainWindow):
-    """Controls display and user interface using VTK and PyQt5."""
+    """Controls display and user interface using VTK and PySide6."""
 
     def __init__(self):
         super().__init__()

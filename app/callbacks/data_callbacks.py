@@ -3,9 +3,9 @@ import numpy as np
 import time
 from functools import partial
 from typing import TYPE_CHECKING
-from PyQt5.QtWidgets import QLabel,QDialog, QVBoxLayout, QFileDialog
-from PyQt5.QtGui import QPixmap
-from PyQt5.QtCore import  Qt
+from PySide6.QtWidgets import QLabel, QDialog, QVBoxLayout, QFileDialog
+from PySide6.QtGui import QPixmap
+from PySide6.QtCore import Qt
 from threading import Thread
 if TYPE_CHECKING:
     from app.entry import PCDStreamer

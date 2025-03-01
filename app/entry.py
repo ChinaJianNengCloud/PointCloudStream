@@ -6,9 +6,9 @@ import cv2
 from functools import partial
 from typing import *
 
-from PyQt5.QtCore import QTimer, Qt
-from PyQt5.QtGui import QImage, QPixmap
-from PyQt5.QtWidgets import (QLabel, QDoubleSpinBox, 
+from PySide6.QtCore import QTimer, Qt
+from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtWidgets import (QLabel, QDoubleSpinBox, 
                              QVBoxLayout, QHBoxLayout, QPushButton, 
                              QGroupBox, QSlider)
 

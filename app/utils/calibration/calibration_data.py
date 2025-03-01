@@ -1,7 +1,7 @@
 import numpy as np
 import cv2
 from scipy.spatial.transform import Rotation as R
-from PyQt5.QtCore import pyqtSignal, QObject, QThread
+from PySide6.QtCore import Signal, QObject, QThread
 import logging
 import json
 from pathlib import Path
@@ -14,7 +14,7 @@ from app.utils.logger import setup_logger
 logger = setup_logger(__name__)
 
 class CalibrationData(QObject):
-    data_changed = pyqtSignal()
+    data_changed = Signal()
     def __init__(self, board: cv2.aruco.CharucoBoard, save_dir: str = None):
         super().__init__()
         self.board = board

@@ -1,7 +1,7 @@
 from typing import List
-from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtWidgets import QLabel, QFrame, QVBoxLayout, QHBoxLayout, QWidget, QSizePolicy, QScrollArea
-from PyQt5.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtWidgets import QLabel, QFrame, QVBoxLayout, QHBoxLayout, QWidget, QSizePolicy, QScrollArea
+from PySide6.QtCore import Qt, QTimer
 
 class ChatBubble(QFrame):
     """
