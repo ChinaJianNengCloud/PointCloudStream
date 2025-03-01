@@ -21,7 +21,7 @@ def main():
         'pose_file_path': './poses.txt',
         'load_intrinsic': True,
         'calib_path': './Calibration_results/calibration_results.json',
-        'device': 'cuda:0',
+        'device': 'cpu:0',
         'camera_config': './camera_config.json',
         'rgbd_video': None,
         'board_type': 'DICT_4X4_100',
@@ -35,7 +35,7 @@ def main():
             'calib_check': True,
             'collect_data_viewer': True
         },
-        'use_fake_camera': True,
+        'use_fake_camera': False,
         "service_type": "_agent._tcp.local.",
         "discovery_timeout": 2,
     }

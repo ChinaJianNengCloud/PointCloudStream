@@ -29,6 +29,7 @@ class RobotInterface:
         self.time_running = 0
         self.radius = 0
         self.motion_flag = False
+        self.recording_flag = False
 
     def find_device(self):
         """Find the device and connect to it."""
@@ -38,6 +39,12 @@ class RobotInterface:
         else:
             self.ip_address = self.ip_address
         self.lebai = lebai_sdk.connect(self.ip_address, False)
+
+    @property
+    def is_moving(self):
+        # IDEL, TEACHING, MOVING
+        return self.lebai.get_robot_state() == 'MOVING'
+
 
     def connect(self):
         """Establish network connection to the robotic arm."""
@@ -59,10 +66,21 @@ class RobotInterface:
         self.time_running = time_running
         self.radius = radius
 
-    def get_position(self):
+    def high_speed_mode(self):
+        self.update_motion_parameters(10, 10, 0, 0)
+    
+    def low_speed_mode(self):
+        self.update_motion_parameters(2, 2, 0, 0)
+
+    def get_tcp_pose(self):
         """Retrieve the current position of the robot's end-effector."""
         position = self.lebai.get_kin_data()
         return position['actual_tcp_pose']
+    
+    def get_joint_position(self):
+        """Retrieve the current position of the robot's end-effector."""
+        position = self.lebai.get_kin_data()
+        return position['actual_joint_pose']
     
     def set_joint_position(self, joint_posistion, wait=True):
         """Send movement command to the robotic arm."""
@@ -193,6 +211,7 @@ if __name__ == "__main__":
     print(arm.lebai.get_kin_data())
     print(arm.get_joint_position())
     print(np.rad2deg(arm.get_joint_position()))
+    print(arm.get_state())
     # arm.set_teach_mode(True)
     # test_machine_joint_pose = np.deg2rad(test_joint_pose).tolist()
     # print("test_forward_pose", arm.lebai.kinematics_forward(test_machine_joint_pose))

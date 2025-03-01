@@ -311,7 +311,8 @@ class PCDStreamer(PCDStreamerUI):
             if rvec is None or tvec is None:
                 logger.warning("Failed to detect board.")
             else:
-                cam_to_board = Pose.from_1d_array(np.hstack([tvec, rvec]), vector_type="rotvec", degrees=False)
+                cam_to_board = Pose.from_1d_array(np.hstack([tvec.ravel(), rvec.ravel()]), 
+                                                  vector_type="rotvec", degrees=False)
                 if self.center_to_robot_base_toggle.isChecked():
                     if self.T_CamToBase is not None:
                         base_to_board = cam_to_board.apply_delta_pose(self.T_CamToBase, on="base")

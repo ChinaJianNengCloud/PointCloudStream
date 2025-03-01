@@ -1,11 +1,12 @@
 import logging
 import numpy as np
 import time
+from functools import partial
 from typing import TYPE_CHECKING
 from PyQt5.QtWidgets import QLabel,QDialog, QVBoxLayout, QFileDialog
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import  Qt
-
+from threading import Thread
 if TYPE_CHECKING:
     from app.entry import PCDStreamer
 
@@ -16,39 +17,68 @@ logger = setup_logger(__name__)
 
 def on_data_replay_and_save_button_clicked(self: "PCDStreamer"):
     select_item = self.data_tree_view.selected_item
-    fps = 15
-    if select_item is not None:
+    data_index = self.collected_data.dataids.index(select_item.root_text)
+    self.collected_data.reset_record(data_index)
+    if select_item.item is not None:
         joint_posistions = self.collected_data.shown_data_json.get(
                             select_item.root_text
                             ).get('joint_positions')
-        interpolate_positions = interpolate_joint_positions_equal_distance(joint_posistions,
-                                                                           target_length=15, method='quadratic')
-        self.robot_joint_thread = RobotJointOpThread(self.robot, interpolate_positions, wait=True)
-        self.robot_joint_thread.start()
-        while self.robot_joint_thread.progress < len(interpolate_positions)-1:
-            if self.robot_joint_thread.progress > 0:      
-                robot_pose = self.robot.capture_gripper_to_base(sep=False)
-                joint_posistion = self.robot.get_joint_position()
-                color = self._img_to_array(self.current_frame['color'])
-                depth = self._img_to_array(self.current_frame['depth'])
-                pcd_with_labels =  None
-                # xyz = np.asarray(pcd.points)
-                # rgb = (np.asarray(pcd.colors) * 255).astype(np.uint8)
-                # seg = self.current_frame.get('seg', np.zeros(xyz.shape[0]))
-                # pcd_with_labels = np.hstack((xyz, rgb, seg.reshape(-1, 1)))
+        try:
+            interpolate_positions = interpolate_joint_positions_equal_distance(joint_posistions,
+                                                                            target_length=7, method='quadratic')
+        except ValueError as e:
+            logger.error(f"Failed to interpolate joint positions: {e}")
+            return False
+        self.robot_joint_thread = RobotJointOpThread(self.robot, 
+                                                     interpolate_positions,
+                                                     wait=True)
+        
 
-                self.collected_data.add_record(prompt=self.prompt_text.text(),
-                                        color=color,
-                                        depth=depth,
-                                        point_cloud=pcd_with_labels,
-                                        base_poses=robot_pose,
-                                        bbox_dict=self.bbox_params,
-                                        joint_position=joint_posistion,
-                                        t_base_to_cam=self.T_BaseToCam,
-                                        record_stage=True)
-            time.sleep(1 / fps)
+        fps = 15  # desired frequency in FPS
+        data_collection_thread = Thread(target=collect_data_at_fps, args=(self, fps,))
+        self.robot_joint_thread.progress.connect(
+            lambda progress: on_progress_update(self, data_collection_thread, progress))
+        self.robot_joint_thread.action_finished.connect(
+            lambda finished: self.robot_joint_thread.quit())
+        self.robot_joint_thread.start()
+    
     logger.debug("Data replay and save button clicked")
 
+
+def on_progress_update(self: "PCDStreamer", thread:Thread, progress):
+    if progress == 0:
+        self.robot.high_speed_mode()
+        self.robot.recording_flag = True
+        thread.start()
+    if progress == len(self.robot_joint_thread.joint_positions) - 1:
+        self.robot.recording_flag = False
+        self.robot.low_speed_mode()
+        thread.join()
+
+def collect_data_at_fps(self: "PCDStreamer", fps):
+    interval = 1 / fps
+    # index = 0  # Start collecting from the first position
+    while self.robot.recording_flag:
+        # Collect data at the specified frequency
+        robot_pose = self.robot.capture_gripper_to_base(sep=False)
+        joint_position = self.robot.get_joint_position()
+        color = self._img_to_array(self.current_frame['color'])
+        depth = self._img_to_array(self.current_frame['depth'])
+        pcd_with_labels = None  # Modify this if you need point cloud data
+
+        # Add the collected record
+        self.collected_data.add_record(
+            prompt=self.prompt_text.text(),
+            color=color,
+            depth=depth,
+            point_cloud=pcd_with_labels,
+            base_poses=robot_pose,
+            bbox_dict=self.bbox_params,
+            joint_position=joint_position,
+            t_base_to_cam=self.T_BaseToCam,
+            record_stage=True
+        )
+        time.sleep(interval)
 
 def on_data_collect_button_clicked(self: "PCDStreamer"):
     if self.robot is not None:
@@ -69,7 +99,7 @@ def on_data_collect_button_clicked(self: "PCDStreamer"):
                                 point_cloud=pcd_with_labels,
                                 base_poses=robot_pose,
                                 bbox_dict=self.bbox_params,
-                                t_base_to_cam=self.T_BaseToCam,
+                                t_base_to_cam=self.T_BaseToCam.matrix,
                                 record_stage=False)
         
         logger.debug("Data collected")
@@ -99,8 +129,8 @@ def on_data_tree_view_remove_button_clicked(self: "PCDStreamer"):
             case 2:
                 pass
             case 3:
-                logger.debug(f"Removing pose{select_item.root_text}-{select_item.index_in_level}")
-                if select_item.parent_text == "Pose":
+                logger.debug(f"Removing pose {select_item.root_text}-{select_item.index_in_level}")
+                if select_item.parent_text == "Pose" or select_item.parent_text == "Joint Position":
                     self.collected_data.pop_pose(self.collected_data.dataids.index(select_item.root_text), 
                                                     select_item.index_in_level)
                     pass
@@ -117,9 +147,10 @@ def on_tree_selection_changed(self: "PCDStreamer", item, level, index_in_level, 
                             select_item.root_text
                             ).get('prompt'))
     if select_item.level == 3 and select_item.parent_text == "Pose":
-        show_image_popup(self, self.collected_data.resource_path + '/' + self.collected_data.saved_data_json.get(
-                            select_item.root_text
-                            ).get('color_files')[index_in_level])
+        pass # No image to show now
+        # show_image_popup(self, self.collected_data.resource_path + '/' + self.collected_data.saved_data_json.get(
+        #                     select_item.root_text
+        #                     ).get('color_files')[index_in_level])
 
 def show_image_popup(self: "PCDStreamer", image_path):
     """
@@ -175,13 +206,14 @@ def on_data_tree_changed(self: "PCDStreamer"):
         root_id = self.data_tree_view.add_item(parent_item=None, text=key, level=1)
         prompt_id = self.data_tree_view.add_item(parent_item=root_id, text="Prompt", level=2, root_text=key)
         self.data_tree_view.add_item(parent_item=prompt_id, text=value["prompt"], level=3, root_text=key)
-        bbox_id = self.data_tree_view.add_item(parent_item=root_id, text="Bbox", level=2, root_text=key)
-        bbox_text = f"[{','.join(f'{v:.2f}' for v in value['bboxes'])}]"
-        self.data_tree_view.add_item(parent_item=bbox_id, text=bbox_text, level=3, root_text=key)
-        pose_id = self.data_tree_view.add_item(parent_item=root_id, text="Pose", level=2, root_text=key)
+        record_len_id = self.data_tree_view.add_item(parent_item=root_id, text="record_len", level=2, root_text=key)
+        record_len_text = str(value['record_len'])
+        self.data_tree_view.add_item(parent_item=record_len_id, text=record_len_text, level=3, root_text=key)
+        pose_id = self.data_tree_view.add_item(parent_item=root_id, text="Joint Position", level=2, root_text=key)
         
-        for i, pose in enumerate(value["pose"]):
-            pose_text = f"{i + 1}: [{','.join(f'{v:.2f}' for v in pose)}]"
+        for i, pose in enumerate(value["joint_positions"]):
+
+            pose_text = f"{i + 1}: [{','.join(f'{v:.2f}' for v in np.rad2deg(pose))}]"
             self.data_tree_view.add_item(
                 parent_item=pose_id,
                 text=pose_text,

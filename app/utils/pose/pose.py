@@ -6,6 +6,7 @@ class Pose:
     def __init__(self, position, quaternion):
         self.p = np.array(position)  # Position: 3D vector.
         self.q = np.array(quaternion)  # Quaternion: [w, x, y, z].
+        
     @property
     def r(self):
         return R.from_quat(self.q, scalar_first=True)

@@ -36,8 +36,12 @@ class RobotTcpOpThread(QThread):
 
 class RobotJointOpThread(QThread):
     progress = pyqtSignal(int)  # Signal to communicate progress updates
+    action_finished = pyqtSignal(bool)  # Signal to communicate that the action has finished
     def __init__(self, robot: RobotInterface, joint_positions: List[np.ndarray], wait=True):
         self.robot = robot
+        self.robot.update_motion_parameters(
+            acceleration=10, velocity=10, time_running=0, radius=0
+        )
         self.joint_positions = joint_positions
         self._wait = wait
         super().__init__()
@@ -45,13 +49,18 @@ class RobotJointOpThread(QThread):
     def run(self):
         self.robot.set_teach_mode(False)
         for idx, joint_position in enumerate(self.joint_positions):
+            print(f"Progress: {idx}")
+            
             logger.info(f"Moving to pose {idx}")
             try:
                 self.robot.set_joint_position(joint_position, self._wait)
+                
             except Exception as e:
                 logger.error(f"Failed to move to pose {idx}: {e}")
                 logger.info(f"Skipping pose {idx}: {joint_position}")
             self.progress.emit(idx)
+        self.action_finished.emit(True)
+        self.finished.emit()
         self.robot.set_teach_mode(True)
 
 class DataSendToServerThread(QThread):
