@@ -1,23 +1,24 @@
 import sys
 import os
 import json
-import csv  # Import the CSV module
+import csv
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel,
     QPushButton, QHBoxLayout, QVBoxLayout, QSizePolicy,
-    QComboBox, QFileDialog  # Import QComboBox and QFileDialog
+    QComboBox, QFileDialog
 )
-from PySide6.QtGui import QPixmap, QKeySequence, QShortcut
-from PySide6.QtCore import Qt
+from PySide6.QtGui import QPixmap, QKeySequence, QShortcut, QPainter, QPen, QColor  # Import QPainter, QPen, QColor
+from PySide6.QtCore import Qt, QRect  # Import QRect
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Color Files Checker")
-
+        self.data_folder = '/home/capre/disk_4/yutao/data'
         # Define folders (assumes a structure: data folder with many subfolders and a "resources" folder)
-        self.data_folder = "/home/capre/disk_4/yutao/data"  # Replace with your actual path
+        # self.data_folder = "/media/capre/0DFB7F6AA945E013/collect_data"  # Replace with your actual path
         self.resources_folder = os.path.join(self.data_folder, "resources")
 
         # Global list of all items from all JSON files
@@ -206,21 +207,43 @@ class MainWindow(QMainWindow):
         self.update_images()
 
     def update_images(self):
-        """Scale and set the pixmaps based on the current size of the image labels."""
+        """Scale and set the pixmaps, then draw the squares."""
         if self.current_first_pixmap:
             scaled_first = self.current_first_pixmap.scaled(
                 self.image_label_first.size(),
                 Qt.KeepAspectRatio,
                 Qt.SmoothTransformation
             )
+            # Draw square on the first image
+            painter = QPainter(scaled_first)
+            pen = QPen(QColor("red"))  # Red square
+            pen.setWidth(3)  # 3-pixel wide border
+            painter.setPen(pen)
+            rect = QRect(0, 0, scaled_first.height(), scaled_first.height())
+            rect.moveCenter(scaled_first.rect().center())
+            painter.drawRect(rect)
+            painter.end()
             self.image_label_first.setPixmap(scaled_first)
+
         if self.current_last_pixmap:
             scaled_last = self.current_last_pixmap.scaled(
                 self.image_label_last.size(),
                 Qt.KeepAspectRatio,
                 Qt.SmoothTransformation
             )
+            # Draw square on the last image
+            painter = QPainter(scaled_last)
+            pen = QPen(QColor("red"))  # Red square
+            pen.setWidth(3)
+            painter.setPen(pen)
+            rect = QRect(0, 0, scaled_last.height(), scaled_last.height())
+            rect.moveCenter(scaled_last.rect().center())
+
+            painter.drawRect(rect)
+
+            painter.end()
             self.image_label_last.setPixmap(scaled_last)
+
 
     def resizeEvent(self, event):
         """Handle window resize to adjust images."""
@@ -367,6 +390,7 @@ class MainWindow(QMainWindow):
         if folder == "All":
             self.load_data()
         else:
+            self.load_data()
             self.items = [item for item in self.items if item["folder"] == folder]
         self.total_count = len(self.items)
 

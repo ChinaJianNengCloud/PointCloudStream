@@ -57,7 +57,7 @@ def on_progress_update(self: "PCDStreamer", thread:Thread, progress):
 
 def collect_data_at_fps(self: "PCDStreamer", fps):
     interval = 1 / fps
-    # index = 0  # Start collecting from the first position
+    idx = 0
     while self.robot.recording_flag:
         # Collect data at the specified frequency
         robot_pose = self.robot.capture_gripper_to_base(sep=False)
@@ -78,7 +78,10 @@ def collect_data_at_fps(self: "PCDStreamer", fps):
             t_base_to_cam=self.T_BaseToCam,
             record_stage=True
         )
+        idx += 1
         time.sleep(interval)
+        if idx > 300:
+            logger.error("Failed to collect data, idx is greater than 300, please check!")
 
 def on_data_collect_button_clicked(self: "PCDStreamer"):
     if self.robot is not None:

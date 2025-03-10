@@ -8,3 +8,4 @@ testoutput/
 wandb/
 runs/
 _tmp*/
+*.csv
