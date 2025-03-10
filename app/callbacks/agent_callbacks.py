@@ -24,6 +24,15 @@ def on_scan_button_clicked(self: 'PCDStreamer'):
         logger.error(f"Failed to discover server: {e}")
     logger.debug("Scan button clicked")
 
+def on_reset_button_clicked(self: 'PCDStreamer'):
+    msg_dict = {
+        'command': "reset"
+    }
+    self.sendingThread = DataSendToServerThread(ip=self.ip_editor.text(), 
+                                                    port=int(self.port_editor.text()), 
+                                                    msg_dict=msg_dict)
+    self.sendingThread.start()
+    
 
 def on_send_button_clicked(self: 'PCDStreamer'):
     

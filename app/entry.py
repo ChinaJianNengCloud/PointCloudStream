@@ -552,8 +552,8 @@ class PCDStreamer(PCDStreamerUI):
         # Create an actor
         actor = vtkActor()
         actor.SetMapper(mapper)
-        actor.GetProperty().SetColor(1, 0, 0)  # Red color for the path
-        actor.GetProperty().SetLineWidth(2)    # Make lines thicker for better visibility
+        actor.GetProperty().SetColor(1, 0, 0)
+        actor.GetProperty().SetLineWidth(2)
 
         # Add new actor to the renderer and track it
         self.renderer.AddActor(actor)

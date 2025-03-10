@@ -587,6 +587,11 @@ class PCDStreamerUI(QMainWindow):
 
         # Send button layout
         send_button_layout = QHBoxLayout()
+        self.reset_button = QPushButton("Reset")
+        self.reset_button.setMaximumWidth(int(em * 10))
+        self.reset_button.setMinimumHeight(int(em * 2.5))
+        send_button_layout.addWidget(self.reset_button)
+        
         self.send_button = QPushButton("Send")
         self.send_button.setMaximumWidth(int(em * 10))
         self.send_button.setMinimumHeight(int(em * 2.5))
