@@ -2,12 +2,12 @@
 
 ## Overview
 
-**PCDStreamerUI** is a desktop application built using PyQt5 and VTK that provides an interactive GUI for visualizing and managing 3D point cloud data (PCD). It integrates with robotic systems, camera calibration tools, and data collection workflows, enabling users to perform tasks such as real-time point cloud rendering, robot-hand-eye calibration, and interactive data management.
+**PCDStreamerUI** is a desktop application built using PySide6 and VTK that provides an interactive GUI for visualizing and managing 3D point cloud data (PCD). It integrates with robotic systems, camera calibration tools, and data collection workflows, enabling users to perform tasks such as real-time point cloud rendering, robot-hand-eye calibration, and interactive data management.
 
 ## Key Features
 
 - **VTK Integration:** Real-time rendering of 3D point clouds.
-- **Interactive GUI:** User-friendly PyQt5 interface with customizable tabs and widgets.
+- **Interactive GUI:** User-friendly PySide6 interface with customizable tabs and widgets.
 - **Robot Integration:** Control and monitor robotic systems.
 - **Camera Calibration:** Tools for board calibration with adjustable parameters.
 - **Data Collection:** Interface for collecting, managing, and saving point cloud and RGBD data.
@@ -47,7 +47,7 @@
 - Install other required Python packages:
     ```bash
     pip install numpy==1.26
-    pip install open3d plyfile ipykernel pyqt5 opencv-python-headless zeroconf tqdm matplotlib lebai-sdk
+    pip install open3d plyfile ipykernel PySide6 opencv-python-headless zeroconf tqdm matplotlib lebai-sdk
     pip install vtk
     ```
 
@@ -112,7 +112,7 @@
 The project relies on the following libraries:
 - **Open3D:** For point cloud processing and visualization.
 - **VTK:** An alternative or complement to Open3D for visualization tasks.
-- **PyQt5:** Provides the graphical user interface.
+- **PySide6:** Provides the graphical user interface.
 - **PyTorch:** Used for CUDA acceleration and machine learning-related tasks.
 - **Other Utilities:** Includes libraries such as NumPy, Matplotlib, and OpenCV for various support functions.
 

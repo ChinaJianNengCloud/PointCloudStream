@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QTreeWidget, QTreeWidgetItem
+from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem
 from typing import Callable, Dict, Optional, List
 
 class DataTreeWidget(QTreeWidget):

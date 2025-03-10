@@ -3,13 +3,13 @@ import numpy as np
 import time
 from functools import partial
 from typing import TYPE_CHECKING
-from PyQt5.QtWidgets import QLabel,QDialog, QVBoxLayout, QFileDialog
-from PyQt5.QtGui import QPixmap
-from PyQt5.QtCore import  Qt
+from PySide6.QtWidgets import QLabel, QDialog, QVBoxLayout, QFileDialog
+from PySide6.QtGui import QPixmap
+from PySide6.QtCore import Qt
 from threading import Thread
 if TYPE_CHECKING:
     from app.entry import PCDStreamer
-
+from app.viewers.image_viewer import ImageConfirmationDialog
 from app.threads.op_thread import RobotJointOpThread
 from app.utils.pose import interpolate_joint_positions_equal_distance
 from app.utils.logger import setup_logger
@@ -36,14 +36,51 @@ def on_data_replay_and_save_button_clicked(self: "PCDStreamer"):
 
         fps = 15  # desired frequency in FPS
         data_collection_thread = Thread(target=collect_data_at_fps, args=(self, fps,))
-        self.robot_joint_thread.progress.connect(
-            lambda progress: on_progress_update(self, data_collection_thread, progress))
+        self.robot_joint_thread.action_start.connect(
+            lambda: on_record_start(self, data_collection_thread))
         self.robot_joint_thread.action_finished.connect(
-            lambda finished: self.robot_joint_thread.quit())
+            lambda: on_record_finished(self, data_collection_thread))
+        # self.robot_joint_thread.progress.connect(
+        #     lambda progress: on_progress_update(self, data_collection_thread, progress))
+        
+        # self.robot_joint_thread.action_finished.connect(
+        #     lambda finished: self.robot_joint_thread.quit())
         self.robot_joint_thread.start()
     
     logger.debug("Data replay and save button clicked")
 
+def on_record_start(self:"PCDStreamer", thread: Thread):
+
+
+    notice = "Please confirm the Robot Arm is in the correct position before recording."
+    image_file = self.collected_data.resource_path + '/' + self.collected_data.saved_data_json.get(
+                            self.data_tree_view.selected_item.root_text
+                            ).get('color_files')[0]
+    dialog = ImageConfirmationDialog(image_file, notice)
+    result = dialog.exec()
+    if result == QDialog.Accepted:
+        self.robot.high_speed_mode()
+        self.robot.recording_flag = True
+        thread.start()
+    else:
+        self.robot.recording_flag = False
+        self.robot.low_speed_mode()
+        thread.join()
+
+def on_record_finished(self:"PCDStreamer", thread: Thread):
+    self.robot.recording_flag = False
+    self.robot.low_speed_mode()
+    thread.join()
+    notice = "Data collection finished. Please Check the robot arm if it's end at correct position."
+    image_file = self.collected_data.resource_path + '/' + self.collected_data.saved_data_json.get(
+                            self.data_tree_view.selected_item.root_text
+                            ).get('color_files')[-1]
+    dialog = ImageConfirmationDialog(image_file, notice)
+    result = dialog.exec()
+    if result == QDialog.DialogCode.Accepted:
+        logger.info("Data collection confirmed")
+    else:
+        logger.info("Data collection not confirmed")
 
 def on_progress_update(self: "PCDStreamer", thread:Thread, progress):
     if progress == 0:

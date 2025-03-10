@@ -1,6 +1,6 @@
 import sys
 from app.entry import PCDStreamer
-from PyQt5 import QtWidgets
+from PySide6 import QtWidgets
 import time
 import logging
 import os
@@ -35,7 +35,7 @@ def main():
             'calib_check': True,
             'collect_data_viewer': True
         },
-        'use_fake_camera': False,
+        'use_fake_camera': True,
         "service_type": "_agent._tcp.local.",
         "discovery_timeout": 2,
     }
@@ -44,7 +44,7 @@ def main():
     window = PCDStreamer(params=params)
 
     window.show()
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
 
 
 if __name__ == "__main__":
