@@ -4,7 +4,7 @@ import numpy as np
 from copy import deepcopy
 from typing import TYPE_CHECKING
 from app.utils.networking import send_message, discover_server
-
+from PIL import Image
 if TYPE_CHECKING:
     from app.entry import PCDStreamer
 
@@ -28,13 +28,22 @@ def on_scan_button_clicked(self: 'PCDStreamer'):
 def on_send_button_clicked(self: 'PCDStreamer'):
     
     text = self.agent_prompt_editor.toPlainText().strip()
-    if not hasattr(self, 'current_frame'):
-        logger.error("No current frame, please start streaming first.")
-        return
-    frame = deepcopy(self.current_frame)
-    image = np.asarray(frame['color'].cpu())
+    intruction ='''The robot should only interact with the breast closest to its arm. Directions are defined relative to the human body:
+                    Upper/Bottom: The top and bottom of the breast.
+                    Inner/Outer: Inner is closer to the body's center, outer is farther away.
+                    Current Instruction:'''
+    if not hasattr(self, 'robot'):
+        if not hasattr(self, 'current_frame'):
+            logger.error("No current frame, please start streaming first.")
+            return
+        frame = deepcopy(self.current_frame)
+        image = np.asarray(frame['color'].cpu())
+    else:
+        image = Image.open("/home/capre/disk_4/yutao/data/resources/00af133d3fe24ee1a6b16a8859b08c49_color_4.png")
+        image = np.asarray(image)
+
     msg_dict = {
-        'prompt': text,
+        'prompt': intruction + text,
         'image': image,
         'command': "process_pcd"
         }
@@ -50,52 +59,13 @@ def on_send_button_clicked(self: 'PCDStreamer'):
     if text:
         self.chat_history.add_message(text, is_user=True)
 
-    #     self.chat_history.add_message("This is a response.", is_user=False)
-    #     self.conversation_widget.add_message("User", text, is_user=True)
-    #     self.agent_prompt_editor.clear()
-    #     # Simulate a response
-    #     QTimer.singleShot(1000, lambda: self.conversation_widget.add_message("Agent", "This is a response.", is_user=False))
-
-    # try:
-    #     ret, robot_pose, _ = self.get_robot_pose()
-    #     if ret:
-            
-    #         frame = copy.deepcopy(self.current_frame)
-    #         colors = np.asarray(frame['pcd'].colors)
-    #         points = np.asarray(frame['pcd'].points)
-    #         labels = np.asarray(frame['seg_labels'])
-    #         pcd_with_labels = np.hstack((points, colors, labels.reshape(-1, 1)))
-    #         image = np.asarray(frame['color'].cpu())
-    #         # pose = frame['robot_pose']
-    #         past_actions = []
-    #         msg_dict = {'prompt': prompt, 
-    #                     'pcd': pcd_with_labels, 
-    #                     'image': image, 
-    #                     'pose': robot_pose, 
-    #                     'past_actions': past_actions, 
-    #                     'command': "process_pcd"}
-            
-    #         self.sendingThread = DataSendToServerThread(ip=self.ip_editor.text(), 
-    #                                                 port=int(self.port_editor.text()), 
-    #                                                 msg_dict=msg_dict)
-    #         self.conversation_data.append('User', prompt)
-    #         self.sendingThread.progress.connect(lambda progress: on_send_progress(progress))
-    #         self.sendingThread.finished.connect(lambda: on_finish_sending_thread(self))
-    #         self.send_button.setEnabled(False)
-    #         self.sendingThread.start()
-    #         logger.debug("Send button clicked")
-    #     else:
-    #         logger.error("Failed to get robot pose")
-    # except Exception as e:
-    #     logger.error(f"Failed to send data: {e}")
-
 
 def on_finish_sending_thread(self: "PCDStreamer"):
     self.send_button.setEnabled(True)
     
     response = self.sendingThread.get_response()
     if response['status'] == 'action':
-        self.chat_history.add_message(f"{response['message'].shape[0]} actions generated", is_user=False)
+        self.chat_history.add_message(f"{response['message']}", is_user=False)
         real_pose = self.view_predicted_poses(response['message'])
         thread = RobotTcpOpThread(self.robot, real_pose)
         thread.start()

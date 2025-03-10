@@ -532,7 +532,7 @@ class PCDStreamer(PCDStreamerUI):
             # dx, dy, dz, drx, dry, drz = pose[:6]  # Extract relative (x, y, z) changes
             # current_pose = previous_pose + np.array([dx, dy, dz, drx, dry, drz])
             delta_pose = Pose.from_1d_array(pose[:6], vector_type="euler", degrees=False)
-            current_pose = previous_pose.apply_delta_pose(delta_pose, on="base").to_1d_array(vector_type="euler", degrees=False)
+            current_pose = previous_pose.apply_delta_pose(delta_pose, on="align").to_1d_array(vector_type="euler", degrees=False)
             realpose.append(current_pose)
             points.InsertNextPoint(*current_pose[:3])
             
