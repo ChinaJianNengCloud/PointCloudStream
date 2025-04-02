@@ -10,20 +10,6 @@ from PySide6.QtWidgets import (QLabel, QListWidget,
                              QTextEdit, QScrollArea)
 
 
-from vtkmodules.vtkRenderingCore import (
-    vtkRenderer,
-    vtkActor,
-    vtkPolyDataMapper,
-    vtkFollower
-)
-from vtkmodules.vtkRenderingAnnotation import vtkAxesActor
-from vtkmodules.vtkCommonDataModel import vtkPolyData, vtkCellArray
-from vtkmodules.vtkCommonCore import vtkPoints, vtkUnsignedCharArray
-from vtkmodules.vtkRenderingFreeType import vtkVectorText
-from vtkmodules.vtkInteractionWidgets import vtkOrientationMarkerWidget 
-from vtkmodules.vtkInteractionStyle import vtkInteractorStyleTrackballCamera
-from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
-
 from app.utils import ARUCO_BOARD
 from app.viewers.image_viewer import ResizableImageLabel
 from .chat_ui_widget import ChatHistoryWidget
@@ -33,12 +19,35 @@ from app.utils.logger import setup_logger
 logger = setup_logger(__name__)
 
 
+class CameraViewer(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.initUI()
+
+    def initUI(self):
+        layout = QVBoxLayout(self)
+
+        cam_layout = QHBoxLayout(self)
+        main_cam = ResizableImageLabel()
+        main_cam.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        main_cam.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        cam_layout.addWidget(main_cam)
+        sub_cam = ResizableImageLabel()
+        sub_cam.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        sub_cam.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        cam_layout.addWidget(sub_cam)
+        self.main_cam = main_cam
+        self.sub_cam = sub_cam
+        
+        layout.addLayout(cam_layout)
+        self.setLayout(layout)
+
 class PCDStreamerUI(QMainWindow):
     """Controls display and user interface using VTK and PySide6."""
 
     def __init__(self):
         super().__init__()
-        self.vtk_widget: QVTKRenderWindowInteractor = None
+        # self.vtk_widget: QVTKRenderWindowInteractor = None
         self.setWindowTitle("VTK GUI Application")
         self.resize(1200, 640)
         self.display_mode = 'Colors'  # Initialize display mode to 'Colors'
@@ -49,61 +58,16 @@ class PCDStreamerUI(QMainWindow):
         # Create a splitter to divide the window
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
         self.setCentralWidget(self.splitter)
-        
-        # Left side: VTK render window
-        self.vtk_widget = QVTKRenderWindowInteractor(self)
-        self.splitter.addWidget(self.vtk_widget)
+        self.viewer = CameraViewer()
+        self.splitter.addWidget(self.viewer)
 
         # Right side: Panel
         self.panel = QWidget()
         self.panel_layout = QVBoxLayout(self.panel)
         self.splitter.addWidget(self.panel)
         self.splitter.setStretchFactor(0, 1)
-        # Set up VTK renderer
-        self.renderer = vtkRenderer()
-        self.vtk_widget.GetRenderWindow().AddRenderer(self.renderer)
-        self.renderer.SetBackground(0.5, 0.5, 0.5)  # White background
-
-        camera = self.renderer.GetActiveCamera()
-        camera.Roll(45)  # Rotate the camera by 45 degrees
-        # camera.eye_transform_matrix
-        # Create an interactor style
-        style = vtkInteractorStyleTrackballCamera()
-        self.vtk_widget.SetInteractorStyle(style)
-        self.init_pcd_polydata()
-        # Add axes at corner
-        self.axes = vtkAxesActor()
-        self.axes_widget = vtkOrientationMarkerWidget()
-        self.axes_widget.SetOrientationMarker(self.axes)
-        self.axes_widget.SetInteractor(self.vtk_widget)
-        self.axes_widget.SetEnabled(1)
-        self.axes_widget.InteractiveOn()
-
         self.init_widgets()
 
-        # Start the interactor
-        self.vtk_widget.Initialize()
-        # self.vtk_widget.Start()
-
-    def init_pcd_polydata(self):
-        vtk_points = vtkPoints()
-        vtk_colors = vtkUnsignedCharArray()
-        vtk_colors.SetNumberOfComponents(3)
-        vtk_colors.SetName("Colors")
-
-        self.polydata = vtkPolyData()
-        self.polydata.SetPoints(vtk_points)
-        self.polydata.GetPointData().SetScalars(vtk_colors)
-
-        vertices = vtkCellArray()
-        self.polydata.SetVerts(vertices)
-
-        mapper = vtkPolyDataMapper()
-        mapper.SetInputData(self.polydata)
-        actor = vtkActor()
-        actor.SetMapper(mapper)
-        actor.GetProperty().SetPointSize(2)
-        self.renderer.AddActor(actor)
 
     def init_widgets(self):
         # Initialize tab view
@@ -113,7 +77,6 @@ class PCDStreamerUI(QMainWindow):
         self.init_general_tab()
         self.init_view_tab()
         self.init_calibration_tab()
-        self.init_bbox_tab()
         self.init_data_tab()
         self.init_agent_tab()  # Add the new Robot tab
 
@@ -128,7 +91,6 @@ class PCDStreamerUI(QMainWindow):
         self.init_status_message(system_info_layout)
 
         # Set initial states
-        self.set_disable_before_stream_init()
 
     # Include all the init_* methods from your VTKWidgets class here
     # For example:
@@ -144,19 +106,7 @@ class PCDStreamerUI(QMainWindow):
         self.calibration_msg = QLabel("Calibration: None")
         layout.addWidget(self.calibration_msg)
 
-    def add_3d_label(self, position, text):
-        text_source = vtkVectorText()
-        text_source.SetText(text)
 
-        text_mapper = vtkPolyDataMapper()
-        text_mapper.SetInputConnection(text_source.GetOutputPort())
-
-        text_actor = vtkFollower()
-        text_actor.SetMapper(text_mapper)
-        text_actor.SetPosition(position)
-        text_actor.SetScale(0.1, 0.1, 0.1)
-        text_actor.SetCamera(self.renderer.GetActiveCamera())
-        self.renderer.AddActor(text_actor)
 
     def init_tab_view(self, layout:QVBoxLayout):
         self.tab_view = QTabWidget()
@@ -195,13 +145,6 @@ class PCDStreamerUI(QMainWindow):
         self.init_calibration_collect_layout(calibration_layout)
         self.init_calibrate_set(calibration_layout)
 
-    def init_bbox_tab(self):
-        self.bbox_tab = QWidget()
-        self.tab_view.addTab(self.bbox_tab, "Bbox")
-        bbox_layout = QVBoxLayout(self.bbox_tab)
-
-        self.init_bbox_controls(bbox_layout)
-
     def init_data_tab(self):
         self.data_tab = QWidget()
         self.tab_view.addTab(self.data_tab, "Data")
@@ -210,19 +153,29 @@ class PCDStreamerUI(QMainWindow):
         self.data_collect_layout(data_layout)
 
     def init_stream_set(self, layout:QVBoxLayout):
-        h_layout = QHBoxLayout()
-        layout.addLayout(h_layout)
+        v_layout = QVBoxLayout()
+        layout.addLayout(v_layout)
 
-        stream_label = QLabel("Stream Init: ")
-        h_layout.addWidget(stream_label)
+        main_cam_layout = QHBoxLayout()
+        v_layout.addLayout(main_cam_layout)
+        main_cam_label = QLabel("Main Camera: ")
+        main_cam_layout.addWidget(main_cam_label)
 
-        self.stream_combobox = QComboBox()
-        self.stream_combobox.addItem("Camera")
-        self.stream_combobox.addItem("Video")
-        h_layout.addWidget(self.stream_combobox)
+        self.main_camera_combobox = QComboBox()
+        main_cam_layout.addWidget(self.main_camera_combobox)
 
-        self.stream_init_button = QPushButton("Start")
-        h_layout.addWidget(self.stream_init_button)
+        self.main_init_button = QPushButton("Start")
+
+
+        sub_cam_layout = QHBoxLayout()
+        v_layout.addLayout(sub_cam_layout)
+        sub_cam_label = QLabel("Sub Camera: ")
+        sub_cam_layout.addWidget(sub_cam_label)
+
+        self.sub_camera_combobox = QComboBox()
+        sub_cam_layout.addWidget(self.sub_camera_combobox)
+        v_layout.addWidget(self.main_init_button)
+
 
     def init_record_save(self, layout:QVBoxLayout):
         h_layout = QHBoxLayout()

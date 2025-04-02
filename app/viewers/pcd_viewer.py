@@ -84,13 +84,14 @@ class FakeCamera:
         """Fake connect method, always returns True."""
         return True
 
+    def release(self):
+        pass
+
     def disconnect(self):
         """Fake disconnect method."""
         pass
 
-    def capture_frame(self, enable_align_depth_to_color=True):
-        """Generate synthetic depth and color images with dynamic depth regions."""
-        # Create a color image with a moving circle
+    def read(self, both: bool = False):
         color_image = np.zeros((self.height, self.width, 3), dtype=np.uint8)
         center_x = int((self.frame_idx * 5) % self.width)
         center_y = self.height // 2
@@ -120,11 +121,14 @@ class FakeCamera:
 
             # Zero out the region
             depth_image[start_y:start_y + height, start_x:start_x + width] = 0
-
         self.frame_idx += 1
+        if not both:
+            return True, color_image
+        return True, FakeRGBDFrame(depth_image, color_image)
 
-        # Return a fake RGBD frame
-        return FakeRGBDFrame(depth_image, color_image)
+    def capture_frame(self, enable_align_depth_to_color=True):
+        """Generate synthetic depth and color images with dynamic depth regions."""
+        return self.read(both=True)[1]
 
 
 class FakeRGBDFrame:
@@ -134,7 +138,59 @@ class FakeRGBDFrame:
         self.color = color_image
 
 
-class PCDStreamerFromCamera:
+class DualCamStreamer:
+    def __init__(self, params: dict=None):
+        self.params = params
+
+        self.main_cap: cv2.VideoCapture = None
+        self.sub_cap: cv2.VideoCapture = None
+    
+    def get_frame(self, **kwargs):
+        main_frame, sub_frame = None, None
+        if self.main_cap is not None:
+            ret, main_frame = self.main_cap.read()
+            main_frame = cv2.cvtColor(main_frame, cv2.COLOR_BGR2RGB)
+            if not ret:
+                main_frame = None
+        if self.sub_cap is not None:
+            ret, sub_frame = self.sub_cap.read()
+            sub_frame = cv2.cvtColor(sub_frame, cv2.COLOR_BGR2RGB)
+            if not ret:
+                sub_frame = None
+        return {
+            'main': main_frame,
+            'sub': sub_frame
+        }
+
+    def disconnect(self):
+        if self.main_cap is not None:
+            self.main_cap.release()
+        if self.sub_cap is not None:
+            self.sub_cap.release()
+
+    def init_by_cam_id(self, idx: int):
+        if idx == -1:
+            cap = FakeCamera()
+            return True, cap
+        cap = cv2.VideoCapture(idx)
+        logger.info(f"Camera RES: {cap.get(cv2.CAP_PROP_FRAME_WIDTH)}x{cap.get(cv2.CAP_PROP_FRAME_HEIGHT)}")
+        if not cap.isOpened():
+            return False, None
+        return True, cap
+
+    def camera_mode_init(self):
+        main_cam_id = self.params.get('main_camera_id', -1)
+        sub_cam_id = self.params.get('sub_camera_id', -1)
+        if main_cam_id != -1 and sub_cam_id != -1 and main_cam_id == sub_cam_id:
+            main_cap = self.init_by_cam_id(main_cam_id)
+            sub_cap = main_cap
+        main_cap, sub_cap = self.init_by_cam_id(main_cam_id), self.init_by_cam_id(sub_cam_id)
+        if not main_cap[0] or not sub_cap[0]:
+            return False
+        self.main_cap, self.sub_cap = main_cap[1], sub_cap[1]
+        return True
+
+class Streamer:
     """Fake RGBD streamer that generates synthetic RGBD frames."""
     def __init__(self, align_depth_to_color: bool = True, params: dict=None):
         self.align_depth_to_color = align_depth_to_color

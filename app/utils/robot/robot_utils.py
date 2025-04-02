@@ -17,11 +17,108 @@ try:
 except ImportError:
     import logging
     logger = logging.getLogger(__name__)
+
+class SimLebai:
+    """Simulation class that mimics the lebai_sdk interface for testing without hardware."""
+    
+    def __init__(self):
+        self._joint_position = np.zeros(6)
+        self._tcp_pose = {
+            'x': 0.0, 'y': 0.0, 'z': 0.5, 
+            'rx': 0.0, 'ry': 0.0, 'rz': 0.0
+        }
+        self._robot_state = "IDLE"
+        self._teach_mode = False
+        self._joint_limits_enabled = True
+        logger.info("Simulation lebai SDK initialized")
+    
+    def start_sys(self):
+        """Start the robot system."""
+        logger.info("Simulation: Robot system started")
+        return True
+    
+    def stop_sys(self):
+        """Stop the robot system."""
+        logger.info("Simulation: Robot system stopped")
+        return True
+    
+    def get_robot_state(self):
+        """Get the current robot state."""
+        return self._robot_state
+    
+    def get_kin_data(self):
+        """Get kinematic data including TCP and joint positions."""
+        # Generate random TCP pose for simulation
+        self._tcp_pose = {
+            'x': np.random.uniform(-0.5, 0.5),
+            'y': np.random.uniform(-0.5, 0.5),
+            'z': np.random.uniform(0.1, 0.8),
+            'rx': np.random.uniform(-3.14, 3.14),
+            'ry': np.random.uniform(-3.14, 3.14),
+            'rz': np.random.uniform(-3.14, 3.14)
+        }
+        
+        # Generate random joint positions
+        self._joint_position = np.random.uniform(-3.14, 3.14, 6).tolist()
+        
+        return {
+            'actual_tcp_pose': self._tcp_pose,
+            'actual_joint_pose': self._joint_position
+        }
+    
+    def movej(self, joint_position, acceleration, velocity, time_running, radius):
+        """Move robot to joint position."""
+        self._robot_state = "MOVING"
+        self._joint_position = joint_position
+        logger.info(f"Simulation: Moving to joint position {joint_position}")
+        return True
+    
+    def wait_move(self):
+        """Wait for movement to complete."""
+        time.sleep(np.random.uniform(0.5, 1.5))
+        self._robot_state = "IDLE"
+        logger.info("Simulation: Movement completed")
+        return True
+    
+    def kinematics_inverse(self, tcp_pose):
+        """Inverse kinematics to convert TCP pose to joint position."""
+        # Generate plausible joint positions for the given TCP pose
+        joint_position = np.random.uniform(-3.14, 3.14, 6).tolist()
+        logger.info(f"Simulation: Inverse kinematics calculated for {tcp_pose}")
+        return joint_position
+    
+    def teach_mode(self):
+        """Enter teach mode."""
+        self._teach_mode = True
+        self._robot_state = "TEACHING"
+        logger.info("Simulation: Entered teach mode")
+        return True
+    
+    def end_teach_mode(self):
+        """Exit teach mode."""
+        self._teach_mode = False
+        self._robot_state = "IDLE"
+        logger.info("Simulation: Exited teach mode")
+        return True
+    
+    def enable_joint_limits(self):
+        """Enable joint limits."""
+        self._joint_limits_enabled = True
+        logger.info("Simulation: Joint limits enabled")
+        return True
+    
+    def disable_joint_limits(self):
+        """Disable joint limits."""
+        self._joint_limits_enabled = False
+        logger.info("Simulation: Joint limits disabled")
+        return True
+
 class RobotInterface:
-    def __init__(self, ip_address=None, port=None):
+    def __init__(self, ip_address=None, port=None, sim: bool = False):
         # Initialize SDK and network parameters
         self.ip_address = ip_address
         self.port = port
+        self.sim = sim
         self.lebai = None
         # Initialize motion parameters
         self.acceleration = 2
@@ -33,6 +130,12 @@ class RobotInterface:
 
     def find_device(self):
         """Find the device and connect to it."""
+        if self.sim:
+            self.ip_address = "127.0.0.1"  # Dummy IP for simulation
+            logger.info(f"Simulation mode: Using dummy IP {self.ip_address}")
+            self.lebai = SimLebai()
+            return
+            
         lebai_sdk.init()
         if not self.ip_address:
             self.ip_address = lebai_sdk.discover_devices(1)[0]['ip']
@@ -45,11 +148,14 @@ class RobotInterface:
         # IDEL, TEACHING, MOVING
         return self.lebai.get_robot_state() == 'MOVING'
 
-
     def connect(self):
         """Establish network connection to the robotic arm."""
         try:
-            self.lebai = lebai_sdk.connect(self.ip_address, False)
+            if self.sim:
+                self.lebai = SimLebai()
+            else:
+                self.lebai = lebai_sdk.connect(self.ip_address, False)
+            
             self.lebai.start_sys()
             logging.info(f"Connected to robotic arm at: {self.ip_address}")
         except Exception as e:
@@ -174,8 +280,8 @@ class RobotInterface:
             joint_position = self.lebai.kinematics_inverse(self.pose_array_to_dict(pose_array))
             logger.info(f"Moving to joint position: {joint_position}")
             self.set_joint_position(joint_position)
-        except:
-            logger.error("Kinematics inverse failed")
+        except Exception as e:
+            logger.error(f"Kinematics inverse failed: {e}")
     
     def set_joint_limits(self, limit):
         if not limit:
@@ -198,10 +304,8 @@ class RobotInterface:
             except Exception as e:
                 logging.info(f"Failed to end teach mode: {e}")
 
-    
-
 if __name__ == "__main__":
-    arm = RobotInterface()
+    arm = RobotInterface(sim=True)
     import time
     arm.find_device()
     arm.connect()
@@ -211,7 +315,7 @@ if __name__ == "__main__":
     print(arm.lebai.get_kin_data())
     print(arm.get_joint_position())
     print(np.rad2deg(arm.get_joint_position()))
-    print(arm.get_state())
+
     # arm.set_teach_mode(True)
     # test_machine_joint_pose = np.deg2rad(test_joint_pose).tolist()
     # print("test_forward_pose", arm.lebai.kinematics_forward(test_machine_joint_pose))

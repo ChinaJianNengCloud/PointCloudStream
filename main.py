@@ -18,6 +18,8 @@ def main():
         'board_marker_size': 19,
         'input_method': 'auto_calibrated_mode',
         'folder_path': '_tmp',
+        'main_camera_id': -1,
+        'sub_camera_id': -1,
         'pose_file_path': './poses.txt',
         'load_intrinsic': True,
         'calib_path': './Calibration_results/calibration_results.json',
