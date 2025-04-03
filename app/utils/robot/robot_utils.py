@@ -1,16 +1,8 @@
 import lebai_sdk
 import numpy as np
-import cv2
 from scipy.spatial.transform import Rotation as R
 import logging
-import threading
 import time
-import json
-import shutil
-from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor
-import os
-import open3d as o3d
 try:
     from app.utils.logger import setup_logger
     logger = setup_logger(__name__)
@@ -178,17 +170,12 @@ class RobotInterface:
     def low_speed_mode(self):
         self.update_motion_parameters(2, 2, 0, 0)
 
-    def get_tcp_pose(self):
-        """Retrieve the current position of the robot's end-effector."""
-        position = self.lebai.get_kin_data()
-        return position['actual_tcp_pose']
-    
     def get_joint_position(self):
         """Retrieve the current position of the robot's end-effector."""
         position = self.lebai.get_kin_data()
         return position['actual_joint_pose']
     
-    def set_joint_position(self, joint_posistion, wait=True):
+    def _set_joint_position(self, joint_posistion, wait=True):
         """Send movement command to the robotic arm."""
         try:
             self.lebai.movej(joint_posistion, self.acceleration, self.velocity, self.time_running, self.radius)
@@ -198,51 +185,30 @@ class RobotInterface:
         except Exception as e:
             logging.info(f"Failed to send command: {e}")
 
-    def capture_gripper_to_base(self, sep=True):
-        """
-        Capture the transformation from the gripper to the base using forward kinematics.
+    def get_state(self, state_type='joint') -> np.ndarray:
+        match state_type:
+            case 'joint':
+                return self.lebai.get_kin_data()['actual_joint_pose']
+            case 'tcp':
+                return self.euler_dict_to_array(self.lebai.get_kin_data()['actual_tcp_pose'])
+            case _:
+                logging.info(f"Invalid state type: {state_type}") 
+                return None
 
-        Args:
-            sep (bool): If True, separate the rotation and translation components.
+    def step(self, action: np.ndarray, action_type: str, wait=True) -> np.ndarray:
+        if action_type == "joint":
+            assert action.shape == (6,), f"Invalid action shape: {action.shape}"
+            self._set_joint_position(action, wait=wait)
+            return self.get_state('joint')
+        elif action_type == "tcp":
+            assert action.shape == (6,), f"Invalid action shape: {action.shape}"
+            self._set_tcp_position(action, wait=wait)
+            return self.get_state('tcp')
 
-        Returns:
-            tuple or np.ndarray: If sep is True, returns a tuple containing the rotation (R_g2b) and translation (t_g2b) components.
-                                 If sep is False, returns the complete pose as a numpy array.
-        """
-        cpose = self.pose_dict_to_array(self.lebai.get_kin_data()['actual_tcp_pose'])
-        if sep:
-            R_g2b = cpose[3:6]
-            t_g2b = cpose[0:3]
-            return R_g2b, t_g2b
-        else:    
-            return cpose
-        
-    def get_cam_space_gripper_pose(self, T_cam_to_base=None):
-        pose = self.capture_gripper_to_base(sep=False)
-        t_xyz, r_xyz = pose[0:3], pose[3:6]
-        if T_cam_to_base is None:
-            logger.warning("Camera to base matrix did not detected, use robot pose instead!")
-            return pose
-        # rotation_matrix, _ = cv2.Rodrigues(rvecs)
-        rotation_matrix = R.from_euler('xyz', r_xyz.reshape(1, 3), degrees=False).as_matrix().reshape(3, 3)
-        T_end_to_base = np.eye(4)
-        T_end_to_base[:3, :3] = rotation_matrix
-        T_end_to_base[:3, 3] = t_xyz.ravel()
-        T_base_to_cam =  np.linalg.inv(T_cam_to_base)
-        T_cam_to_end = T_base_to_cam @ T_end_to_base
-        # R.from_rotvec
-        new_r = R.from_matrix(T_cam_to_end[:3, :3]).as_euler('xyz', degrees=False)
-        new_t = T_cam_to_end[:3, 3]
-        xyzrxrzry = np.hstack((new_r, new_t.reshape(-1)))
-        # Add the robot frame to the frame elements for visualization
-        return xyzrxrzry
-
-    def pose_dict_to_array(self, pose_quaternion_dict):
-        # logger.debug("original pose: ", pose_quaternion_dict)
-        # logger.debug("array pose: ", trs)
+    def euler_dict_to_array(self, pose_quaternion_dict):
         return np.array([pose_quaternion_dict[key] for key in ['x', 'y', 'z', 'rx', 'ry', 'rz']])
     
-    def pose_array_to_dict(self, pose_array: np.ndarray):
+    def pose_array_to_euler_dict(self, pose_array: np.ndarray):
         pose_array = pose_array.tolist()
         pose_array = [float(x) for x in pose_array]
         keys = ['x', 'y', 'z', 'rx', 'ry', 'rz']
@@ -268,18 +234,19 @@ class RobotInterface:
 
         for cartesian_poses_array in cartesian_poses_array_list:
             self.motion_flag = False
-            self.set_tcp_pose(cartesian_poses_array)
+            self.step(cartesian_poses_array, action_type='tcp', wait=True)
             
             print("current pose", self.pose_unit_change_to_store(
-                self.pose_dict_to_array(self.lebai.get_kin_data()['actual_tcp_pose'])))
+                self.euler_dict_to_array(self.lebai.get_kin_data()['actual_tcp_pose'])))
             self.motion_flag = True
             # time.sleep(0.5)
 
-    def set_tcp_pose(self, pose_array: np.ndarray, wait=True):
+    def _set_tcp_position(self, pose_array: np.ndarray, wait=True):
         try:
-            joint_position = self.lebai.kinematics_inverse(self.pose_array_to_dict(pose_array))
+            joint_position = self.lebai.kinematics_inverse(
+                self.pose_array_to_euler_dict(pose_array))
             logger.info(f"Moving to joint position: {joint_position}")
-            self.set_joint_position(joint_position)
+            self._set_joint_position(joint_position, wait=wait)
         except Exception as e:
             logger.error(f"Kinematics inverse failed: {e}")
     
@@ -308,10 +275,13 @@ if __name__ == "__main__":
     arm = RobotInterface(sim=True)
     import time
     arm.find_device()
+    print(arm.ip_address)
     arm.connect()
-    path = "pose.txt"
-    test_pose = np.array([-644, 30, 81, -36, -12, 137], dtype=np.float32)
+    # path = "pose.txt"
+    # test_pose = np.array([-644, 30, 81, -36, -12, 137], dtype=np.float32)
     test_joint_pose = np.array([-19, -4, 27, -118, -46, 114], dtype=np.float32)
+    test_pose = np.hstack([[-0.057, -0.165, 0.558], np.deg2rad([-51, -35, -53])])
+    # arm.lebai.movel([0 , 0, 0, 0, 0, 0 ], 1, 1, 0, 0)
     print(arm.lebai.get_kin_data())
     print(arm.get_joint_position())
     print(np.rad2deg(arm.get_joint_position()))

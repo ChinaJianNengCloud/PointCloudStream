@@ -18,8 +18,14 @@ from .data_ui_widget import DataTreeWidget
 from app.utils.logger import setup_logger
 logger = setup_logger(__name__)
 
+class PlotController(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.initUI()
+    def initUI(self):
+        pass
 
-class CameraViewer(QWidget):
+class SceneViewer(QWidget):
     def __init__(self):
         super().__init__()
         self.initUI()
@@ -27,7 +33,7 @@ class CameraViewer(QWidget):
     def initUI(self):
         layout = QVBoxLayout(self)
 
-        cam_layout = QHBoxLayout(self)
+        cam_layout = QHBoxLayout()
         main_cam = ResizableImageLabel()
         main_cam.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         main_cam.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -38,9 +44,11 @@ class CameraViewer(QWidget):
         cam_layout.addWidget(sub_cam)
         self.main_cam = main_cam
         self.sub_cam = sub_cam
-        
+
         layout.addLayout(cam_layout)
         self.setLayout(layout)
+
+
 
 class PCDStreamerUI(QMainWindow):
     """Controls display and user interface using VTK and PySide6."""
@@ -58,7 +66,7 @@ class PCDStreamerUI(QMainWindow):
         # Create a splitter to divide the window
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
         self.setCentralWidget(self.splitter)
-        self.viewer = CameraViewer()
+        self.viewer = SceneViewer()
         self.splitter.addWidget(self.viewer)
 
         # Right side: Panel
@@ -118,7 +126,7 @@ class PCDStreamerUI(QMainWindow):
         general_layout = QVBoxLayout(self.general_tab)
 
         self.init_stream_set(general_layout)
-        self.init_video_displays(general_layout)
+        # self.init_video_displays(general_layout)
         self.init_scene_info(general_layout)
 
     def init_view_tab(self):
@@ -175,6 +183,9 @@ class PCDStreamerUI(QMainWindow):
         self.sub_camera_combobox = QComboBox()
         sub_cam_layout.addWidget(self.sub_camera_combobox)
         v_layout.addWidget(self.main_init_button)
+        
+        self.robot_init_button = QPushButton("Robot Init")
+        v_layout.addWidget(self.robot_init_button)
 
 
     def init_record_save(self, layout:QVBoxLayout):
@@ -318,9 +329,6 @@ class PCDStreamerUI(QMainWindow):
     def init_calibrate_layout(self, layout:QVBoxLayout):
         h_layout = QHBoxLayout()
         layout.addLayout(h_layout)
-
-        self.robot_init_button = QPushButton("Robot Init")
-        h_layout.addWidget(self.robot_init_button)
 
         self.cam_calib_init_button = QPushButton("Cam Calib Init")
         h_layout.addWidget(self.cam_calib_init_button)

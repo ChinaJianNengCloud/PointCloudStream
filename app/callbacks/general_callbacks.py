@@ -21,7 +21,7 @@ def on_stream_init_button_clicked(self: "PCDStreamer"):
         connected = self.streamer.camera_mode_init()
         if connected:
             self.status_message.setText("System: Streaming from Camera")
-            self.timer = QTimer()
+            self.timer = QTimer(self)
             self.timer.timeout.connect(self.frame_calling)
             self.timer.start()  # Update at ~33 FPS
         else:

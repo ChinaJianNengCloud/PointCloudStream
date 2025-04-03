@@ -1,9 +1,8 @@
-import sys
-from PySide6.QtWidgets import (QApplication, QDialog, QVBoxLayout, QLabel,
-                               QPushButton, QHBoxLayout, QMessageBox, QSizePolicy)
+from PySide6.QtWidgets import (QDialog, QVBoxLayout, QLabel,
+                               QPushButton, QHBoxLayout, QSizePolicy)
 from PySide6.QtGui import QPixmap
 from PySide6.QtCore import Qt
-
+import time
 
 class ResizableImageLabel(QLabel):
     """Custom QLabel that automatically resizes the image to fit the widget while maintaining aspect ratio."""
@@ -40,12 +39,10 @@ class ImageConfirmationDialog(QDialog):
 
         self.image_path = image_path
         self.notice_text = notice_text
-        self.original_pixmap = QPixmap(self.image_path) # Store original for aspect ratio
+        self.original_pixmap = None
+        if image_path is not None:
+            self.original_pixmap = QPixmap(self.image_path) # Store original for aspect ratio
 
-        if self.original_pixmap.isNull():
-            QMessageBox.critical(self, "Error", f"Could not load image: {self.image_path}")
-            self.reject()
-            return
 
         self.init_ui()
 
@@ -57,7 +54,8 @@ class ImageConfirmationDialog(QDialog):
         self.image_label = QLabel()
         self.image_label.setAlignment(Qt.AlignCenter)
         self.image_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.update_pixmap()  # Initial pixmap setup
+        if self.original_pixmap is not None:
+            self.update_pixmap()  # Initial pixmap setup
         main_layout.addWidget(self.image_label)
 
         # Notice Text Label
@@ -85,7 +83,8 @@ class ImageConfirmationDialog(QDialog):
 
     def resizeEvent(self, event):
         # Override the resize event to update the pixmap when the dialog is resized
-        self.update_pixmap()
+        if self.original_pixmap is not None:
+            self.update_pixmap()
         super().resizeEvent(event)
 
     def update_pixmap(self):

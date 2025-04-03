@@ -22,20 +22,20 @@ class RobotTcpOpThread(QThread):
 
     def run(self):
         self.robot.set_teach_mode(False)
-        for idx, each_pose in enumerate(self.robot_poses):
+        for idx, action in enumerate(self.robot_poses):
             logger.info(f"Moving to pose {idx}")
             try:
-                self.robot.set_tcp_pose(each_pose)
+                self.robot.step(action, action_type='tcp', wait=True)
             except Exception as e:
                 logger.error(f"Failed to move to pose {idx}: {e}")
-                logger.info(f"Skipping pose {idx}: {each_pose}")
+                logger.info(f"Skipping pose {idx}: {action}")
             self.progress.emit(idx)
         self.robot.set_teach_mode(True)
 
 class RobotJointOpThread(QThread):
     progress = Signal(int)  # Signal to communicate progress updates
     action_start = Signal()  # Signal to start recording
-    action_finished = Signal(bool)  # Signal to communicate that the action has finished
+    action_finished = Signal()  # Signal to communicate that the action has finished
     def __init__(self, robot: RobotInterface, joint_positions: List[np.ndarray], wait=True):
         self.robot = robot
         self.robot.update_motion_parameters(
@@ -47,11 +47,14 @@ class RobotJointOpThread(QThread):
 
     def run(self):
         self.robot.set_teach_mode(False)
+        self.start_to_move = False
         for idx, joint_position in enumerate(self.joint_positions):
+
+            
             print(f"Progress: {idx}")
             logger.info(f"Moving to pose {idx}")
             try:
-                self.robot.set_joint_position(joint_position, self._wait)
+                self.robot._set_joint_position(joint_position, self._wait)
                 
             except Exception as e:
                 logger.error(f"Failed to move to pose {idx}: {e}")
@@ -59,8 +62,11 @@ class RobotJointOpThread(QThread):
 
             if idx == 0:
                 self.action_start.emit()
+                while not self.robot.recording_flag:
+                    time.sleep(0.1)
+
             self.progress.emit(idx)
-        self.finished.emit()
+        self.action_finished.emit()
         self.robot.set_teach_mode(True)
 
 class DataSendToServerThread(QThread):

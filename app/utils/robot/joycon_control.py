@@ -24,7 +24,7 @@ class RobotController:
         self.calibrate()
 
     def calibrate(self):
-        target_pose = self.robot.pose_dict_to_array(self.robot.get_tcp_pose())
+        target_pose = self.robot.euler_dict_to_array(self.robot.get_tcp_position())
         controller_pose,_,_ = self.joyconrobotics_right.get_control()
         self.calib_manager = CalibrationManager(controller_pose, target_pose)
         self.calib_manager.calculate_calibration()

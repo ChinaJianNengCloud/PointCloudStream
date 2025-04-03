@@ -65,8 +65,7 @@ class CalibrationProcess:
                     idx = current_num_images - 1
                     logger.info(f"Captured image {current_num_images} of {self.image_amount}")
                     # Capture robot pose
-                    rvecs, t_g2b = self.robot.capture_gripper_to_base()
-                    robot_pose = np.hstack((t_g2b.flatten(), rvecs.flatten()))
+                    robot_pose = self.robot.get_state('tcp')
                     # Get the last image from calibration_data
                     img = self.camera.capture_frame()
                     # Update the robot pose for the last image
@@ -89,7 +88,7 @@ class CalibrationProcess:
 
             for idx, cartesian_pose in enumerate(cartesian_poses_list):
                 # Move robot to pose
-                cartesian_pose_dict = self.robot.pose_array_to_dict(cartesian_pose)
+                cartesian_pose_dict = self.robot.pose_array_to_euler_dict(cartesian_pose)
                 joint_pose = self.robot.lebai.kinematics_inverse(cartesian_pose_dict)
                 self.robot.lebai.movej(joint_pose, self.robot.acceleration, self.robot.velocity, self.robot.time_running, self.robot.radius)
                 self.robot.lebai.wait_move()
@@ -99,10 +98,7 @@ class CalibrationProcess:
                 if img is None:
                     logger.warning(f"Failed to capture image at position {idx}")
                     continue
-                # Capture robot pose
-                rvecs, t_g2b = self.robot.capture_gripper_to_base()
-                robot_pose = np.hstack((t_g2b.flatten(), rvecs.flatten()))
-                # Append to calibration data
+                robot_pose = self.robot.get_state('tcp')
                 self.calibration_data.append(img, robot_pose)
 
             logger.info("Image capture completed.")

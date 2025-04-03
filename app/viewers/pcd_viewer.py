@@ -76,8 +76,8 @@ class PCDUpdater:
 class FakeCamera:
     """Fake camera that generates synthetic RGBD frames for debugging."""
     def __init__(self):
-        self.width = 1280
-        self.height = 720
+        self.width = 640
+        self.height = 480
         self.frame_idx = 0
 
     def connect(self, index):

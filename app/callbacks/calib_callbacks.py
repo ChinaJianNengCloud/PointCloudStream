@@ -102,25 +102,25 @@ def on_cam_calib_init_button_clicked(self: "PCDStreamer"):
     
 def on_calib_collect_button_clicked(self: "PCDStreamer"):
     if hasattr(self, 'calibration_data'):
-        robot_pose = self.robot.capture_gripper_to_base(sep=False)
+        robot_pose = self.robot.get_state('tcp')
         color = self._img_to_array(self.current_frame['color'])
         self.calibration_data.append(color, robot_pose=robot_pose)
     logger.debug("Calibration collect button clicked")
 
-def on_calib_list_remove_button_clicked(self: "PCDStreamer"):
+def on_calib_list_remove_button_clicked(self: "PCDStreamer"): 
     self.calibration_data.pop(self.calib_data_list.currentIndex().row())
     logger.debug(f"Calibration list remove button clicked")
 
 def on_robot_move_button_clicked(self: "PCDStreamer"):
     idx = self.calib_data_list.currentIndex().row()
     try:
-        self.robot.set_tcp_pose(
-            self.calibration_data.robot_poses[idx])
+        self.robot.step(
+            self.calibration_data.robot_poses[idx], action_type='tcp', wait=True)
         
         if hasattr(self, 'timer'):
             self.timer.stop()
         self.calibration_data.modify(idx, self._img_to_array(self.current_frame['color']),
-                                    self.robot.capture_gripper_to_base(sep=False),
+                                    self.robot.get_state('tcp'),
                                     copy.deepcopy(self.bbox_params))
         if hasattr(self, 'timer'):
             self.timer.start()
@@ -139,7 +139,7 @@ def on_calib_button_clicked(self: "PCDStreamer"):
         logger.debug("Detect board state changed to:")
 
 def on_robot_init_button_clicked(self: "PCDStreamer"):
-    self.robot =  RobotInterface()
+    self.robot =  RobotInterface(sim=True)
     try:
         self.robot.find_device()
         self.robot.connect()
@@ -211,7 +211,7 @@ def on_calib_save_button_clicked(self: "PCDStreamer"):
 
 
 def update_progress(self: "PCDStreamer", value):
-    pose = self.robot.capture_gripper_to_base(sep=False)
+    pose = self.robot.get_state('tcp')
     img = self._img_to_array(self.current_frame['color'])
     self.calibration_data.modify(value, img, pose)
     logger.debug(f"Robot Move Progress: {value} and update calibration data")

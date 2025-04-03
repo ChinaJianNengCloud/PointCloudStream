@@ -51,13 +51,10 @@ class CollectedData(QObject):
 
     @property
     def shown_data_json(self):
-        ext_key_for_show = ('color_files', 
-                            'depth_files', 
-                            'point_cloud_files', 
-                            # 'joint_positions',
+        ext_key_for_show = ('main_cam_files', 
+                            'sub_cam_files', 
                             'joint_position_records',
                             'pose_record',
-                            # 'bboxes'
                             )
         
         # Creating a dictionary with updated records and adding 'record_len'
@@ -71,21 +68,19 @@ class CollectedData(QObject):
     def saved_data_json(self):
         data = {}
         for id, episode in zip(self.dataids, self.episode_list):
-            entry = {k: v for k, v in episode.items() if k not in ('color_files', 'depth_files', 'point_cloud_files')}
+            entry = {k: v for k, v in episode.items() if k not in ('main_cam_files', 'sub_cam_files')}
             poses = episode['pose']
             entry['poses'] = [{"pose0": poses[i], "pose1": poses[i + 1] if i + 1 < len(poses) else None} for i in
                               range(len(poses))]
-            entry['color_files'] = episode['color_files']
-            entry['depth_files'] = episode['depth_files']
-            entry['point_cloud_files'] = episode['point_cloud_files']
+            entry['main_cam_files'] = episode['main_cam_files']
+            entry['sub_cam_files'] = episode['sub_cam_files']
             data[id] = entry
         return data
 
     def pop(self, idx):
         data_entry = self.episode_list.pop(idx)
         id = self.dataids.pop(idx)
-        for file_list in [data_entry.get('color_files', []), data_entry.get('depth_files', []),
-                          data_entry.get('point_cloud_files', [])]:
+        for file_list in [data_entry.get('main_cam_files', []), data_entry.get('sub_cam_files', [])]:
             for file_name in file_list:
                 file_path = os.path.join(self.resource_path, file_name)
                 if os.path.exists(file_path):
@@ -107,38 +102,25 @@ class CollectedData(QObject):
     def reset_record(self, prompt_idx):
         self.episode_list[prompt_idx]['joint_position_records'] = []
         self.episode_list[prompt_idx]['pose_record'] = []
-        self.episode_list[prompt_idx]['color_files'] = []
-        self.episode_list[prompt_idx]['depth_files'] = []
-        self.episode_list[prompt_idx]['point_cloud_files'] = []
-
-        # data_entry:Dict = self.episode_list[prompt_idx]
-        # for file_list in [data_entry.get('color_files', []), data_entry.get('depth_files', []),
-        #                   data_entry.get('point_cloud_files', [])]:
-        #     for file_name in file_list:
-        #         file_path = os.path.join(self.resource_path, file_name)
-        #         if os.path.exists(file_path):
-        #             os.remove(file_path)
+        self.episode_list[prompt_idx]['main_cam_files'] = []
+        self.episode_list[prompt_idx]['sub_cam_files'] = []
 
         self.data_changed.emit()
 
-    def add_record(self, prompt, base_poses, t_base_to_cam, joint_position, 
-                   bbox_dict: Dict[AnyStr, float] = None, color: np.ndarray = None,
-                   depth: np.ndarray = None, 
-                   point_cloud: np.ndarray = None, record_stage=False):
+    def add_record(self, prompt, base_poses, 
+                   joint_position, 
+                   main: np.ndarray = None,
+                   sub: np.ndarray = None, 
+                   record_stage=False):
         id = uuid.uuid4().hex
         if isinstance(base_poses, np.ndarray):
             base_poses = base_poses.tolist()
         if isinstance(joint_position, np.ndarray):
             joint_position = joint_position.tolist()
-        if isinstance(t_base_to_cam, np.ndarray):
-            t_base_to_cam = t_base_to_cam.tolist()
 
         degree_joints = np.rad2deg(joint_position)
         if np.max(degree_joints) > 360 or np.min(degree_joints) < -360:
-            # Find the indices of the out-of-range positions
             out_of_range_indices = np.where((degree_joints > 360) | (degree_joints < -360))[0]
-            
-            # Log a warning with the out-of-range indices
             logger.warning(f"Joint position is out of range at indices: {out_of_range_indices}")
             return False
         
@@ -147,13 +129,11 @@ class CollectedData(QObject):
             current_episode: Dict[str, Union[List, str]] = {"prompt": prompt,
                           'pose': [base_poses],
                           "pose_record": [],
-                        #   'bboxes': self.box_from_dict(bbox_dict),
-                          't_base_to_cam': t_base_to_cam,
                           'joint_positions': [joint_position],
                           'joint_position_records': [],
-                          'color_files': [],
-                          'depth_files': [],
-                          'point_cloud_files': []}
+                          'main_cam_files': [],
+                          'sub_cam_files': []
+                          }
             self.episode_list.append(current_episode)
             data_entry_idx = len(self.episode_list) - 1
             pose_idx = 0
@@ -176,34 +156,21 @@ class CollectedData(QObject):
                 # current_episode['bboxes'] = self.box_from_dict(bbox_dict)
 
         # Generate file names
-        color_file = f"{id}_color_{pose_idx}.png"
-        depth_file = f"{id}_depth_{pose_idx}.npy"
-        point_cloud_file = f"{id}_point_cloud_{pose_idx}.ply"
-
-        # Update data_entry with file names before starting the thread
+        main_cam = f"{id}_main_{pose_idx}.png"
+        sub_cam = f"{id}_sub_{pose_idx}.png"
 
 
-        # Save files in a separate thread
-        def save_files(color, depth, point_cloud, color_file, depth_file, point_cloud_file):
-            if color is not None:
-                Image.fromarray(color).save(os.path.join(self.resource_path, color_file))
-            if depth is not None:
-                np.save(os.path.join(self.resource_path, depth_file), depth)
-            # if point_cloud is not None:
-            #     vertex = np.array(
-            #         [(x, y, z, r, g, b, s) for x, y, z, r, g, b, s in point_cloud],
-            #         dtype=[('x', 'f4'), ('y', 'f4'), ('z', 'f4'), ('red', 'u1'), ('green', 'u1'), ('blue', 'u1'),
-            #                ('segment_id', 'i4')]
-            #     )
-            #     ply = PlyData([PlyElement.describe(vertex, 'vertex')], text=True)
-            #     ply.write(os.path.join(self.resource_path, point_cloud_file))
+        def save_files(main, sub, main_file, sub_file):
+            if main is not None:
+                Image.fromarray(main).save(os.path.join(self.resource_path, main_file))
+            if sub is not None:
+                Image.fromarray(sub).save(os.path.join(self.resource_path, sub_file))
         
         if record_stage:
-            current_episode['color_files'].append(color_file)
-            current_episode['depth_files'].append(depth_file)
-            # current_episode['point_cloud_files'].append(point_cloud_file)
+            current_episode['main_cam_files'].append(main_cam)
+            current_episode['sub_cam_files'].append(sub_cam)
             thread = threading.Thread(target=save_files, args=(
-                color, depth, point_cloud, color_file, depth_file, point_cloud_file))
+                main, sub, main_cam, sub_cam))
             thread.start()
         self.data_changed.emit()
         return True
@@ -245,7 +212,7 @@ class CollectedData(QObject):
             entry = saved_data[data_id]
             # Check if all files exist
             files_exist = True
-            for file_list in [entry['color_files'], entry['depth_files'], entry['point_cloud_files']]:
+            for file_list in [entry['main_cam_files'], entry['sub_cam_files']]:
                 for file_name in file_list:
                     file_path = os.path.join(self.resource_path, file_name)
                     if not os.path.exists(file_path):
@@ -260,13 +227,11 @@ class CollectedData(QObject):
                     'prompt': entry['prompt'],
                     'pose': [pose['pose0'] for pose in entry['poses']],
                     # 'bboxes': self.box_from_dict(bbox_dict_or_list=entry["bboxes"]),
-                    'color_files': entry['color_files'],
-                    'depth_files': entry['depth_files'],
-                    'point_cloud_files': entry['point_cloud_files'],
+                    'main_cam_files': entry['main_cam_files'],
+                    'sub_cam_files': entry['sub_cam_files'],
                     'joint_positions': entry.get('joint_positions', []),
                     'joint_position_records': entry.get('joint_position_records', []),
                     'pose_record': entry.get('pose_record', []),
-                    't_base_to_cam': entry.get('t_base_to_cam', None)
                 }
                 self.dataids.append(data_id)
                 self.episode_list.append(data_entry)

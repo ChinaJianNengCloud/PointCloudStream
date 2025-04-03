@@ -40,25 +40,23 @@ def on_data_replay_and_save_button_clicked(self: "PCDStreamer"):
             lambda: on_record_start(self, data_collection_thread))
         self.robot_joint_thread.action_finished.connect(
             lambda: on_record_finished(self, data_collection_thread))
-        # self.robot_joint_thread.progress.connect(
-        #     lambda progress: on_progress_update(self, data_collection_thread, progress))
-        
-        # self.robot_joint_thread.action_finished.connect(
-        #     lambda finished: self.robot_joint_thread.quit())
         self.robot_joint_thread.start()
-    
+
     logger.debug("Data replay and save button clicked")
 
 def on_record_start(self:"PCDStreamer", thread: Thread):
 
-
     notice = "Please confirm the Robot Arm is in the correct position before recording."
-    image_file = self.collected_data.resource_path + '/' + self.collected_data.saved_data_json.get(
-                            self.data_tree_view.selected_item.root_text
-                            ).get('color_files')[0]
-    dialog = ImageConfirmationDialog(image_file, notice)
+    # timer_was_active = False
+    # if hasattr(self, 'timer') and self.timer.isActive():
+    #     timer_was_active = True
+    #     self.timer.stop()
+        
+    dialog = ImageConfirmationDialog(None, notice)
     result = dialog.exec()
-    if result == QDialog.Accepted:
+    # if timer_was_active:
+    #     self.timer.start()
+    if result == QDialog.DialogCode.Accepted:
         self.robot.high_speed_mode()
         self.robot.recording_flag = True
         thread.start()
@@ -67,14 +65,16 @@ def on_record_start(self:"PCDStreamer", thread: Thread):
         self.robot.low_speed_mode()
         thread.join()
 
+
 def on_record_finished(self:"PCDStreamer", thread: Thread):
     self.robot.recording_flag = False
     self.robot.low_speed_mode()
     thread.join()
+    
     notice = "Data collection finished. Please Check the robot arm if it's end at correct position."
     image_file = self.collected_data.resource_path + '/' + self.collected_data.saved_data_json.get(
                             self.data_tree_view.selected_item.root_text
-                            ).get('color_files')[-1]
+                            ).get('main_cam_files')[-1]
     dialog = ImageConfirmationDialog(image_file, notice)
     result = dialog.exec()
     if result == QDialog.DialogCode.Accepted:
@@ -95,51 +95,39 @@ def on_progress_update(self: "PCDStreamer", thread:Thread, progress):
 def collect_data_at_fps(self: "PCDStreamer", fps):
     interval = 1 / fps
     idx = 0
+    logger.info("Data collection started")
     while self.robot.recording_flag:
-        # Collect data at the specified frequency
-        robot_pose = self.robot.capture_gripper_to_base(sep=False)
+        robot_pose = self.robot.get_state('tcp')
         joint_position = self.robot.get_joint_position()
-        color = self._img_to_array(self.current_frame['color'])
-        depth = self._img_to_array(self.current_frame['depth'])
-        pcd_with_labels = None  # Modify this if you need point cloud data
+        main = self._img_to_array(self.current_frame['main'])
+        sub = self._img_to_array(self.current_frame['sub'])
 
-        # Add the collected record
         self.collected_data.add_record(
             prompt=self.prompt_text.text(),
-            color=color,
-            depth=depth,
-            point_cloud=pcd_with_labels,
+            main=main,
+            sub=sub,
             base_poses=robot_pose,
-            bbox_dict=self.bbox_params,
             joint_position=joint_position,
-            t_base_to_cam=self.T_BaseToCam,
             record_stage=True
         )
         idx += 1
         time.sleep(interval)
         if idx > 300:
             logger.error("Failed to collect data, idx is greater than 300, please check!")
+            break
 
 def on_data_collect_button_clicked(self: "PCDStreamer"):
     if self.robot is not None:
-        robot_pose = self.robot.capture_gripper_to_base(sep=False)
+        robot_pose = self.robot.get_state('tcp')
         joint_posistion = self.robot.get_joint_position()
-        color = self._img_to_array(self.current_frame['color'])
-        depth = self._img_to_array(self.current_frame['depth'])
-        pcd =  self.current_frame['pcd']
-        xyz = np.asarray(pcd.points)
-        rgb = (np.asarray(pcd.colors) * 255).astype(np.uint8)
-        seg = self.current_frame.get('seg', np.zeros(xyz.shape[0]))
-        pcd_with_labels = np.hstack((xyz, rgb, seg.reshape(-1, 1)))
+        main = self._img_to_array(self.current_frame['main'])
+        sub = self._img_to_array(self.current_frame['sub'])
 
         self.collected_data.add_record(prompt=self.prompt_text.text(),
-                                color=color,
-                                depth=depth,
+                                main=main,
+                                sub=sub,
                                 joint_position=joint_posistion,
-                                point_cloud=pcd_with_labels,
                                 base_poses=robot_pose,
-                                bbox_dict=self.bbox_params,
-                                t_base_to_cam=self.T_BaseToCam.matrix,
                                 record_stage=False)
         
         logger.debug("Data collected")
@@ -192,50 +180,34 @@ def on_tree_selection_changed(self: "PCDStreamer", item, level, index_in_level, 
         #                     select_item.root_text
         #                     ).get('color_files')[index_in_level])
 
-def show_image_popup(self: "PCDStreamer", image_path):
-    """
-    Show a pop-up window with an image.
-    """
-    # Create a QDialog for the image
-    self.image_dialog = QDialog()  # Store dialog as an instance variable
-    self.image_dialog.setWindowTitle("Selected Item Image")
-    self.image_dialog.setWindowFlags(self.image_dialog.windowFlags() | Qt.Window)  # Make it a standalone, draggable window
-
-    # Create a layout and QLabel to display the image
-    layout = QVBoxLayout()
-    image_label = QLabel(self.image_dialog)
-    image_label.setFixedSize(400, 300)  # Set the label size
-    image_label.setStyleSheet("border: 1px solid black;")  # Optional: Add a border for clarity
-
-    pixmap = QPixmap(image_path)
-    if not pixmap.isNull():
-        scaled_pixmap = pixmap.scaled(image_label.size(), 
-                                      Qt.AspectRatioMode.KeepAspectRatio,
-                                      Qt.TransformationMode.SmoothTransformation)
-        image_label.setPixmap(scaled_pixmap)
-
-    # Add QLabel to the layout and set the layout to the dialog
-    layout.addWidget(image_label)
-    self.image_dialog.setLayout(layout)
-
-    # Set a fixed size for the dialog
-    self.image_dialog.resize(420, 320)  # Slightly larger to account for padding
-
-    # Show the dialog as a non-modal window
-    self.image_dialog.show()
 
 def on_data_folder_select_button_clicked(self: "PCDStreamer"):
     
     start_dir = self.params.get('data_path', './data')
+    
+    # Temporarily pause the timer if it's running
+    timer_was_active = False
+    if hasattr(self, 'timer') and self.timer.isActive():
+        timer_was_active = True
+        self.timer.stop()
+    
+    # Show the dialog
     dir_text = QFileDialog.getExistingDirectory(
-        directory=start_dir,
-        options=QFileDialog.Option.ShowDirsOnly
+        self,
+        "Select Folder",
+        start_dir,
+        QFileDialog.Option.ShowDirsOnly
     )
-    if not dir_text == "":
+    
+    # Resume the timer if it was active before
+    if timer_was_active:
+        self.timer.start()
+    
+    if dir_text:
         self.data_folder_text.setText(dir_text)
     logger.debug("Data folder select button clicked")
 
-def on_data_tree_changed(self: "PCDStreamer"):
+def on_data_tree_changed(self: "PCDStreamer"): 
     """
     Updates the tree view with data from `shown_data_json`.
     """

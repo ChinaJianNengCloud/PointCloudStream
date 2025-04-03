@@ -238,8 +238,6 @@ class PCDStreamer(PCDStreamerUI):
         
         self.current_frame = frame_elements
             
-    
-
     def get_robot_pose(self) -> Tuple[bool, Pose]:
         """
         Get the current pose of the robot's end-effector.
@@ -253,7 +251,7 @@ class PCDStreamer(PCDStreamerUI):
             logger.error("Robot not initialized.")
             return False, None
         
-        robot_pose = self.robot.capture_gripper_to_base(sep=False)
+        robot_pose = self.robot.get_state('tcp')
         base_to_end = Pose.from_1d_array(vector=robot_pose, vector_type="euler", degrees=False)
 
         if not self.center_to_robot_base_toggle.isChecked():
