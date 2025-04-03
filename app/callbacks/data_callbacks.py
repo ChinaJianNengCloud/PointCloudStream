@@ -8,14 +8,14 @@ from PySide6.QtGui import QPixmap
 from PySide6.QtCore import Qt
 from threading import Thread
 if TYPE_CHECKING:
-    from app.entry import PCDStreamer
+    from app.entry import SceneStreamer
 from app.viewers.image_viewer import ImageConfirmationDialog
 from app.threads.op_thread import RobotJointOpThread
 from app.utils.pose import interpolate_joint_positions_equal_distance
 from app.utils.logger import setup_logger
 logger = setup_logger(__name__)
 
-def on_data_replay_and_save_button_clicked(self: "PCDStreamer"):
+def on_data_replay_and_save_button_clicked(self: "SceneStreamer"):
     select_item = self.data_tree_view.selected_item
     data_index = self.collected_data.dataids.index(select_item.root_text)
     self.collected_data.reset_record(data_index)
@@ -44,7 +44,7 @@ def on_data_replay_and_save_button_clicked(self: "PCDStreamer"):
 
     logger.debug("Data replay and save button clicked")
 
-def on_record_start(self:"PCDStreamer", thread: Thread):
+def on_record_start(self:"SceneStreamer", thread: Thread):
 
     notice = "Please confirm the Robot Arm is in the correct position before recording."
     # timer_was_active = False
@@ -66,7 +66,7 @@ def on_record_start(self:"PCDStreamer", thread: Thread):
         thread.join()
 
 
-def on_record_finished(self:"PCDStreamer", thread: Thread):
+def on_record_finished(self:"SceneStreamer", thread: Thread):
     self.robot.recording_flag = False
     self.robot.low_speed_mode()
     thread.join()
@@ -82,7 +82,7 @@ def on_record_finished(self:"PCDStreamer", thread: Thread):
     else:
         logger.info("Data collection not confirmed")
 
-def on_progress_update(self: "PCDStreamer", thread:Thread, progress):
+def on_progress_update(self: "SceneStreamer", thread:Thread, progress):
     if progress == 0:
         self.robot.high_speed_mode()
         self.robot.recording_flag = True
@@ -92,20 +92,23 @@ def on_progress_update(self: "PCDStreamer", thread:Thread, progress):
         self.robot.low_speed_mode()
         thread.join()
 
-def collect_data_at_fps(self: "PCDStreamer", fps):
+def collect_data_at_fps(self: "SceneStreamer", fps):
     interval = 1 / fps
     idx = 0
     logger.info("Data collection started")
     while self.robot.recording_flag:
         robot_pose = self.robot.get_state('tcp')
         joint_position = self.robot.get_joint_position()
-        main = self._img_to_array(self.current_frame['main'])
-        sub = self._img_to_array(self.current_frame['sub'])
+        
+        # Collect frames from all available cameras
+        frames = {}
+        for camera_name in self.streamer.cameras.keys():
+            if camera_name in self.current_frame:
+                frames[camera_name] = self.current_frame[camera_name]
 
         self.collected_data.add_record(
             prompt=self.prompt_text.text(),
-            main=main,
-            sub=sub,
+            frames=frames,
             base_poses=robot_pose,
             joint_position=joint_position,
             record_stage=True
@@ -116,19 +119,24 @@ def collect_data_at_fps(self: "PCDStreamer", fps):
             logger.error("Failed to collect data, idx is greater than 300, please check!")
             break
 
-def on_data_collect_button_clicked(self: "PCDStreamer"):
+def on_data_collect_button_clicked(self: "SceneStreamer"):
     if self.robot is not None:
         robot_pose = self.robot.get_state('tcp')
-        joint_posistion = self.robot.get_joint_position()
-        main = self._img_to_array(self.current_frame['main'])
-        sub = self._img_to_array(self.current_frame['sub'])
+        joint_position = self.robot.get_joint_position()
+        
+        # Collect frames from all available cameras
+        frames = {}
+        for camera_name in self.streamer.cameras.keys():
+            if camera_name in self.current_frame:
+                frames[camera_name] = self.current_frame[camera_name]
 
-        self.collected_data.add_record(prompt=self.prompt_text.text(),
-                                main=main,
-                                sub=sub,
-                                joint_position=joint_posistion,
-                                base_poses=robot_pose,
-                                record_stage=False)
+        self.collected_data.add_record(
+            prompt=self.prompt_text.text(),
+            frames=frames,
+            joint_position=joint_position,
+            base_poses=robot_pose,
+            record_stage=False
+        )
         
         logger.debug("Data collected")
     else:
@@ -136,18 +144,18 @@ def on_data_collect_button_clicked(self: "PCDStreamer"):
 
     logger.debug("Data collect button clicked")
 
-def on_data_save_button_clicked(self: "PCDStreamer"):
+def on_data_save_button_clicked(self: "SceneStreamer"):
     self.collected_data.save(self.data_folder_text.text())
     logger.debug("Data save button clicked")
 
-def on_data_tree_view_load_button_clicked(self: "PCDStreamer"):
+def on_data_tree_view_load_button_clicked(self: "SceneStreamer"):
     try:
         self.collected_data.load(self.data_folder_text.text())
     except Exception as e:
         logger.error(f"Failed to load data: {e}")
     logger.debug("Data tree view load button clicked")
 
-def on_data_tree_view_remove_button_clicked(self: "PCDStreamer"):
+def on_data_tree_view_remove_button_clicked(self: "SceneStreamer"):
     select_item = self.data_tree_view.selected_item
     if select_item != None:
         match select_item.level:
@@ -164,7 +172,7 @@ def on_data_tree_view_remove_button_clicked(self: "PCDStreamer"):
                     pass
     logger.debug("Data tree view remove button clicked")
 
-def on_tree_selection_changed(self: "PCDStreamer", item, level, index_in_level, parent_text, root_text):
+def on_tree_selection_changed(self: "SceneStreamer", item, level, index_in_level, parent_text, root_text):
     """
     Callback for when the selection changes.
     """
@@ -181,7 +189,7 @@ def on_tree_selection_changed(self: "PCDStreamer", item, level, index_in_level, 
         #                     ).get('color_files')[index_in_level])
 
 
-def on_data_folder_select_button_clicked(self: "PCDStreamer"):
+def on_data_folder_select_button_clicked(self: "SceneStreamer"):
     
     start_dir = self.params.get('data_path', './data')
     
@@ -207,7 +215,7 @@ def on_data_folder_select_button_clicked(self: "PCDStreamer"):
         self.data_folder_text.setText(dir_text)
     logger.debug("Data folder select button clicked")
 
-def on_data_tree_changed(self: "PCDStreamer"): 
+def on_data_tree_changed(self: "SceneStreamer"): 
     """
     Updates the tree view with data from `shown_data_json`.
     """

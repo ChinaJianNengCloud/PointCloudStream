@@ -50,11 +50,11 @@ class MJPEGViewer(QWidget):
         layout.addWidget(self.label)
         self.setLayout(layout)
 
-        self.thread = MJPEGStreamReader(stream_url)
+        self.thread: MJPEGStreamReader = MJPEGStreamReader(stream_url)
         self.thread.new_frame.connect(self.update_image)
         self.thread.start()
 
-    def update_image(self, frame):
+    def update_image(self, frame: np.ndarray):
         rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         h, w, ch = rgb_image.shape
         bytes_per_line = ch * w

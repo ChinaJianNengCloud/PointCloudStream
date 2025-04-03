@@ -1,5 +1,5 @@
 import sys
-
+import math
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QLabel, QListWidget,
                              QApplication,QDoubleSpinBox, QCheckBox,
@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (QLabel, QListWidget,
                              QPushButton, QSizePolicy, QTabWidget, 
                              QGroupBox, QMainWindow, QComboBox, 
                              QSplitter, QLineEdit, QSpinBox,
-                             QTextEdit, QScrollArea)
+                             QTextEdit, QScrollArea, QGridLayout)
 
 
 from app.utils import ARUCO_BOARD
@@ -28,35 +28,115 @@ class PlotController(QWidget):
 class SceneViewer(QWidget):
     def __init__(self):
         super().__init__()
+        self.camera_widgets = {}  # Dictionary to store camera widgets by camera name
         self.initUI()
 
     def initUI(self):
         layout = QVBoxLayout(self)
-
-        cam_layout = QHBoxLayout()
+        
+        # Create a grid layout for cameras
+        self.cam_grid_layout = QGridLayout()
+        layout.addLayout(self.cam_grid_layout)
+        
+        # For backward compatibility, keep the main and sub cam references
         main_cam = ResizableImageLabel()
         main_cam.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         main_cam.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        cam_layout.addWidget(main_cam)
+        
         sub_cam = ResizableImageLabel()
         sub_cam.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         sub_cam.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        cam_layout.addWidget(sub_cam)
+        
+        # Add the default cameras to the grid
+        self.add_camera_to_grid("main", main_cam, 0, 0)
+        self.add_camera_to_grid("sub", sub_cam, 0, 1)
+        
         self.main_cam = main_cam
         self.sub_cam = sub_cam
-
-        layout.addLayout(cam_layout)
+        
         self.setLayout(layout)
+    
+    def add_camera_to_grid(self, camera_name, camera_widget=None, row=None, col=None):
+        """Add a camera to the grid at the specified position or auto-position"""
+        if camera_widget is None:
+            camera_widget = ResizableImageLabel()
+            camera_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+            camera_widget.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        # Add camera name label
+        container = QWidget()
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(2, 2, 2, 2)
+        
+        name_label = QLabel(camera_name)
+        name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        container_layout.addWidget(name_label)
+        container_layout.addWidget(camera_widget)
+        
+        # Determine grid position if not specified
+        if row is None or col is None:
+            count = len(self.camera_widgets)
+            # Calculate optimal grid size
+            grid_size = max(1, math.ceil(math.sqrt(count + 1)))
+            row = count // grid_size
+            col = count % grid_size
+        
+        self.cam_grid_layout.addWidget(container, row, col)
+        self.camera_widgets[camera_name] = {
+            "widget": camera_widget,
+            "container": container,
+            "name_label": name_label,
+            "row": row,
+            "col": col
+        }
+        
+        return camera_widget
+    
+    def remove_camera(self, camera_name):
+        """Remove a camera from the grid"""
+        if camera_name in self.camera_widgets:
+            camera_info = self.camera_widgets[camera_name]
+            self.cam_grid_layout.removeWidget(camera_info["container"])
+            camera_info["container"].deleteLater()
+            del self.camera_widgets[camera_name]
+            return True
+        return False
+    
+    def clear_all_cameras(self):
+        """Remove all cameras from the grid"""
+        for camera_name in list(self.camera_widgets.keys()):
+            self.remove_camera(camera_name)
+    
+    def reorganize_grid(self):
+        """Reorganize the grid to make optimal use of space"""
+        cameras = list(self.camera_widgets.items())
+        if not cameras:
+            return
+        
+        # Calculate optimal grid size
+        count = len(cameras)
+        grid_size = max(1, math.ceil(math.sqrt(count)))
+        
+        for i, (camera_name, camera_info) in enumerate(cameras):
+            row = i // grid_size
+            col = i % grid_size
+            
+            # If position changed, update layout
+            if row != camera_info["row"] or col != camera_info["col"]:
+                self.cam_grid_layout.removeWidget(camera_info["container"])
+                self.cam_grid_layout.addWidget(camera_info["container"], row, col)
+                camera_info["row"] = row
+                camera_info["col"] = col
 
 
 
-class PCDStreamerUI(QMainWindow):
+class SceneStreamerUI(QMainWindow):
     """Controls display and user interface using VTK and PySide6."""
 
     def __init__(self):
         super().__init__()
         # self.vtk_widget: QVTKRenderWindowInteractor = None
-        self.setWindowTitle("VTK GUI Application")
+        self.setWindowTitle("Scene Streamer")
         self.resize(1200, 640)
         self.display_mode = 'Colors'  # Initialize display mode to 'Colors'
         self.initUI()
@@ -164,29 +244,103 @@ class PCDStreamerUI(QMainWindow):
         v_layout = QVBoxLayout()
         layout.addLayout(v_layout)
 
-        main_cam_layout = QHBoxLayout()
-        v_layout.addLayout(main_cam_layout)
-        main_cam_label = QLabel("Main Camera: ")
-        main_cam_layout.addWidget(main_cam_label)
+        # Camera selection group
+        camera_group = QGroupBox("Camera Management")
+        camera_group_layout = QVBoxLayout()
+        camera_group.setLayout(camera_group_layout)
+        v_layout.addWidget(camera_group)
 
-        self.main_camera_combobox = QComboBox()
-        main_cam_layout.addWidget(self.main_camera_combobox)
-
-        self.main_init_button = QPushButton("Start")
-
-
-        sub_cam_layout = QHBoxLayout()
-        v_layout.addLayout(sub_cam_layout)
-        sub_cam_label = QLabel("Sub Camera: ")
-        sub_cam_layout.addWidget(sub_cam_label)
-
-        self.sub_camera_combobox = QComboBox()
-        sub_cam_layout.addWidget(self.sub_camera_combobox)
-        v_layout.addWidget(self.main_init_button)
+        # Camera selection controls
+        selection_layout = QHBoxLayout()
+        camera_group_layout.addLayout(selection_layout)
         
+        # Camera type selection
+        camera_type_label = QLabel("Camera Type: ")
+        selection_layout.addWidget(camera_type_label)
+        
+        self.camera_type_combobox = QComboBox()
+        self.camera_type_combobox.addItems(["USB Camera", "HTTP Camera"])
+        selection_layout.addWidget(self.camera_type_combobox)
+        
+        # Connect camera type change to show/hide appropriate controls
+        self.camera_type_combobox.currentTextChanged.connect(self.on_camera_type_changed)
+        
+        # Camera dropdown for USB cameras (in a container)
+        self.usb_camera_container = QWidget()
+        usb_camera_layout = QHBoxLayout(self.usb_camera_container)
+        usb_camera_layout.setContentsMargins(0, 0, 0, 0)
+        selection_layout.addWidget(self.usb_camera_container)
+        
+        camera_label = QLabel("Camera: ")
+        usb_camera_layout.addWidget(camera_label)
+        
+        self.camera_combobox = QComboBox()
+        usb_camera_layout.addWidget(self.camera_combobox)
+        
+        # HTTP camera URL input (hidden by default)
+        self.http_camera_container = QWidget()
+        self.http_camera_layout = QHBoxLayout(self.http_camera_container)
+        self.http_camera_layout.setContentsMargins(0, 0, 0, 0)
+        camera_group_layout.addWidget(self.http_camera_container)
+        
+        http_url_label = QLabel("HTTP URL: ")
+        self.http_camera_layout.addWidget(http_url_label)
+        
+        self.http_camera_url = QLineEdit()
+        self.http_camera_url.setPlaceholderText("http://camera-ip:port/stream")
+        self.http_camera_layout.addWidget(self.http_camera_url)
+        
+        # Hide HTTP URL input by default
+        self.http_camera_container.setVisible(False)
+        
+        # Camera name input
+        name_layout = QHBoxLayout()
+        camera_group_layout.addLayout(name_layout)
+        name_label = QLabel("Camera Name: ")
+        name_layout.addWidget(name_label)
+        
+        self.camera_name_input = QLineEdit()
+        self.camera_name_input.setPlaceholderText("Enter camera name")
+        name_layout.addWidget(self.camera_name_input)
+        
+        # Add camera button
+        self.add_camera_button = QPushButton("Add Camera")
+        name_layout.addWidget(self.add_camera_button)
+        
+        # Camera list widget
+        self.camera_list_widget = QListWidget()
+        camera_group_layout.addWidget(self.camera_list_widget)
+        
+        # Camera list controls
+        list_controls_layout = QHBoxLayout()
+        camera_group_layout.addLayout(list_controls_layout)
+        
+        self.remove_camera_button = QPushButton("Remove Selected")
+        list_controls_layout.addWidget(self.remove_camera_button)
+        
+        self.clear_cameras_button = QPushButton("Clear All")
+        list_controls_layout.addWidget(self.clear_cameras_button)
+        
+        # Initialize button
+        self.main_init_button = QPushButton("Initialize Cameras")
+        camera_group_layout.addWidget(self.main_init_button)
+        
+        # For backward compatibility
+        self.main_camera_combobox = self.camera_combobox
+        self.sub_camera_combobox = QComboBox()  # Hidden, just for compatibility
+        
+        # Robot init
         self.robot_init_button = QPushButton("Robot Init")
         v_layout.addWidget(self.robot_init_button)
 
+    def on_camera_type_changed(self, camera_type):
+        """Handle camera type combobox changes"""
+        if camera_type == "HTTP Camera":
+            self.usb_camera_container.setVisible(False)
+            self.http_camera_container.setVisible(True)
+        else:  # USB Camera
+            self.usb_camera_container.setVisible(True)
+            self.http_camera_container.setVisible(False)
 
     def init_record_save(self, layout:QVBoxLayout):
         h_layout = QHBoxLayout()
@@ -573,7 +727,7 @@ class PCDStreamerUI(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
-    window = PCDStreamerUI()
+    window = SceneStreamerUI()
     window.show()
     sys.exit(app.exec_())
 

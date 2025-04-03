@@ -1,7 +1,7 @@
 import subprocess
 from typing import List, Dict
 
-class VideoManager:
+class USBVideoManager:
     """Manages video devices and operations."""
     def __init__(self):
         self.devices: List[Dict] = None
@@ -10,8 +10,14 @@ class VideoManager:
     def get_id_by_name(self, name: str) -> int:
         for device in self.devices:
             if device['name'] == name:
-                return device['index']
+                return device['id']
         return -1
+
+    def get_name_by_id(self, id: int) -> str:
+        for device in self.devices:
+            if device['id'] == id:
+                return device['name']
+        return 'Unknown'
 
     def find_video_devices(self):
         """Get a list of available video devices."""
@@ -37,7 +43,7 @@ class VideoManager:
                         self.devices.append({
                             'name': current_device_name.split(':')[0].strip(),
                             'path': device_path,
-                            'index': int(device_path.replace('/dev/video', ''))
+                            'id': int(device_path.replace('/dev/video', ''))
                         })
             
             return self.devices

@@ -1,10 +1,6 @@
 import sys
-from app.entry import PCDStreamer
+from app.entry import SceneStreamer
 from PySide6 import QtWidgets
-import time
-import logging
-import os
-# from Callbacks import WindowCallbacks
 from app.utils.logger import setup_logger
 logger = setup_logger(__name__)
 
@@ -18,8 +14,21 @@ def main():
         'board_marker_size': 19,
         'input_method': 'auto_calibrated_mode',
         'folder_path': '_tmp',
-        'main_camera_id': -1,
-        'sub_camera_id': -1,
+        'camera_list': [
+            {
+                'id': 0, 
+                'name': 'main'
+            },
+               {
+                'id': 2, 
+                'name': 'wrist'
+            },
+            {
+                'id': 99, 
+                'name': 'wrist 2', 
+                'http_url': 'http://192.168.1.123:81/stream'
+            }
+        ],
         'pose_file_path': './poses.txt',
         'load_intrinsic': True,
         'calib_path': './Calibration_results/calibration_results.json',
@@ -43,7 +52,7 @@ def main():
     }
     app = QtWidgets.QApplication(sys.argv)
 
-    window = PCDStreamer(params=params)
+    window = SceneStreamer(params=params)
 
     window.show()
     sys.exit(app.exec())

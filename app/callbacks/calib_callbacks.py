@@ -11,22 +11,22 @@ from app.utils.pose import Pose
 from app.threads.op_thread import RobotTcpOpThread
 
 if TYPE_CHECKING:
-    from app.entry import PCDStreamer
+    from app.entry import SceneStreamer
 
 from app.utils.logger import setup_logger
 logger = setup_logger(__name__)
 
-def on_calib_combobox_changed(self: "PCDStreamer", text):
+def on_calib_combobox_changed(self: "SceneStreamer", text):
     if text != "":
         self.T_CamToBase = Pose.from_matrix(np.array(self.calib.get('calibration_results').get(text).get('transformation_matrix')))
     logger.debug(f"Calibration combobox changed: {text}")
     
-def on_calib_data_list_changed(self: "PCDStreamer"):
+def on_calib_data_list_changed(self: "SceneStreamer"):
         self.calib_data_list.clear()
         self.calib_data_list.addItems(self.calibration_data.display_str_list)
         logger.debug("Calibration data list changed")
 
-def on_calib_check_button_clicked(self: "PCDStreamer"):
+def on_calib_check_button_clicked(self: "SceneStreamer"):
     try:
         on_cam_calib_init_button_clicked(self)
         path = self.params['calib_path']
@@ -55,7 +55,7 @@ def on_calib_check_button_clicked(self: "PCDStreamer"):
         logger.error(f"Failed to load calibration data: {e}")
     logger.debug("Calibration check button clicked")
 
-def on_cam_calib_init_button_clicked(self: "PCDStreamer"):
+def on_cam_calib_init_button_clicked(self: "SceneStreamer"):
     try:
         if not hasattr(self, 'calibration_data'):
             charuco_dict = cv2.aruco.getPredefinedDictionary(ARUCO_BOARD[self.params['board_type']])
@@ -100,18 +100,18 @@ def on_cam_calib_init_button_clicked(self: "PCDStreamer"):
         self.cam_calib_init_button.setStyleSheet("background-color: red;")
         logger.error(f"Failed to init camera calibration: {e}")
     
-def on_calib_collect_button_clicked(self: "PCDStreamer"):
+def on_calib_collect_button_clicked(self: "SceneStreamer"):
     if hasattr(self, 'calibration_data'):
         robot_pose = self.robot.get_state('tcp')
-        color = self._img_to_array(self.current_frame['color'])
+        color = self.current_frame['color']
         self.calibration_data.append(color, robot_pose=robot_pose)
     logger.debug("Calibration collect button clicked")
 
-def on_calib_list_remove_button_clicked(self: "PCDStreamer"): 
+def on_calib_list_remove_button_clicked(self: "SceneStreamer"): 
     self.calibration_data.pop(self.calib_data_list.currentIndex().row())
     logger.debug(f"Calibration list remove button clicked")
 
-def on_robot_move_button_clicked(self: "PCDStreamer"):
+def on_robot_move_button_clicked(self: "SceneStreamer"):
     idx = self.calib_data_list.currentIndex().row()
     try:
         self.robot.step(
@@ -119,9 +119,9 @@ def on_robot_move_button_clicked(self: "PCDStreamer"):
         
         if hasattr(self, 'timer'):
             self.timer.stop()
-        self.calibration_data.modify(idx, self._img_to_array(self.current_frame['color']),
+        self.calibration_data.modify(idx, self.current_frame['color'],
                                     self.robot.get_state('tcp'),
-                                    copy.deepcopy(self.bbox_params))
+                                    )
         if hasattr(self, 'timer'):
             self.timer.start()
         logger.debug("Moving robot and collecting data")
@@ -131,14 +131,14 @@ def on_robot_move_button_clicked(self: "PCDStreamer"):
 
     logger.debug("Robot move button clicked")
 
-def on_calib_button_clicked(self: "PCDStreamer"):
+def on_calib_button_clicked(self: "SceneStreamer"):
     self.calibration_data.calibrate_all()
     logger.debug("Calibration button clicked")
 
     def on_detect_board_toggle_state_changed(self):
         logger.debug("Detect board state changed to:")
 
-def on_robot_init_button_clicked(self: "PCDStreamer"):
+def on_robot_init_button_clicked(self: "SceneStreamer"):
     self.robot =  RobotInterface(sim=True)
     try:
         self.robot.find_device()
@@ -156,11 +156,11 @@ def on_robot_init_button_clicked(self: "PCDStreamer"):
         self.flag_robot_init = False
 
 
-def on_detect_board_toggle_state_changed(self: "PCDStreamer"):
+def on_detect_board_toggle_state_changed(self: "SceneStreamer"):
     logger.debug("Detect board state changed to:")
 
 
-def on_show_axis_in_scene_button_clicked(self: "PCDStreamer"):
+def on_show_axis_in_scene_button_clicked(self: "SceneStreamer"):
     logger.debug(f"on_show_axis {self.show_axis}")
     if self.show_axis:
         # Stop streaming
@@ -179,17 +179,17 @@ def on_show_axis_in_scene_button_clicked(self: "PCDStreamer"):
     self.renderer.GetRenderWindow().Render()
 
 
-def on_calib_op_load_button_clicked(self: "PCDStreamer"):
+def on_calib_op_load_button_clicked(self: "SceneStreamer"):
     self.calibration_data.load_img_and_pose()
     logger.debug("Calibration operation load button clicked")
 
 
-def on_calib_op_save_button_clicked(self: "PCDStreamer"):
+def on_calib_op_save_button_clicked(self: "SceneStreamer"):
     self.calibration_data.save_img_and_pose()
     logger.debug("Calibration operation save button clicked")
 
 
-def on_calib_op_run_button_clicked(self: "PCDStreamer"):
+def on_calib_op_run_button_clicked(self: "SceneStreamer"):
     if self.robot is None:
         logger.error("Robot not initialized")
         return
@@ -204,19 +204,19 @@ def on_calib_op_run_button_clicked(self: "PCDStreamer"):
     self.calib_thread.start()
     logger.debug("Calibration operation run button clicked")
 
-def on_calib_save_button_clicked(self: "PCDStreamer"):
+def on_calib_save_button_clicked(self: "SceneStreamer"):
     path = self.calib_save_text.text()
     self.calibration_data.save_calibration_data(path)
     logger.debug(f"Calibration saved: {path}")
 
 
-def update_progress(self: "PCDStreamer", value):
+def update_progress(self: "SceneStreamer", value):
     pose = self.robot.get_state('tcp')
-    img = self._img_to_array(self.current_frame['color'])
+    img = self.current_frame['color']
     self.calibration_data.modify(value, img, pose)
     logger.debug(f"Robot Move Progress: {value} and update calibration data")
     # self.label.setText(f"Progress: {value}")
 
-def calibration_finished(self: "PCDStreamer"):
+def calibration_finished(self: "SceneStreamer"): 
     self.calibration_data.calibrate_all()
     logger.info("Calibration operation completed.")

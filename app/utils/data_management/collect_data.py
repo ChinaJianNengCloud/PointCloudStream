@@ -28,6 +28,7 @@ class CollectedData(QObject):
         self.stop_display = threading.Event()
         self.current_image_path = None
         self.lock = threading.Lock()
+        self.camera_names = []  # Store available camera names
 
     @property
     def path(self):
@@ -51,11 +52,15 @@ class CollectedData(QObject):
 
     @property
     def shown_data_json(self):
-        ext_key_for_show = ('main_cam_files', 
-                            'sub_cam_files', 
-                            'joint_position_records',
-                            'pose_record',
-                            )
+        # Generate list of camera file keys to exclude
+        cam_file_keys = [f'{cam_name}_cam_files' for cam_name in self.camera_names]
+        if not cam_file_keys:  # For backward compatibility
+            cam_file_keys = ['main_cam_files', 'sub_cam_files']
+            
+        ext_key_for_show = tuple(cam_file_keys + [
+                              'joint_position_records',
+                              'pose_record',
+                            ])
         
         # Creating a dictionary with updated records and adding 'record_len'
         return {
@@ -68,23 +73,39 @@ class CollectedData(QObject):
     def saved_data_json(self):
         data = {}
         for id, episode in zip(self.dataids, self.episode_list):
-            entry = {k: v for k, v in episode.items() if k not in ('main_cam_files', 'sub_cam_files')}
+            # Extract camera file keys
+            cam_file_keys = [k for k in episode.keys() if k.endswith('_cam_files')]
+            
+            # Create entry without camera files initially
+            entry = {k: v for k, v in episode.items() if not k.endswith('_cam_files')}
+            
+            # Add poses
             poses = episode['pose']
             entry['poses'] = [{"pose0": poses[i], "pose1": poses[i + 1] if i + 1 < len(poses) else None} for i in
                               range(len(poses))]
-            entry['main_cam_files'] = episode['main_cam_files']
-            entry['sub_cam_files'] = episode['sub_cam_files']
+            
+            # Add camera files
+            for key in cam_file_keys:
+                entry[key] = episode[key]
+                
             data[id] = entry
         return data
 
     def pop(self, idx):
         data_entry = self.episode_list.pop(idx)
         id = self.dataids.pop(idx)
-        for file_list in [data_entry.get('main_cam_files', []), data_entry.get('sub_cam_files', [])]:
+        
+        # Find all camera file keys
+        cam_file_keys = [k for k in data_entry.keys() if k.endswith('_cam_files')]
+        
+        # Delete all camera files
+        for key in cam_file_keys:
+            file_list = data_entry.get(key, [])
             for file_name in file_list:
                 file_path = os.path.join(self.resource_path, file_name)
                 if os.path.exists(file_path):
                     os.remove(file_path)
+                    
         self.data_changed.emit()
 
     def pop_pose(self, prompt_idx, pose_idx=-1):
@@ -100,18 +121,30 @@ class CollectedData(QObject):
         self.data_changed.emit()
 
     def reset_record(self, prompt_idx):
-        self.episode_list[prompt_idx]['joint_position_records'] = []
-        self.episode_list[prompt_idx]['pose_record'] = []
-        self.episode_list[prompt_idx]['main_cam_files'] = []
-        self.episode_list[prompt_idx]['sub_cam_files'] = []
+        data_entry = self.episode_list[prompt_idx]
+        
+        # Reset joint and pose records
+        data_entry['joint_position_records'] = []
+        data_entry['pose_record'] = []
+        
+        # Reset all camera files
+        for key in list(data_entry.keys()):
+            if key.endswith('_cam_files'):
+                data_entry[key] = []
 
         self.data_changed.emit()
 
-    def add_record(self, prompt, base_poses, 
-                   joint_position, 
-                   main: np.ndarray = None,
-                   sub: np.ndarray = None, 
-                   record_stage=False):
+    def add_record(self, prompt, base_poses, joint_position, frames=None, record_stage=False):
+        """
+        Add a record with the given parameters
+        
+        Args:
+            prompt: The text prompt
+            base_poses: The robot base poses
+            joint_position: The robot joint positions
+            frames: Dictionary containing camera frames with camera names as keys
+            record_stage: Whether this is a record stage
+        """
         id = uuid.uuid4().hex
         if isinstance(base_poses, np.ndarray):
             base_poses = base_poses.tolist()
@@ -124,16 +157,28 @@ class CollectedData(QObject):
             logger.warning(f"Joint position is out of range at indices: {out_of_range_indices}")
             return False
         
+        if frames is None:
+            frames = {}
+            
+        # Update camera names list with any new names from frames
+        for cam_name in frames.keys():
+            if cam_name not in self.camera_names:
+                self.camera_names.append(cam_name)
+        
         if prompt not in self.prompts:
             self.dataids.append(id)
-            current_episode: Dict[str, Union[List, str]] = {"prompt": prompt,
-                          'pose': [base_poses],
-                          "pose_record": [],
-                          'joint_positions': [joint_position],
-                          'joint_position_records': [],
-                          'main_cam_files': [],
-                          'sub_cam_files': []
-                          }
+            current_episode = {
+                "prompt": prompt,
+                'pose': [base_poses],
+                "pose_record": [],
+                'joint_positions': [joint_position],
+                'joint_position_records': [],
+            }
+            
+            # Initialize camera file lists
+            for cam_name in self.camera_names:
+                current_episode[f'{cam_name}_cam_files'] = []
+                
             self.episode_list.append(current_episode)
             data_entry_idx = len(self.episode_list) - 1
             pose_idx = 0
@@ -153,25 +198,31 @@ class CollectedData(QObject):
             else:
                 current_episode['joint_positions'].append(joint_position)
                 current_episode['pose'].append(base_poses)
-                # current_episode['bboxes'] = self.box_from_dict(bbox_dict)
-
-        # Generate file names
-        main_cam = f"{id}_main_{pose_idx}.png"
-        sub_cam = f"{id}_sub_{pose_idx}.png"
-
-
-        def save_files(main, sub, main_file, sub_file):
-            if main is not None:
-                Image.fromarray(main).save(os.path.join(self.resource_path, main_file))
-            if sub is not None:
-                Image.fromarray(sub).save(os.path.join(self.resource_path, sub_file))
         
-        if record_stage:
-            current_episode['main_cam_files'].append(main_cam)
-            current_episode['sub_cam_files'].append(sub_cam)
-            thread = threading.Thread(target=save_files, args=(
-                main, sub, main_cam, sub_cam))
+        # Generate file names and save camera frames
+        def save_files(frames, file_paths):
+            for cam_name, frame in frames.items():
+                if frame is not None and cam_name in file_paths:
+                    Image.fromarray(frame).save(os.path.join(self.resource_path, file_paths[cam_name]))
+        
+        # Create file names and paths for each camera
+        file_paths = {}
+        for cam_name in frames.keys():
+            file_name = f"{id}_{cam_name}_{pose_idx}.png"
+            file_paths[cam_name] = file_name
+            
+            # Add file name to episode record
+            if record_stage:
+                cam_files_key = f'{cam_name}_cam_files'
+                if cam_files_key not in current_episode:
+                    current_episode[cam_files_key] = []
+                current_episode[cam_files_key].append(file_name)
+        
+        # Save frames in a separate thread
+        if frames:
+            thread = threading.Thread(target=save_files, args=(frames, file_paths))
             thread.start()
+            
         self.data_changed.emit()
         return True
 

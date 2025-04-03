@@ -3,24 +3,25 @@ import numpy as np
 import open3d as o3d
 import cv2
 from functools import partial
-from typing import *
+from typing import List, Dict, Any, Union
 
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (QLabel, QDoubleSpinBox, 
                              QVBoxLayout, QHBoxLayout, QPushButton, 
-                             QGroupBox, QSlider)
+                             QGroupBox, QSlider, QListWidgetItem, QListWidget)
+from PySide6.QtWidgets import *
 
 from scipy.spatial.transform import Rotation as R
 
 
-from app.ui import PCDStreamerUI
+from app.ui import SceneStreamerUI
 from app.utils import CalibrationData, CollectedData, ConversationData
 from app.utils.camera import segment_pcd_from_2d, CameraInterface
 from app.utils.robot import RobotInterface
-from app.viewers.pcd_viewer import Streamer, PCDUpdater, DualCamStreamer
+from app.viewers.scene_viewer import MultiCamStreamer
 from app.threads.op_thread import DataSendToServerThread, RobotTcpOpThread, RobotJointOpThread
-from app.utils.camera.video_manager import VideoManager
+from app.utils.camera.video_manager import USBVideoManager
 from app.callbacks import (
     on_stream_init_button_clicked,        
     on_capture_toggle_state_changed,
@@ -65,7 +66,7 @@ from app.utils.pose import Pose
 from app.utils.logger import setup_logger
 logger = setup_logger(__name__)
 
-class PCDStreamer(PCDStreamerUI):
+class SceneStreamer(SceneStreamerUI):
     """Entry point for the app. Controls the PipelineModel object for IO and
     processing  and the PipelineView object for display and UI. All methods
     operate on the main thread.
@@ -87,9 +88,10 @@ class PCDStreamer(PCDStreamerUI):
         self.frame_num = 0
         self.real_fps = 0
         self.frame = None
-        self.streamer = DualCamStreamer(params=params)
+        self.streaming = False
+        self.streamer = MultiCamStreamer(params=params)
         # self.pcd_updater = PCDUpdater(self.renderer)
-        self.video_manager = VideoManager()
+        self.video_manager = USBVideoManager()
         self.robot: RobotInterface = None
         self.calib_thread: RobotTcpOpThread = None
         self.robot_joint_thread: "RobotJointOpThread" = None
@@ -105,17 +107,33 @@ class PCDStreamer(PCDStreamerUI):
         self.palettes = self.get_num_of_palette(80)
         self.conversation_data = ConversationData()
         self.sendingThread: DataSendToServerThread = None
-        self.__init_signals()
+        # self.__init_signals()
         self.__init_ui_values_from_params()
         self.__callback_bindings()
         self.set_disable_before_stream_init()
 
     def update_cam_ids(self):
-        logger.info(f"Main camera: {self.main_camera_combobox.currentText()}")
-        logger.info(f"Sub camera: {self.sub_camera_combobox.currentText()}")
-        self.params['main_camera_id'] = self.video_manager.get_id_by_name(self.main_camera_combobox.currentText())
-        self.params['sub_camera_id'] = self.video_manager.get_id_by_name(self.sub_camera_combobox.currentText())
-
+        """Update camera list in params from the UI list widget"""
+        camera_list = []
+        for i in range(self.camera_list_widget.count()):
+            item = self.camera_list_widget.item(i)
+            camera_data = item.data(Qt.ItemDataRole.UserRole)
+            if camera_data:
+                # Ensure camera data has all necessary fields
+                camera_entry = {
+                    'id': camera_data.get('id', -1),
+                    'name': camera_data.get('name', f'camera_{i}'),
+                    'device_name': camera_data.get('device_name', '')
+                }
+                
+                # Add HTTP URL for HTTP cameras (ID 99)
+                if camera_entry['id'] == 99:
+                    camera_entry['http_url'] = camera_data.get('http_url', '')
+                    
+                camera_list.append(camera_entry)
+        
+        self.params['camera_list'] = camera_list
+        return True
 
     @property
     def T_CamToBase(self) -> Pose:
@@ -129,11 +147,52 @@ class PCDStreamer(PCDStreamerUI):
 
 
     def __init_ui_values_from_params(self):
-        cams = self.video_manager.devices + [{'name': 'Fake Camera', 'index': -1}]
-        self.main_camera_combobox.addItems([d['name'] for d in cams])
-        self.main_camera_combobox.currentTextChanged.connect(self.update_sub_camera_options)
+        # Get available cameras
+        cams = self.video_manager.devices + [{'name': 'Fake Camera', 'id': -1}]
+        
+        # Add cameras to the dropdown
+        self.camera_combobox.clear()
+        self.camera_combobox.addItems([d['name'] for d in cams])
+        
+        # Initialize camera list from params
+        camera_list:List[Dict[str, Any]] = self.params.get('camera_list', [])
+
+        # Populate camera list widget
+        self.camera_list_widget.clear()
+        for i, camera in enumerate(camera_list):
+            # Get camera details
+            cam_id = camera.get('id', -1)
+            
+            # Set device name based on camera type
+            if cam_id == 99:  # HTTP camera
+                camera_list[i]['device_name'] = "HTTP Camera"
+                camera_list[i]['http_url'] = camera.get('http_url', '')
+            elif cam_id == -1:
+                camera_list[i]['device_name'] = 'Fake Camera'
+            else:
+                camera_list[i]['device_name'] = self.video_manager.get_name_by_id(cam_id)
+
+            cam_name = camera.get('name', 'Unknown')
+            device_name = camera.get('device_name', '')
+            
+            # Format item text using the new format
+            item_text = f"{i}: {device_name} -- {cam_name}"
+            
+            item = QListWidgetItem(item_text)
+            item.setData(Qt.ItemDataRole.UserRole, camera)
+            self.camera_list_widget.addItem(item)
+
+        self.params['camera_list'] = camera_list
+        # Connect camera management signals
+        self.add_camera_button.clicked.connect(self.add_camera_to_list)
+        self.remove_camera_button.clicked.connect(self.remove_camera_from_list)
+        self.clear_cameras_button.clicked.connect(self.clear_camera_list)
+        
+        # For backward compatibility with old code
         self.update_sub_camera_options()
         self.update_cam_ids()
+        
+        # Initialize other UI values
         self.calib_save_text.setText(self.params.get('calib_path', "Please_set_calibration_path"))
         self.board_col_num_edit.setValue(self.params.get('board_shape', (11, 6))[0])
         self.board_row_num_edit.setValue(self.params.get('board_shape', (11, 6))[1])
@@ -142,23 +201,255 @@ class PCDStreamer(PCDStreamerUI):
         self.board_type_combobox.setCurrentText(self.params.get('board_type', "DICT_4X4_100"))
         del self.robot, self.calib_thread, self.calibration_data
 
-    def __init_signals(self):
-        self.streaming = False
-        self.show_axis = False
+    def update_sub_camera_options(self):
+        main_camera = self.main_camera_combobox.currentText()
+        self.sub_camera_combobox.clear()
+        cams = self.video_manager.devices
+        sub_cameras = [d['name'] for d in cams if d['name'] != main_camera] + ['Fake Camera']
+        self.sub_camera_combobox.addItems(sub_cameras)
+        self.update_cam_ids()
 
-    def set_disable_before_stream_init(self):
-        self.capture_toggle.setEnabled(False)
-        self.seg_model_init_toggle.setEnabled(False)
-        self.data_collect_button.setEnabled(False)
-        self.calib_collect_button.setEnabled(False)
-        self.calib_button.setEnabled(False)
-        self.calib_op_save_button.setEnabled(False)
-        self.calib_op_load_button.setEnabled(False)
-        self.calib_op_run_button.setEnabled(False)
-        self.detect_board_toggle.setEnabled(False)
-        self.show_axis_in_scene_button.setEnabled(False)
-        self.calib_list_remove_button.setEnabled(False)
-        self.robot_move_button.setEnabled(False)
+    def add_camera_to_list(self):
+        # Get camera type from dropdown
+        camera_type = self.camera_type_combobox.currentText()
+        
+        # Set camera ID and details based on camera type
+        if camera_type == "HTTP Camera":
+            camera_id = 99  # Special ID for HTTP cameras
+            device_name = "HTTP Camera"
+            http_url = self.http_camera_url.text().strip()
+            
+            if not http_url:
+                logger.error("HTTP camera URL cannot be empty")
+                return
+        else:  # USB Camera
+            device_name = self.camera_combobox.currentText()
+            camera_id = self.video_manager.get_id_by_name(device_name)
+            http_url = None
+        
+        # Get camera name from input
+        name_by_user = self.camera_name_input.text().strip()
+        
+        # If the name is empty, use 'Unnamed'
+        if not name_by_user:
+            name_by_user = "Unnamed"
+        
+        # Check if the name already exists in the camera list
+        existing_names = []
+        for i in range(self.camera_list_widget.count()):
+            item = self.camera_list_widget.item(i)
+            camera_data = item.data(Qt.ItemDataRole.UserRole)
+            if camera_data:
+                existing_names.append(camera_data['name'])
+        
+        # If the name already exists, add a numeric suffix to make it unique
+        original_name = name_by_user
+        counter = 1
+        while name_by_user in existing_names:
+            name_by_user = f"{original_name}_{counter}"
+            counter += 1
+        
+        # Create a new camera item
+        camera_item = {
+            'id': camera_id, 
+            'name': name_by_user, 
+            'device_name': device_name,
+            'http_url': http_url
+        }
+        
+        # Add the camera item to the list
+        item = QListWidgetItem(f"{self.camera_list_widget.count()}: {camera_item['device_name']} -- {camera_item['name']}")
+        item.setData(Qt.ItemDataRole.UserRole, camera_item)
+        self.camera_list_widget.addItem(item)
+        
+        # Clear the input fields after adding
+        self.camera_name_input.clear()
+        if camera_type == "HTTP Camera":
+            self.http_camera_url.clear()
+        
+        # Update the camera list in params
+        self.update_cam_ids()
+
+    def remove_camera_from_list(self):
+        # Get the currently selected camera item
+        current_row = self.camera_list_widget.currentRow()
+        if current_row != -1:
+            self.camera_list_widget.takeItem(current_row)
+
+    def clear_camera_list(self):
+        self.camera_list_widget.clear()
+
+    def frame_calling(self):
+        current_frame_time = time.time()
+        if self.frame_num % 10 == 0:  # Avoid calculation on the first frame
+            time_diff = current_frame_time - self.prev_frame_time
+            if time_diff > 0:  # Avoid division by zero
+                self.real_fps = 10*(1.0 / time_diff)
+            self.prev_frame_time = current_frame_time     
+        frame_elements = {
+            'fps': round(self.real_fps, 2),  # Assuming 30 FPS for fake camera
+        }
+        frame_elements.update(self.streamer.get_frame(take_pcd=True))
+
+        self.segment_pcd_from_yolo(frame_elements)
+        self.elements_update(frame_elements)
+        
+        self.current_frame = frame_elements
+            
+
+    def elements_update(self, frame_elements: dict):
+        """Update visualization with point cloud and images."""
+
+        if 'color' in frame_elements:
+            self.update_color_image(frame_elements['color'])
+
+        if 'depth' in frame_elements:
+            self.update_depth_image(frame_elements['depth'])
+
+        # Update all cameras in the grid
+        scene_viewer = self.viewer
+        if scene_viewer:
+            for camera_name, frame in frame_elements.items():
+                # Skip non-camera keys
+                if camera_name in ['color', 'depth', 'status_message', 'fps', 'robot_pose']:
+                    continue
+                
+                # Get the camera widget and update it
+                if camera_name in scene_viewer.camera_widgets:
+                    camera_info = scene_viewer.camera_widgets[camera_name]
+                    camera_widget = camera_info['widget']
+                    self.update_widget_with_image(camera_widget, frame)
+
+        if 'status_message' in frame_elements:
+            self.status_message.setText(frame_elements['status_message'])
+
+        if 'fps' in frame_elements:
+            fps = frame_elements["fps"]
+            self.fps_label.setText(f"FPS: {int(fps)}")
+
+        self.frame_num += 1
+
+    def segment_pcd_from_yolo(self, frame: dict):
+        if self.seg_model_init_toggle.isChecked():
+            if self.pcd_seg_model is None:
+                logger.error("Segmentation model not initialized")
+                return
+            try:
+                labels = segment_pcd_from_2d(self.pcd_seg_model, 
+                                    frame['pcd'], frame['color'], 
+                                    self.streamer.intrinsic_matrix, 
+                                    self.streamer.extrinsics)
+            except Exception as e:
+                logger.error(f"Segmentation failed: {e}")
+                return
+            frame['seg_labels'] = labels
+
+
+
+    def on_key_press(self, obj, event):
+        key = obj.GetKeySym()
+        if key == 'space':
+            logger.info("Space key pressed")
+            pass  # Handle space key press if needed
+    
+    def _update_image(self, image: np.ndarray, label: QLabel):
+        """Update the image display in a QLabel."""
+        # Convert image to QImage and display in QLabel
+        if image.shape[2] == 3:
+            height, width, channel = image.shape
+            bytes_per_line = 3 * width
+            q_image = QImage(image.data.tobytes(), width, height, bytes_per_line, QImage.Format.Format_RGB888)
+            pixmap = QPixmap.fromImage(q_image)
+            
+            label.setPixmap(pixmap.scaled(label.size(), 
+                                          Qt.AspectRatioMode.KeepAspectRatio,
+                                          Qt.TransformationMode.SmoothTransformation))
+
+    def update_color_image(self, color_image):
+        """Update the color image display."""
+        if self.color_groupbox.isChecked():
+            self._update_image(color_image, self.color_video)
+
+    def update_depth_image(self, depth_image):
+        """Update the depth image display."""
+        if self.depth_groupbox.isChecked():
+            self._update_image(depth_image, self.depth_video)
+
+    def update_widget_with_image(self, widget, image):
+        """Update any widget with an image"""
+        if image is None:
+            return
+        
+        h, w, c = image.shape
+        bytes_per_line = c * w
+        q_img = QImage(image.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
+        widget.setPixmap(QPixmap.fromImage(q_img))
+
+    def set_predict_pose(self, pose: np.ndarray):
+        pose_p = Pose.from_1d_array(pose[:6], vector_type="euler", degrees=False)
+        print(f"custom pose: {pose_p}")
+
+
+    def view_predicted_poses(self, poses:np.ndarray):
+        robot_pose = self.robot.get_state('tcp')
+        if len(poses) < 1:
+            logger.error("Warning: At least one relative pose is required for visualization.")
+            return
+
+        base_pose = np.array(robot_pose[:6])  # Extract (x, y, z) from current_pose
+        previous_pose = Pose.from_1d_array(base_pose, vector_type="euler", degrees=False)
+        realpose = []
+        # Add relative poses incrementally
+        for i, pose in enumerate(poses):
+            if pose[6] == 1:
+                break
+            # dx, dy, dz, drx, dry, drz = pose[:6]  # Extract relative (x, y, z) changes
+            # current_pose = previous_pose + np.array([dx, dy, dz, drx, dry, drz])
+            delta_pose = Pose.from_1d_array(pose[:6], vector_type="euler", degrees=False)
+            current_pose = previous_pose.apply_delta_pose(delta_pose, on="align").to_1d_array(vector_type="euler", degrees=False)
+            realpose.append(current_pose)
+            previous_pose = current_pose
+
+        return realpose
+
+    def transform_poses(self, poses:np.ndarray, transform_pose: Pose):
+        transformed_poses = []
+        for pose in poses:
+            pose_p = Pose.from_1d_array(pose[:6], vector_type="euler", degrees=False)
+            transformed_pose = pose_p.apply_delta_pose(transform_pose, on="base")
+            transformed_poses.append(transformed_pose.to_1d_array(vector_type="euler", degrees=False))
+        return transformed_poses
+
+    @staticmethod
+    def get_num_of_palette(num_colors):
+        """Generate a color palette."""
+        # For simplicity, generate random colors
+        np.random.seed(0)
+        palettes = np.random.randint(0, 256, size=(num_colors, 3))
+        return palettes
+
+        
+    def closeEvent(self, event):
+        """Ensure the popup window is closed when the main window exits."""
+        if hasattr(self, 'popup_window'):
+            self.popup_window.close()
+            self.popup_window = None
+        logger.debug("Exiting main window")
+        if hasattr(self, 'timer'):
+            self.timer.stop()
+        if hasattr(self, 'pcd_seg_model'):
+            self.pcd_seg_model = None
+        if hasattr(self, 'sendingThread'):
+            self.sendingThread = None
+        if hasattr(self, 'calibration_data'):
+            self.calibration_data = None
+        if hasattr(self, 'collected_data'):
+            self.collected_data = None
+        if hasattr(self, 'image_dialog'):
+            self.image_dialog = None
+        self.streamer = None
+        self.current_frame = None
+        super().closeEvent(event) 
 
     def set_enable_after_stream_init(self):
         self.capture_toggle.setEnabled(True)
@@ -220,246 +511,16 @@ class PCDStreamer(PCDStreamerUI):
         self.send_button.clicked.connect(partial(on_send_button_clicked, self))
 
 
-    def frame_calling(self):
-        current_frame_time = time.time()
-        if self.frame_num % 10 == 0:  # Avoid calculation on the first frame
-            time_diff = current_frame_time - self.prev_frame_time
-            if time_diff > 0:  # Avoid division by zero
-                self.real_fps = 10*(1.0 / time_diff)
-            self.prev_frame_time = current_frame_time     
-        frame_elements = {
-            'fps': round(self.real_fps, 2),  # Assuming 30 FPS for fake camera
-        }
-        frame_elements.update(self.streamer.get_frame(take_pcd=True))
-
-        self.board_pose_update(frame_elements)
-        self.segment_pcd_from_yolo(frame_elements)
-        self.elements_update(frame_elements)
-        
-        self.current_frame = frame_elements
-            
-    def get_robot_pose(self) -> Tuple[bool, Pose]:
-        """
-        Get the current pose of the robot's end-effector.
-        
-        Returns:
-            bool: Whether the robot pose was successfully retrieved.
-            list or None: The pose as a list of length 6, containing the translation (x, y, z) and rotation (rx, ry, rz) components in the camera frame if robot calibration data is available.
-            np.ndarray or None: The pose as a 4x4 numpy array in the camera frame if robot calibration data is available.
-        """
-        if self.robot is None:
-            logger.error("Robot not initialized.")
-            return False, None
-        
-        robot_pose = self.robot.get_state('tcp')
-        base_to_end = Pose.from_1d_array(vector=robot_pose, vector_type="euler", degrees=False)
-
-        if not self.center_to_robot_base_toggle.isChecked():
-            if self.T_CamToBase is not None:
-                cam_to_end = base_to_end.apply_delta_pose(self.T_BaseToCam, on="base")
-                return True, cam_to_end
-            else:
-                logger.error("No robot calibration data detected.")
-                return False, None
-        else:
-            return True, base_to_end
-
-    def board_pose_update(self, frame):
-        pass
-        # if self.camera_interface is not None and self.detect_board_toggle.isChecked():
-        #     rgb_with_pose, rvec, tvec = self.camera_interface._process_and_display_frame(
-        #         self._img_to_array(frame['color']), ret_vecs=True)
-        #     if rvec is None or tvec is None:
-        #         logger.warning("Failed to detect board.")
-        #     else:
-        #         cam_to_board = Pose.from_1d_array(np.hstack([tvec.ravel(), rvec.ravel()]), 
-        #                                           vector_type="rotvec", degrees=False)
-        #         if self.center_to_robot_base_toggle.isChecked():
-        #             if self.T_CamToBase is not None:
-        #                 base_to_board = cam_to_board.apply_delta_pose(self.T_CamToBase, on="base")
-        #                 self.board_pose_frame.SetUserMatrix(base_to_board.vtk_matrix)
-        #         else:
-        #             self.board_pose_frame.SetUserMatrix(cam_to_board.vtk_matrix)
-    
-    
-
-    def elements_update(self, frame_elements: dict):
-        """Update visualization with point cloud and images."""
-
-        if 'color' in frame_elements:
-            self.update_color_image(frame_elements['color'])
-
-        if 'depth' in frame_elements:
-            self.update_depth_image(frame_elements['depth'])
-
-        if 'main' in frame_elements:
-            self.update_main_cam_image(frame_elements['main'])
-
-        if 'sub' in frame_elements:
-            self.update_sub_cam_image(frame_elements['sub'])
-
-        if 'status_message' in frame_elements:
-            self.status_message.setText(frame_elements['status_message'])
-
-        if 'fps' in frame_elements:
-            fps = frame_elements["fps"]
-            self.fps_label.setText(f"FPS: {int(fps)}")
-
-        # if hasattr(self, 'robot'):
-        #     if 'robot_pose' in frame_elements:
-        #         self.robot_end_frame.SetUserMatrix(frame_elements['robot_pose'])
-
-        self.frame_num += 1
-        # logger.debug(f"Frame: {self.frame_num}")
-
-
-        # logger.debug("Point cloud visualization updated.")
-
-    def segment_pcd_from_yolo(self, frame: dict):
-        if self.seg_model_init_toggle.isChecked():
-            if self.pcd_seg_model is None:
-                logger.error("Segmentation model not initialized")
-                return
-            try:
-                labels = segment_pcd_from_2d(self.pcd_seg_model, 
-                                    frame['pcd'], frame['color'], 
-                                    self.streamer.intrinsic_matrix, 
-                                    self.streamer.extrinsics)
-            except Exception as e:
-                logger.error(f"Segmentation failed: {e}")
-                return
-            frame['seg_labels'] = labels
-
-
-
-    def on_key_press(self, obj, event):
-        key = obj.GetKeySym()
-        if key == 'space':
-            logger.info("Space key pressed")
-            pass  # Handle space key press if needed
-
-    @staticmethod
-    def _img_to_array(image: Union[np.ndarray, o3d.geometry.Image, o3d.t.geometry.Image]) -> np.ndarray:
-        if isinstance(image, np.ndarray):
-            return image
-        elif isinstance(image, o3d.geometry.Image):
-            return np.asarray(image)
-        elif isinstance(image, o3d.t.geometry.Image):
-            return np.asarray(image.cpu())
-    
-    def _update_image(self, image, label: QLabel):
-        """Update the image display in a QLabel."""
-        image = self._img_to_array(image)
-        # Convert image to QImage and display in QLabel
-        if image.shape[2] == 3:
-            height, width, channel = image.shape
-            bytes_per_line = 3 * width
-            q_image = QImage(image.data.tobytes(), width, height, bytes_per_line, QImage.Format.Format_RGB888)
-            pixmap = QPixmap.fromImage(q_image)
-            
-            label.setPixmap(pixmap.scaled(label.size(), 
-                                          Qt.AspectRatioMode.KeepAspectRatio,
-                                          Qt.TransformationMode.SmoothTransformation))
-
-
-    def update_color_image(self, color_image):
-        """Update the color image display."""
-        if self.color_groupbox.isChecked():
-            self._update_image(color_image, self.color_video)
-
-    def update_depth_image(self, depth_image):
-        """Update the depth image display."""
-        if self.depth_groupbox.isChecked():
-            self._update_image(depth_image, self.depth_video)
-
-    def update_main_cam_image(self, image):
-        self._update_image(image, self.viewer.main_cam)
-
-    def update_sub_cam_image(self, image):
-        self._update_image(image, self.viewer.sub_cam)
-
-    def set_predict_pose(self, pose: np.ndarray):
-        pose_p = Pose.from_1d_array(pose[:6], vector_type="euler", degrees=False)
-        print(f"custom pose: {pose_p}")
-
-
-    def view_predicted_poses(self, poses:np.ndarray):
-        ret, robot_pose, _ = self.get_robot_pose()
-        if not ret:
-            logger.error("Failed to get robot pose.")
-            return
-        if len(poses) < 1:
-            logger.error("Warning: At least one relative pose is required for visualization.")
-            return
-
-        base_pose = np.array(robot_pose[:6])  # Extract (x, y, z) from current_pose
-        previous_pose = Pose.from_1d_array(base_pose, vector_type="euler", degrees=False)
-        realpose = []
-        # Add relative poses incrementally
-        for i, pose in enumerate(poses):
-            if pose[6] == 1:
-                break
-            # dx, dy, dz, drx, dry, drz = pose[:6]  # Extract relative (x, y, z) changes
-            # current_pose = previous_pose + np.array([dx, dy, dz, drx, dry, drz])
-            delta_pose = Pose.from_1d_array(pose[:6], vector_type="euler", degrees=False)
-            current_pose = previous_pose.apply_delta_pose(delta_pose, on="align").to_1d_array(vector_type="euler", degrees=False)
-            realpose.append(current_pose)
-            previous_pose = current_pose
-
-        return realpose
-
-    def transform_poses(self, poses:np.ndarray, transform_pose: Pose):
-        transformed_poses = []
-        for pose in poses:
-            pose_p = Pose.from_1d_array(pose[:6], vector_type="euler", degrees=False)
-            transformed_pose = pose_p.apply_delta_pose(transform_pose, on="base")
-            transformed_poses.append(transformed_pose.to_1d_array(vector_type="euler", degrees=False))
-        return transformed_poses
-
-    @staticmethod
-    def get_num_of_palette(num_colors):
-        """Generate a color palette."""
-        # For simplicity, generate random colors
-        np.random.seed(0)
-        palettes = np.random.randint(0, 256, size=(num_colors, 3))
-        return palettes
-
-        
-    def closeEvent(self, event):
-        """Ensure the popup window is closed when the main window exits."""
-        if hasattr(self, 'popup_window'):
-            self.popup_window.close()
-            self.popup_window = None
-        logger.debug("Exiting main window")
-        if hasattr(self, 'timer'):
-            self.timer.stop()
-        if hasattr(self, 'pcd_seg_model'):
-            self.pcd_seg_model = None
-        if hasattr(self, 'sendingThread'):
-            self.sendingThread = None
-        if hasattr(self, 'calibration_data'):
-            self.calibration_data = None
-        if hasattr(self, 'collected_data'):
-            self.collected_data = None
-        if hasattr(self, 'image_dialog'):
-            self.image_dialog = None
-        self.streamer = None
-        self.current_frame = None
-        super().closeEvent(event) 
-
-    def update_sub_camera_options(self):
-        # Get the currently selected main camera
-        main_camera = self.main_camera_combobox.currentText()
-        
-        # Clear current items in sub camera combobox
-        self.sub_camera_combobox.clear()
-        
-        # Get all available cameras
-        cams = self.video_manager.devices
-        
-        # Add all cameras except the one selected in main combobox
-        sub_cameras = [d['name'] for d in cams if d['name'] != main_camera] + ['Fake Camera']
-        self.sub_camera_combobox.addItems(sub_cameras)
-        
-        # Update the camera IDs in params
-        self.update_cam_ids()
+    def set_disable_before_stream_init(self):
+        self.capture_toggle.setEnabled(False)
+        self.seg_model_init_toggle.setEnabled(False)
+        self.data_collect_button.setEnabled(False)
+        self.calib_collect_button.setEnabled(False)
+        self.calib_button.setEnabled(False)
+        self.calib_op_save_button.setEnabled(False)
+        self.calib_op_load_button.setEnabled(False)
+        self.calib_op_run_button.setEnabled(False)
+        self.detect_board_toggle.setEnabled(False)
+        self.show_axis_in_scene_button.setEnabled(False)
+        self.calib_list_remove_button.setEnabled(False)
+        self.robot_move_button.setEnabled(False)

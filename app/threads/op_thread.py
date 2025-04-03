@@ -4,7 +4,7 @@ import numpy as np
 import socket
 import pickle
 
-from typing import *
+from typing import List, Tuple
 from PySide6.QtCore import QThread, Signal
 # Import specific modules from vtkmodules
 

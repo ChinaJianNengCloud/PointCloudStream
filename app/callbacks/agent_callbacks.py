@@ -6,14 +6,14 @@ from typing import TYPE_CHECKING
 from app.utils.networking import send_message, discover_server
 from PIL import Image
 if TYPE_CHECKING:
-    from app.entry import PCDStreamer
+    from app.entry import SceneStreamer
 
 from app.utils.logger import setup_logger
 from app.threads.op_thread import DataSendToServerThread, RobotTcpOpThread
 
 logger = setup_logger(__name__)
 
-def on_scan_button_clicked(self: 'PCDStreamer'):
+def on_scan_button_clicked(self: 'SceneStreamer'):
     try:
         ip, port = discover_server(self.params)
         self.ip_editor.setText(ip)
@@ -24,7 +24,7 @@ def on_scan_button_clicked(self: 'PCDStreamer'):
         logger.error(f"Failed to discover server: {e}")
     logger.debug("Scan button clicked")
 
-def on_reset_button_clicked(self: 'PCDStreamer'):
+def on_reset_button_clicked(self: 'SceneStreamer'):
     msg_dict = {
         'command': "reset"
     }
@@ -34,7 +34,7 @@ def on_reset_button_clicked(self: 'PCDStreamer'):
     self.sendingThread.start()
     
 
-def on_send_button_clicked(self: 'PCDStreamer'):
+def on_send_button_clicked(self: 'SceneStreamer'):
     
     text = self.agent_prompt_editor.toPlainText().strip()
     intruction ='''The robot should only interact with the breast closest to its arm. Directions are defined relative to the human body:
@@ -69,7 +69,7 @@ def on_send_button_clicked(self: 'PCDStreamer'):
         self.chat_history.add_message(text, is_user=True)
 
 
-def on_finish_sending_thread(self: "PCDStreamer"):
+def on_finish_sending_thread(self: "SceneStreamer"):
     self.send_button.setEnabled(True)
     
     response = self.sendingThread.get_response()

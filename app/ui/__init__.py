@@ -1,3 +1,3 @@
-from .app_ui import PCDStreamerUI
+from .app_ui import SceneStreamerUI
 
-__all__ = ["PCDStreamerUI"]
+__all__ = ["SceneStreamerUI"]

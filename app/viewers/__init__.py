@@ -1,9 +1,8 @@
 from .image_viewer import ResizableImageLabel
-from .pcd_viewer import Streamer, PCDUpdater, FakeCamera, FakeRGBDFrame, CameraFrustum
+from .scene_viewer import CameraReader, MultiCamStreamer, FakeCamera, FakeRGBDFrame
 
 __all__ = ['ResizableImageLabel', 
-           'Streamer', 
-           'PCDUpdater', 
            'FakeCamera', 
            'FakeRGBDFrame', 
-           'CameraFrustum']
+           'CameraReader',
+           'MultiCamStreamer']
