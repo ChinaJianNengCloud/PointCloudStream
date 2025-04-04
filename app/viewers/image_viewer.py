@@ -1,16 +1,23 @@
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QLabel,
                                QPushButton, QHBoxLayout, QSizePolicy)
-from PySide6.QtGui import QPixmap
-from PySide6.QtCore import Qt
+from PySide6.QtGui import QPixmap, QPainter, QFont, QColor, QPainterPath
+from PySide6.QtCore import Qt, QRectF
 import time
 
 class ResizableImageLabel(QLabel):
     """Custom QLabel that automatically resizes the image to fit the widget while maintaining aspect ratio."""
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, camera_name=None):
         super().__init__(parent)
         self.setMinimumSize(100, 100)  # Prevent the label from becoming too small
         self.original_pixmap = None
+        self.scaled_pixmap = None
+        self.camera_name = camera_name
         self.setScaledContents(False)  # We'll handle scaling manually
+
+    def set_camera_name(self, name):
+        """Set the camera name to be displayed on the image"""
+        self.camera_name = name
+        self.update()
 
     def setPixmap(self, pixmap):
         self.original_pixmap = pixmap
@@ -23,12 +30,55 @@ class ResizableImageLabel(QLabel):
         super().resizeEvent(event)
 
     def update_scaled_pixmap(self):
-        scaled_pixmap = self.original_pixmap.scaled(
+        self.scaled_pixmap = self.original_pixmap.scaled(
             self.size(),
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation
         )
-        super().setPixmap(scaled_pixmap)
+        # Don't call super().setPixmap here, as we'll paint in paintEvent
+        self.update()
+
+    def paintEvent(self, event):
+        if not self.scaled_pixmap:
+            return super().paintEvent(event)
+            
+        # Calculate the position to center the image in the label
+        x = (self.width() - self.scaled_pixmap.width()) // 2
+        y = (self.height() - self.scaled_pixmap.height()) // 2
+        
+        painter = QPainter(self)
+        # Draw the scaled image
+        painter.drawPixmap(x, y, self.scaled_pixmap)
+        
+        # Draw the camera name if available
+        if self.camera_name and self.scaled_pixmap:
+            # Prepare font
+            font = QFont()
+            font.setBold(True)
+            font.setPointSize(10)
+            painter.setFont(font)
+            
+            # Measure text
+            text_rect = painter.fontMetrics().boundingRect(self.camera_name)
+            text_width = text_rect.width() + 16  # Add padding
+            text_height = text_rect.height() + 8  # Add padding
+            
+            # Define background rectangle position and size (upper left corner)
+            bg_rect = QRectF(x + 10, y + 10, text_width, text_height)
+            
+            # Create rounded rectangle path
+            path = QPainterPath()
+            path.addRoundedRect(bg_rect, 8, 8)  # 8px corner radius
+            
+            # Draw semi-transparent background
+            painter.setRenderHint(QPainter.Antialiasing)
+            painter.fillPath(path, QColor(0, 0, 0, 128))  # 50% opacity black
+            
+            # Draw text
+            painter.setPen(QColor(255, 255, 255))  # White text for contrast
+            painter.drawText(bg_rect, Qt.AlignCenter, self.camera_name)
+        
+        painter.end()
 
 
 class ImageConfirmationDialog(QDialog):
@@ -51,11 +101,11 @@ class ImageConfirmationDialog(QDialog):
         main_layout = QVBoxLayout(self)
 
         # Image Label
-        self.image_label = QLabel()
+        self.image_label = ResizableImageLabel()
         self.image_label.setAlignment(Qt.AlignCenter)
         self.image_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         if self.original_pixmap is not None:
-            self.update_pixmap()  # Initial pixmap setup
+            self.image_label.setPixmap(self.original_pixmap)  # Initial pixmap setup
         main_layout.addWidget(self.image_label)
 
         # Notice Text Label
@@ -84,22 +134,8 @@ class ImageConfirmationDialog(QDialog):
     def resizeEvent(self, event):
         # Override the resize event to update the pixmap when the dialog is resized
         if self.original_pixmap is not None:
-            self.update_pixmap()
+            self.image_label.update_scaled_pixmap()
         super().resizeEvent(event)
-
-    def update_pixmap(self):
-        # Get the current size of the label
-        label_size = self.image_label.size()
-
-        # Calculate the scaled size while preserving aspect ratio
-        original_size = self.original_pixmap.size()
-        scaled_size = original_size.scaled(label_size, Qt.AspectRatioMode.KeepAspectRatio)
-
-        # Create a scaled pixmap
-        scaled_pixmap = self.original_pixmap.scaled(scaled_size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-
-        # Set the pixmap on the label
-        self.image_label.setPixmap(scaled_pixmap)
 
 
 # if __name__ == '__main__':

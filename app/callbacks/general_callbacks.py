@@ -1,6 +1,7 @@
 from PySide6.QtCore import QTimer
 from typing import TYPE_CHECKING
 from app.ui.app_ui import SceneViewer
+from app.utils import RobotInterface
 import logging 
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,7 @@ def on_stream_init_button_clicked(self: "SceneStreamer"):
         if scene_viewer:
             scene_viewer.clear_all_cameras()
         self.status_message.setText("System: Stream Stopped")
+        self.streaming = False
     else:
         # Start streaming
         self.streaming = True
@@ -57,3 +59,19 @@ def on_stream_init_button_clicked(self: "SceneStreamer"):
             self.status_message.setText("System: Failed to connect to Cameras")
     
     self.set_enable_after_stream_init()
+
+
+def on_robot_init_button_clicked(self: "SceneStreamer"):
+    self.robot =  RobotInterface(sim=False)
+    try:
+        self.robot.find_device()
+        self.robot.connect()
+        ip = self.robot.ip_address
+        msg = f'Robot: Connected [{ip}]'
+        self.robot_init_button.setStyleSheet("background-color: green;")
+    except Exception as e:
+        msg = 'Robot: Connection failed'
+        del self.robot
+        logger.error(msg+f' [{e}]')
+        self.robot_init_button.setStyleSheet("background-color: red;")
+        self.flag_robot_init = False

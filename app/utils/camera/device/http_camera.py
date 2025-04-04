@@ -81,7 +81,7 @@ class MJPEGStreamReader(QThread):
             except Exception as e:
                 logger.debug(f"Error while closing stream in stop(): {str(e)}")
                 pass
-        
+        # self.wait()
         if not self.wait(150):  # 150ms timeout
             logger.warning(f"Thread for {self.url} did not exit gracefully, terminating")
             self.terminate()

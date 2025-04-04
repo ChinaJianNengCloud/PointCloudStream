@@ -1,75 +1,85 @@
 import sys
-import requests
-import cv2
-import numpy as np
-from PySide6.QtWidgets import QApplication, QLabel, QWidget, QVBoxLayout
-from PySide6.QtCore import QThread, Signal, Qt
-from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QPalette, QColor
 
-class MJPEGStreamReader(QThread):
-    new_frame = Signal(np.ndarray)
-
-    def __init__(self, url):
+class ThemeDetectorApp(QMainWindow):
+    def __init__(self):
         super().__init__()
-        self.url = url
-        self.running = True
-
-    def run(self):
-        stream = requests.get(self.url, stream=True)
-        bytes_buffer = b""
-
-        for chunk in stream.iter_content(chunk_size=1024):
-            if not self.running:
-                break
-            bytes_buffer += chunk
-            a = bytes_buffer.find(b'\xff\xd8')  # Start of JPEG
-            b = bytes_buffer.find(b'\xff\xd9')  # End of JPEG
-            if a != -1 and b != -1 and b > a:
-                jpg = bytes_buffer[a:b+2]
-                bytes_buffer = bytes_buffer[b+2:]
-                img_array = np.frombuffer(jpg, dtype=np.uint8)
-                frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
-                if frame is not None:
-                    self.new_frame.emit(frame)
-
-    def stop(self):
-        self.running = False
-        self.quit()
-        self.wait()
-
-
-class MJPEGViewer(QWidget):
-    def __init__(self, stream_url):
-        super().__init__()
-        self.setWindowTitle("MJPEG IP Camera Viewer")
-
-        self.label = QLabel()
-        self.label.setAlignment(Qt.AlignCenter)
-
-        layout = QVBoxLayout()
-        layout.addWidget(self.label)
-        self.setLayout(layout)
-
-        self.thread: MJPEGStreamReader = MJPEGStreamReader(stream_url)
-        self.thread.new_frame.connect(self.update_image)
-        self.thread.start()
-
-    def update_image(self, frame: np.ndarray):
-        rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        h, w, ch = rgb_image.shape
-        bytes_per_line = ch * w
-        qt_image = QImage(rgb_image.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
-        self.label.setPixmap(QPixmap.fromImage(qt_image))
-
-    def closeEvent(self, event):
-        self.thread.stop()
-        event.accept()
+        self.setWindowTitle("Theme Detector")
+        self.resize(400, 200)
+        
+        # Create central widget
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        
+        # Create layout
+        layout = QVBoxLayout(central_widget)
+        
+        # Create labels
+        self.theme_label = QLabel("Checking theme...")
+        self.theme_label.setAlignment(Qt.AlignCenter)
+        self.theme_label.setStyleSheet("font-size: 18px; font-weight: bold;")
+        
+        self.bg_color_label = QLabel("Background color: ")
+        self.bg_color_label.setAlignment(Qt.AlignCenter)
+        
+        self.text_color_label = QLabel("Text color: ")
+        self.text_color_label.setAlignment(Qt.AlignCenter)
+        
+        # Add widgets to layout
+        layout.addWidget(self.theme_label)
+        layout.addWidget(self.bg_color_label)
+        layout.addWidget(self.text_color_label)
+        
+        # Set up a timer to periodically check the theme (could also use an event handler)
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.check_theme)
+        self.timer.start(1000)  # Check theme every second
+        
+        # Initial theme check
+        self.check_theme()
+    
+    def check_theme(self):
+        # Get the application palette
+        palette = QApplication.palette()
+        
+        # Get background and text colors
+        bg_color = palette.color(QPalette.Window)
+        text_color = palette.color(QPalette.WindowText)
+        
+        # Calculate luminance (0.299*R + 0.587*G + 0.114*B)
+        # This is a common formula to determine perceived brightness
+        luminance = (0.299 * bg_color.red() + 
+                     0.587 * bg_color.green() + 
+                     0.114 * bg_color.blue()) / 255
+        
+        # If luminance is less than 0.5, it's considered dark mode
+        is_dark_mode = luminance < 0.5
+        
+        # Update UI
+        theme_text = "Dark Mode" if is_dark_mode else "Light Mode"
+        self.theme_label.setText(f"Current Theme: {theme_text}")
+        
+        # Show color values
+        self.bg_color_label.setText(f"Background color: RGB({bg_color.red()}, {bg_color.green()}, {bg_color.blue()})")
+        self.text_color_label.setText(f"Text color: RGB({text_color.red()}, {text_color.green()}, {text_color.blue()})")
+        
+        # Optional: Set a border around the window to visualize the theme better
+        border_color = "white" if is_dark_mode else "black"
+        self.setStyleSheet(f"QMainWindow {{ border: 2px solid {border_color}; }}")
 
 
 if __name__ == "__main__":
-    stream_url = "http://192.168.1.123:81/stream"  # Your MJPEG stream
     app = QApplication(sys.argv)
-    viewer = MJPEGViewer(stream_url)
-    viewer.resize(800, 600)
-    viewer.show()
+    
+    # Alternative method to check if dark mode is enabled:
+    # This checks if the application style hints the app is in dark mode
+    # Only works on some platforms and with newer Qt versions
+    is_dark_theme = app.styleHints().colorScheme() == Qt.ColorScheme.Dark
+    print(f"Qt styleHints reports dark theme: {is_dark_theme}")
+    
+    window = ThemeDetectorApp()
+    window.show()
+    
     sys.exit(app.exec())

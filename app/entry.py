@@ -84,7 +84,7 @@ class SceneStreamer(SceneStreamerUI):
         self.palettes = self.get_num_of_palette(80)
         
         # Robot and calibration components
-        self.robot = None
+        self.robot: RobotInterface = None
         self.calib_thread = None
         self.robot_joint_thread = None
         self.calibration_data = None
@@ -215,9 +215,18 @@ class SceneStreamer(SceneStreamerUI):
         frame_elements = {
             'fps': round(self.real_fps, 2),  # Assuming 30 FPS for fake camera
         }
-        frame_elements.update(self.streamer.get_frame(take_pcd=True))
+        frame_elements.update(self.streamer.get_frame())
+        if hasattr(self, 'robot') and self.robot is not None:
+            # Get the current robot state type from the combobox
+            robot_state_type = self.robot_state_type_combobox.currentText()
+            # Get the robot state based on the selected type
+            robot_state = self.robot.get_state(robot_state_type)
+            frame_elements.update({
+                'robot_pose': robot_state,
+                'robot_state_type': robot_state_type
+            })
+            
         self.elements_update(frame_elements)
-        
         self.current_frame = frame_elements
 
     def elements_update(self, frame_elements: dict):
@@ -226,7 +235,7 @@ class SceneStreamer(SceneStreamerUI):
         if scene_viewer:
             for camera_name, frame in frame_elements.items():
                 # Skip non-camera keys
-                if camera_name in ['status_message', 'fps', 'robot_pose']:
+                if camera_name in ['status_message', 'fps', 'robot_pose', 'robot_state_type']:
                     continue
                 
                 # Get the camera widget and update it
@@ -234,6 +243,23 @@ class SceneStreamer(SceneStreamerUI):
                     camera_info = scene_viewer.camera_widgets[camera_name]
                     camera_widget = camera_info['widget']
                     self.update_widget_with_image(camera_widget, frame)
+            
+            # Update robot pose graph if robot pose data is available
+            if 'robot_pose' in frame_elements and hasattr(scene_viewer, 'robot_pose_graph'):
+                # Only update if plot robot pose checkbox is checked
+                if hasattr(self, 'plot_robot_pose_checkbox') and self.plot_robot_pose_checkbox.isChecked():
+                    # Get the state type
+                    state_type = frame_elements.get('robot_state_type', 'tcp')
+                    # Update graph with state type
+                    scene_viewer.robot_pose_graph.update_data(
+                        frame_elements['robot_pose'],
+                        state_type=state_type
+                    )
+                    # Make the robot pose graph visible
+                    scene_viewer.robot_pose_graph.setVisible(True)
+                else:
+                    # Hide the robot pose graph when checkbox is unchecked
+                    scene_viewer.robot_pose_graph.setVisible(False)
 
         if 'status_message' in frame_elements:
             self.status_message.setText(frame_elements['status_message'])

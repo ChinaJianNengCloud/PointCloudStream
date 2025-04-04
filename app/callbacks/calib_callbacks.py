@@ -136,23 +136,6 @@ def on_calib_button_clicked(self: "SceneStreamer"):
     def on_detect_board_toggle_state_changed(self):
         logger.debug("Detect board state changed to:")
 
-def on_robot_init_button_clicked(self: "SceneStreamer"):
-    self.robot =  RobotInterface(sim=True)
-    try:
-        self.robot.find_device()
-        self.robot.connect()
-        ip = self.robot.ip_address
-        msg = f'Robot: Connected [{ip}]'
-        self.robot_init_button.setStyleSheet("background-color: green;")
-        if hasattr(self, 'calibration_data'):
-            self.calibration_data.reset()
-    except Exception as e:
-        msg = f'Robot: Connection failed'
-        del self.robot
-        logger.error(msg+f' [{e}]')
-        self.robot_init_button.setStyleSheet("background-color: red;")
-        self.flag_robot_init = False
-
 
 def on_detect_board_toggle_state_changed(self: "SceneStreamer"):
     logger.debug("Detect board state changed to:")

@@ -14,16 +14,11 @@ from app.utils import ARUCO_BOARD
 from app.viewers.image_viewer import ResizableImageLabel
 from .chat_ui_widget import ChatHistoryWidget
 from .data_ui_widget import DataTreeWidget
+from .robot_graph_widget import RobotPoseGraphWidget
 
 import logging
 logger = logging.getLogger(__name__)
 
-class PlotController(QWidget):
-    def __init__(self):
-        super().__init__()
-        self.initUI()
-    def initUI(self):
-        pass
 
 class SceneViewer(QWidget):
     def __init__(self):
@@ -37,6 +32,10 @@ class SceneViewer(QWidget):
         # Create a grid layout for cameras
         self.cam_grid_layout = QGridLayout()
         layout.addLayout(self.cam_grid_layout)
+        
+        # Add robot pose graph after camera grid
+        self.robot_pose_graph = RobotPoseGraphWidget()
+        layout.addWidget(self.robot_pose_graph)
         
         # For backward compatibility, keep the main and sub cam references
         main_cam = ResizableImageLabel()
@@ -59,18 +58,16 @@ class SceneViewer(QWidget):
     def add_camera_to_grid(self, camera_name, camera_widget=None, row=None, col=None):
         """Add a camera to the grid at the specified position or auto-position"""
         if camera_widget is None:
-            camera_widget = ResizableImageLabel()
+            camera_widget = ResizableImageLabel(camera_name=camera_name)
             camera_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
             camera_widget.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        elif isinstance(camera_widget, ResizableImageLabel):
+            camera_widget.set_camera_name(camera_name)
         
-        # Add camera name label
+        # Create container for the camera widget
         container = QWidget()
         container_layout = QVBoxLayout(container)
         container_layout.setContentsMargins(2, 2, 2, 2)
-        
-        name_label = QLabel(camera_name)
-        name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        container_layout.addWidget(name_label)
         container_layout.addWidget(camera_widget)
         
         # Determine grid position if not specified
@@ -85,7 +82,6 @@ class SceneViewer(QWidget):
         self.camera_widgets[camera_name] = {
             "widget": camera_widget,
             "container": container,
-            "name_label": name_label,
             "row": row,
             "col": col
         }
@@ -315,9 +311,30 @@ class SceneStreamerUI(QMainWindow):
         self.main_camera_combobox = self.camera_combobox
         self.sub_camera_combobox = QComboBox()  # Hidden, just for compatibility
         
+        # Robot group
+        robot_group = QGroupBox("Robot Management")
+        robot_group_layout = QVBoxLayout()
+        robot_group.setLayout(robot_group_layout)
+        v_layout.addWidget(robot_group)
+        
         # Robot init
         self.robot_init_button = QPushButton("Robot Init")
-        v_layout.addWidget(self.robot_init_button)
+        robot_group_layout.addWidget(self.robot_init_button)
+        
+        # Robot pose plot controls
+        robot_plot_layout = QHBoxLayout()
+        robot_group_layout.addLayout(robot_plot_layout)
+        
+        # Robot pose plot toggle
+        self.plot_robot_pose_checkbox = QCheckBox("Plot Robot Pose")
+        self.plot_robot_pose_checkbox.setChecked(True)  # Enable by default
+        robot_plot_layout.addWidget(self.plot_robot_pose_checkbox)
+        
+        # Robot state type selection
+        robot_plot_layout.addWidget(QLabel("State Type:"))
+        self.robot_state_type_combobox = QComboBox()
+        self.robot_state_type_combobox.addItems(["tcp", "joint"])
+        robot_plot_layout.addWidget(self.robot_state_type_combobox)
 
     def on_camera_type_changed(self, camera_type):
         """Handle camera type combobox changes"""
