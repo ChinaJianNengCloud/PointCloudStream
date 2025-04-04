@@ -1,7 +1,5 @@
-import logging
 import cv2
 import json
-import copy
 import numpy as np
 
 from typing import TYPE_CHECKING

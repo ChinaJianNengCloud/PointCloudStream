@@ -1,7 +1,6 @@
 from typing import List
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QLabel, QFrame, QVBoxLayout, QHBoxLayout, QWidget, QSizePolicy, QScrollArea
-from PySide6.QtCore import Qt, QTimer
 
 class ChatBubble(QFrame):
     """

@@ -19,13 +19,13 @@ def main():
                 'id': 0, 
                 'name': 'main'
             },
-               {
-                'id': 2, 
-                'name': 'wrist'
-            },
+            #    {
+            #     'id': 2, 
+            #     'name': 'wrist'
+            # },
             {
                 'id': 99, 
-                'name': 'wrist 2', 
+                'name': 'wrist', 
                 'http_url': 'http://192.168.1.123:81/stream'
             }
         ],

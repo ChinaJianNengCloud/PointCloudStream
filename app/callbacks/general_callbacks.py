@@ -51,6 +51,8 @@ def on_stream_init_button_clicked(self: "SceneStreamer"):
             self.timer.timeout.connect(self.frame_calling)
             self.timer.start(30)  # Update at ~30 FPS
         else:
+            # Ensure all cameras are properly released when initialization fails
+            self.streamer.disconnect()
             self.streaming = False
             self.main_init_button.setText("Initialize Cameras")
             self.status_message.setText("System: Failed to connect to Cameras")

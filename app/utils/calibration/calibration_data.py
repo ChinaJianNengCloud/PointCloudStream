@@ -1,17 +1,12 @@
 import numpy as np
 import cv2
 from scipy.spatial.transform import Rotation as R
-from PySide6.QtCore import Signal, QObject, QThread
+from PySide6.QtCore import Signal, QObject
 import logging
 import json
 from pathlib import Path
 import shutil
-import time
-
-# Configure logging
-# logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(levelname)s] %(message)s')
-from app.utils.logger import setup_logger
-logger = setup_logger(__name__)
+logger = logging.getLogger(__name__)
 
 class CalibrationData(QObject):
     data_changed = Signal()
@@ -120,9 +115,9 @@ class CalibrationData(QObject):
             else:
                 cur_object_points, cur_image_points = None, None
                 ret = False
-                logger.warning(f"Not enough markers detected in image")
+                logger.warning("Not enough markers detected in image")
         else:
-            logger.warning(f"No valid Charuco corners detected in image")
+            logger.warning("No valid Charuco corners detected in image")
             cur_object_points, cur_image_points = None, None
             ret = False
 

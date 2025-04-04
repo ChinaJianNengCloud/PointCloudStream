@@ -1,14 +1,8 @@
 import lebai_sdk
 import numpy as np
-from scipy.spatial.transform import Rotation as R
+
 import logging
-import time
-try:
-    from app.utils.logger import setup_logger
-    logger = setup_logger(__name__)
-except ImportError:
-    import logging
-    logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 class SimLebai:
     """Simulation class that mimics the lebai_sdk interface for testing without hardware."""

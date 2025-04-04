@@ -12,8 +12,8 @@ if TYPE_CHECKING:
 from app.viewers.image_viewer import ImageConfirmationDialog
 from app.threads.op_thread import RobotJointOpThread
 from app.utils.pose import interpolate_joint_positions_equal_distance
-from app.utils.logger import setup_logger
-logger = setup_logger(__name__)
+
+logger = logging.getLogger(__name__)
 
 def on_data_replay_and_save_button_clicked(self: "SceneStreamer"):
     select_item = self.data_tree_view.selected_item

@@ -1,19 +1,12 @@
-import os
 from pathlib import Path
 from ultralytics import YOLO
 import numpy as np
 from plyfile import PlyElement, PlyData
 import open3d as o3d
-import open3d.core as o3c
 import json
-import torch
 import cv2
-import torch.utils.dlpack
-from typing import List
 from tqdm import tqdm
-from app.utils.camera.segmentation_utils import (segment_pcd_from_2d, 
-                                                 read_ply_to_numpy, 
-                                                 map_point_cloud_colors_from_image,
+from app.utils.camera.segmentation_utils import (read_ply_to_numpy, 
                                                  batch_segment_and_label)
 # Initialize YOLO model
 model = YOLO("/home/capre/Point-Cloud-Stream/runs/segment/train6/weights/best.pt")

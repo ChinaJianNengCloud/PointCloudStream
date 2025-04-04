@@ -1,27 +1,18 @@
 import time
 import numpy as np
-import open3d as o3d
-import cv2
 from functools import partial
-from typing import List, Dict, Any, Union
+from typing import List, Dict, Any
 
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QImage, QPixmap
-from PySide6.QtWidgets import (QLabel, QDoubleSpinBox, 
-                             QVBoxLayout, QHBoxLayout, QPushButton, 
-                             QGroupBox, QSlider, QListWidgetItem, QListWidget)
-from PySide6.QtWidgets import *
-
-from scipy.spatial.transform import Rotation as R
-
-
+from PySide6.QtWidgets import (QLabel, QListWidgetItem)
 from app.ui import SceneStreamerUI
 from app.utils import CalibrationData, CollectedData, ConversationData
 from app.utils.camera import segment_pcd_from_2d, CameraInterface
 from app.utils.robot import RobotInterface
 from app.viewers.scene_viewer import MultiCamStreamer
 from app.threads.op_thread import DataSendToServerThread, RobotTcpOpThread, RobotJointOpThread
-from app.utils.camera.video_manager import USBVideoManager
+from app.utils.camera.device.usb_camera_parser import USBVideoManager
 from app.callbacks import (
     on_stream_init_button_clicked,        
     on_capture_toggle_state_changed,
@@ -61,10 +52,8 @@ from app.callbacks import (
     on_send_button_clicked,
 )
 from app.utils.pose import Pose
-# from app.utils.robot.matrix_pose_op import *
-
-from app.utils.logger import setup_logger
-logger = setup_logger(__name__)
+import logging
+logger = logging.getLogger(__name__)
 
 class SceneStreamer(SceneStreamerUI):
     """Entry point for the app. Controls the PipelineModel object for IO and

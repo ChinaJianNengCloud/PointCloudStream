@@ -8,10 +8,10 @@ from PIL import Image
 if TYPE_CHECKING:
     from app.entry import SceneStreamer
 
-from app.utils.logger import setup_logger
+
 from app.threads.op_thread import DataSendToServerThread, RobotTcpOpThread
 
-logger = setup_logger(__name__)
+logger = logging.getLogger(__name__)
 
 def on_scan_button_clicked(self: 'SceneStreamer'):
     try:

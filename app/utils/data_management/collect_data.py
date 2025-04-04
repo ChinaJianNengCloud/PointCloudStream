@@ -4,14 +4,11 @@ from typing import Dict, List, AnyStr, Union
 import numpy as np
 import os
 from PIL import Image
-from plyfile import PlyData, PlyElement
 import logging
 import threading
-import cv2
 from PySide6.QtCore import Signal, QObject
 
-from app.utils.logger import setup_logger
-logger = setup_logger(__name__)
+logger = logging.getLogger(__name__)
 
 class CollectedData(QObject):
     data_changed = Signal()

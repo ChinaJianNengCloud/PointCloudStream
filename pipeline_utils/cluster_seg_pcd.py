@@ -1,9 +1,7 @@
-import os
 from pathlib import Path
 from ultralytics import YOLO
 import numpy as np
 from plyfile import PlyElement, PlyData
-import open3d as o3d
 import json
 from tqdm import tqdm
 from multiprocessing import Pool, Manager

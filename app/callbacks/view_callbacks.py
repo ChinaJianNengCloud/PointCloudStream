@@ -12,9 +12,6 @@ logger = setup_logger(__name__)
 def on_capture_toggle_state_changed(self: "SceneStreamer"):
     logger.debug("Capture state changed")
 
-def on_capture_toggle_state_changed(self: "SceneStreamer"):
-    logger.debug("Capture state changed")
-
 def on_seg_model_init_toggle_state_changed(self: "SceneStreamer"):
     if self.pcd_seg_model is None:
         self.pcd_seg_model = YOLO(self.params['yolo_model_path'])
