@@ -11,7 +11,7 @@ def main():
         'Image_Amount': 13,
         'board_shape': (7, 10),
         'board_square_size': 23.5,
-        'board_marker_size': 19,
+        'board_marker_size': 19,    
         'input_method': 'auto_calibrated_mode',
         'folder_path': '_tmp',
         'camera_list': [

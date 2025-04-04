@@ -1,6 +1,9 @@
 from PySide6.QtCore import QTimer
 from typing import TYPE_CHECKING
 from app.ui.app_ui import SceneViewer
+import logging 
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from app.entry import SceneStreamer
@@ -8,18 +11,14 @@ if TYPE_CHECKING:
 def on_stream_init_button_clicked(self: "SceneStreamer"):
     if self.streaming:
         # Stop streaming
-        self.streaming = False
         self.main_init_button.setText("Initialize Cameras")
         if hasattr(self, 'timer'):
             self.timer.stop()
 
         self.streamer.disconnect()
-        
-        # Clean up camera views
         scene_viewer = self.viewer
         if scene_viewer:
             scene_viewer.clear_all_cameras()
-        
         self.status_message.setText("System: Stream Stopped")
     else:
         # Start streaming
@@ -47,7 +46,7 @@ def on_stream_init_button_clicked(self: "SceneStreamer"):
         connected = self.streamer.camera_mode_init()
         if connected:
             self.status_message.setText("System: Streaming from Cameras")
-            self.timer = QTimer(self)
+            # self.timer = QTimer(self)
             self.timer.timeout.connect(self.frame_calling)
             self.timer.start(30)  # Update at ~30 FPS
         else:

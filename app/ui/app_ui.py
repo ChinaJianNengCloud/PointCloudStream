@@ -15,8 +15,8 @@ from app.viewers.image_viewer import ResizableImageLabel
 from .chat_ui_widget import ChatHistoryWidget
 from .data_ui_widget import DataTreeWidget
 
-from app.utils.logger import setup_logger
-logger = setup_logger(__name__)
+import logging
+logger = logging.getLogger(__name__)
 
 class PlotController(QWidget):
     def __init__(self):
@@ -163,7 +163,6 @@ class SceneStreamerUI(QMainWindow):
 
         # Initialize widgets in tabs
         self.init_general_tab()
-        self.init_view_tab()
         self.init_calibration_tab()
         self.init_data_tab()
         self.init_agent_tab()  # Add the new Robot tab
@@ -208,19 +207,6 @@ class SceneStreamerUI(QMainWindow):
         self.init_stream_set(general_layout)
         # self.init_video_displays(general_layout)
         self.init_scene_info(general_layout)
-
-    def init_view_tab(self):
-        self.view_tab = QWidget()
-        self.tab_view.addTab(self.view_tab, "View")
-        view_layout = QVBoxLayout(self.view_tab)
-
-        # Initialize widgets in view tab
-        self.init_toggle_view_set(view_layout)
-        self.init_aqui_mode(view_layout)
-        self.init_center_to_base_mode(view_layout)
-        self.init_display_mode(view_layout)
-        self.init_view_layout(view_layout)
-        self.init_operate_info(view_layout)
 
     def init_calibration_tab(self):
         self.calibration_tab = QWidget()
@@ -421,64 +407,6 @@ class SceneStreamerUI(QMainWindow):
         self.view_status = QLabel("")
         group_layout.addWidget(self.view_status)
 
-    def init_toggle_view_set(self, layout:QVBoxLayout):
-        h_layout = QHBoxLayout()
-        layout.addLayout(h_layout)
-
-        self.capture_toggle = QCheckBox("Capture / Play")
-        h_layout.addWidget(self.capture_toggle)
-
-        self.seg_model_init_toggle = QCheckBox("Seg Mode")
-        h_layout.addWidget(self.seg_model_init_toggle)
-
-    def init_aqui_mode(self, layout:QVBoxLayout):
-        h_layout = QHBoxLayout()
-        layout.addLayout(h_layout)
-
-        self.acq_mode_toggle = QCheckBox("Acquisition Mode")
-        h_layout.addWidget(self.acq_mode_toggle)
-
-    def init_center_to_base_mode(self, layout:QVBoxLayout):
-        h_layout = QHBoxLayout()
-        layout.addLayout(h_layout)
-
-        self.center_to_robot_base_toggle = QCheckBox("Center to Base")
-        self.center_to_robot_base_toggle.setEnabled(False)
-        h_layout.addWidget(self.center_to_robot_base_toggle)
-
-    def init_display_mode(self, layout:QVBoxLayout):
-        h_layout = QHBoxLayout()
-        layout.addLayout(h_layout)
-
-        display_mode_label = QLabel("Display Mode:")
-        h_layout.addWidget(display_mode_label)
-
-        self.display_mode_combobox = QComboBox()
-        self.display_mode_combobox.addItem("Colors")
-        # self.display_mode_combobox.addItem("Normals")
-        self.display_mode_combobox.addItem("Segmentation")
-        h_layout.addWidget(self.display_mode_combobox)
-
-    def init_view_layout(self, layout:QVBoxLayout):
-        h_layout = QHBoxLayout()
-        layout.addLayout(h_layout)
-
-        self.camera_view_button = QPushButton("Camera view")
-        h_layout.addWidget(self.camera_view_button)
-
-        self.birds_eye_view_button = QPushButton("Bird's eye view")
-        h_layout.addWidget(self.birds_eye_view_button)
-
-    def init_operate_info(self, layout:QVBoxLayout):
-        self.info_groupbox = QGroupBox("Operate Info")
-        self.info_groupbox.setCheckable(True)
-        self.info_groupbox.setChecked(True)
-        group_layout = QVBoxLayout()
-        self.info_groupbox.setLayout(group_layout)
-        layout.addWidget(self.info_groupbox)
-
-        self.mouse_coord = QLabel("mouse coord: ")
-        group_layout.addWidget(self.mouse_coord)
 
     def init_calibrate_layout(self, layout:QVBoxLayout):
         h_layout = QHBoxLayout()

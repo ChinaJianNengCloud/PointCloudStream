@@ -25,14 +25,16 @@ class MultiCamStreamer:
 
     def disconnect(self):
         # Stop all camera reader threads
+        print("Start to disconnect cameras...")
         for thread in self.camera_threads.values():
             thread.stop()
         self.camera_threads.clear()
-        
+        print("Camera reader threads stopped.")
         # Release all camera resources
         for camera_info in self.cameras.values():
             cap = camera_info.get('capture')
             if cap is not None:
+                print(f"Releasing camera resources: {cap}")
                 cap.release()
         self.cameras.clear()
 
