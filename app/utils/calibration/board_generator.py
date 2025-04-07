@@ -80,7 +80,7 @@ def generate_charuco_board_pdf(board_shape, square_size, marker_size, output_fil
 
 if __name__ == "__main__":
     generate_charuco_board_pdf(
-    board_shape=(7, 10),  # Number of squares (columns, rows)
+    board_shape=(3, 5),  # Number of squares (columns, rows)
     square_size=0.025,    # Square size in meters
     marker_size=0.020,    # Marker size in meters
     output_filename="charuco_board_with_info.pdf"  # Output PDF file

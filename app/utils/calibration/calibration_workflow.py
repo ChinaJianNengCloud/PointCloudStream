@@ -1,7 +1,6 @@
 import numpy as np
 import cv2
 import os
-import open3d as o3d
 import time
 import logging
 try:
@@ -14,7 +13,6 @@ except ImportError:
     from app.utils.calibration.calibration_data import CalibrationData
 
 # Configure logging
-# logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(levelname)s] %(message)s')
 from app.utils.logger import setup_logger
 logger = setup_logger(__name__)
 
@@ -42,7 +40,7 @@ class CalibrationProcess:
         self.cv_realtime_stream = params.get('cv_realtime_stream', False)
         self.camera = camera_interface
         self.robot = robot_interface
-        self.calibration_dir = os.path.join(self.directory, f'Calibration_results')
+        self.calibration_dir = os.path.join(self.directory, 'Calibration_results')
         os.makedirs(self.calibration_dir, exist_ok=True)
         # Initialize CalibrationData
         self.calibration_data = calibration_data
@@ -55,13 +53,11 @@ class CalibrationProcess:
             while len(self.calibration_data) < self.image_amount:
                 current_num_images = len(self.calibration_data)
                 if current_num_images > last_num_images:
-                    idx = current_num_images - 1
                     logger.info(f"Captured image {current_num_images} of {self.image_amount}")
                     # Capture robot pose
                     robot_pose = self.robot.get_state('tcp')
-                    # Get the last image from calibration_data
+                    # Capture the frame from the camera
                     img = self.camera.capture_frame()
-                    # Update the robot pose for the last image
                     self.calibration_data.append(img, robot_pose)
                     last_num_images = current_num_images
                 time.sleep(0.1)
@@ -105,11 +101,9 @@ class CalibrationProcess:
             if not os.path.exists(pose_file_path):
                 raise FileNotFoundError(f"Pose file not found at: {pose_file_path}")
 
-            # Read poses from pose.txt
             with open(pose_file_path, 'r') as pose_file:
                 lines = pose_file.readlines()
 
-            # Now load images named idx.png, where idx corresponds to the pose index
             for idx, line in enumerate(lines):
                 image_path = os.path.join(self.folder_path, f'{idx}.png')
                 if not os.path.exists(image_path):
@@ -120,21 +114,18 @@ class CalibrationProcess:
                     logger.warning(f"Failed to load image at path: {image_path}")
                     continue
                 logger.info(f"Loaded image {idx}.png")
-
-                # Process pose line
                 parts = line.strip().split()
                 if len(parts) != 6:
                     logger.warning(f"Invalid pose format in line: {line}")
                     continue
                 x_mm, y_mm, z_mm, rx_deg, ry_deg, rz_deg = map(float, parts)
-                x_m = x_mm / 1000.0  # Convert mm to meters
+                x_m = x_mm / 1000.0
                 y_m = y_mm / 1000.0
                 z_m = z_mm / 1000.0
-                rx_rad = np.deg2rad(rx_deg)  # Convert degrees to radians
+                rx_rad = np.deg2rad(rx_deg)
                 ry_rad = np.deg2rad(ry_deg)
                 rz_rad = np.deg2rad(rz_deg)
                 robot_pose = np.array([x_m, y_m, z_m, rx_rad, ry_rad, rz_rad])
-                # Append to calibration data
                 self.calibration_data.append(img, robot_pose)
 
             logger.info("Finished loading images and poses from folder")
@@ -151,17 +142,9 @@ class CalibrationProcess:
             logger.info("ChArUco corners were not found in any image. Exiting calibration process.")
             return
 
-        # Use camera intrinsic parameters if available
-        if self.camera.camera_matrix is not None and self.camera.dist_coeffs is not None:
-            self.calibration_data.camera_matrix = self.camera.camera_matrix
-            self.calibration_data.dist_coeffs = self.camera.dist_coeffs
-            logger.info("Using camera intrinsic parameters from camera interface.")
-        elif self.load_intrinsic:
-            self.calibration_data.load_camera_intrinsics(self.intrinsic_path)
-            logger.info("Loaded camera intrinsic parameters from file.")
-        else:
-            self.calibration_data.calibrate_camera()
-            logger.info("Camera calibration completed.")
+        # Do not load intrinsic parameters; directly perform calibration
+        self.calibration_data.calibrate_camera()
+        logger.info("Camera calibration completed.")
 
         self.calibration_data.board_pose_calculation()
         logger.info("Board pose calculated.")
@@ -169,14 +152,12 @@ class CalibrationProcess:
         logger.info("Reprojection error computed.")
         self.calibration_data.calibrate_hand_eye()
         logger.info("Hand-eye calibration completed.")
-        # Save calibration data
         json_path = os.path.join(self.calibration_dir, 'calibration_results.json')
         self.calibration_data.save_calibration_data(json_path)
-        # Optionally save images and poses
         self.calibration_data.save_img_and_pose()
 
-def main(params):
 
+def main(params):
     input_method = params.get('input_method', 'capture')
 
     # Create ChArUco dictionary and board
@@ -190,18 +171,17 @@ def main(params):
     calibration_data = CalibrationData(charuco_board)
     
     if input_method in ['capture', 'auto_calibrated_mode']:
-        camera_config = './default_config.json'
-        sensor_config = o3d.io.read_azure_kinect_sensor_config(camera_config)
-        camera = o3d.io.AzureKinectSensor(sensor_config)
-        if not camera.connect(0):
-            raise RuntimeError('Failed to connect to Azure Kinect sensor')
+        # Use cv2 VideoCapture with camera id 0
+        camera = cv2.VideoCapture(0)
+        if not camera.isOpened():
+            raise RuntimeError("Failed to open cv2 camera with id 0")
         camera_interface = CameraInterface(camera, calibration_data)
         robot_interface = RobotInterface()
         robot_interface.find_device()
         robot_interface.connect()
     elif input_method == 'load_from_folder':
-        camera_interface = CameraInterface(None, calibration_data)  # No camera needed
-        robot_interface = None  # No robot interface needed
+        camera_interface = CameraInterface(None, calibration_data)
+        robot_interface = None
     else:
         raise ValueError(f"Unknown input method: {input_method}")
 
@@ -214,17 +194,14 @@ if __name__ == '__main__':
         'directory': '.',  # Change to your directory if needed
         'ImageAmount': 13,
         'board_shape': (11, 6),
-        'board_square_size': 23, # mm
-        'board_marker_size': 17.5, # mm
+        'board_square_size': 23,  # mm
+        'board_marker_size': 17.5,  # mm
         'input_method': 'auto_calibrated_mode',  # 'capture', 'load_from_folder', or 'auto_calibrated_mode'
         'folder_path': '_tmp',  # Specify the folder path if using 'load_from_folder'
         'pose_file_path': './poses.txt',  # Specify the pose file path for 'auto_calibrated_mode'
-        'load_intrinsic': True,  # Set to True or False
-        'intrinsic_path': './Calibration_results/calibration_results.json',  # Path to the intrinsic JSON file
+        'load_intrinsic': False,  # Intrinsic parameters will not be loaded
+        'intrinsic_path': './Calibration_results/calibration_results.json',  # Not used since load_intrinsic is False
         'cv_realtime_stream': False,
         'board_type': 'DICT_4X4_100'
     }
-
     main(params)
-
-    
