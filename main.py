@@ -16,7 +16,7 @@ def main():
         'folder_path': '_tmp',
         'camera_list': [
             {
-                'id': 0, 
+                'id': 4, 
                 'name': 'main'
             },
             #    {

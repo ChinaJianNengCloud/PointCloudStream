@@ -52,7 +52,7 @@ class CollectedData(QObject):
         # Generate list of camera file keys to exclude
         cam_file_keys = [f'{cam_name}_cam_files' for cam_name in self.camera_names]
         if not cam_file_keys:  # For backward compatibility
-            cam_file_keys = ['main_cam_files', 'sub_cam_files']
+            cam_file_keys = ['main_cam_files', 'wrist_cam_files']
             
         ext_key_for_show = tuple(cam_file_keys + [
                               'joint_position_records',
@@ -260,7 +260,7 @@ class CollectedData(QObject):
             entry = saved_data[data_id]
             # Check if all files exist
             files_exist = True
-            for file_list in [entry['main_cam_files'], entry['sub_cam_files']]:
+            for file_list in [entry['main_cam_files'], entry['wrist_cam_files']]:
                 for file_name in file_list:
                     file_path = os.path.join(self.resource_path, file_name)
                     if not os.path.exists(file_path):
@@ -276,7 +276,7 @@ class CollectedData(QObject):
                     'pose': [pose['pose0'] for pose in entry['poses']],
                     # 'bboxes': self.box_from_dict(bbox_dict_or_list=entry["bboxes"]),
                     'main_cam_files': entry['main_cam_files'],
-                    'sub_cam_files': entry['sub_cam_files'],
+                    'wrist_cam_files': entry['wrist_cam_files'],
                     'joint_positions': entry.get('joint_positions', []),
                     'joint_position_records': entry.get('joint_position_records', []),
                     'pose_record': entry.get('pose_record', []),

@@ -44,26 +44,45 @@ def on_data_replay_and_save_button_clicked(self: "SceneStreamer"):
 
     logger.debug("Data replay and save button clicked")
 
+def init_pose(self: "SceneStreamer"):
+    """
+    Initialize the robot pose.
+    """
+    init_joints = np.array([
+        [215, -87, 130, -207, 277, -134],
+        ])
+    init_joints = np.deg2rad(init_joints)
+
+    random_selection = np.random.choice(init_joints, 1)[0]
+    if self.robot is not None:
+        self.robot.set_teach_mode(False)
+        self.robot.high_speed_mode()
+        self.robot.step(action_type='joint', action=random_selection, wait=True)
+        self.robot.set_teach_mode(True)
+        self.robot.low_speed_mode()
+
+
+
 def on_record_start(self:"SceneStreamer", thread: Thread):
 
-    notice = "Please confirm the Robot Arm is in the correct position before recording."
+    # notice = "Please confirm the Robot Arm is in the correct position before recording."
     # timer_was_active = False
     # if hasattr(self, 'timer') and self.timer.isActive():
     #     timer_was_active = True
     #     self.timer.stop()
         
-    dialog = ImageConfirmationDialog(None, notice)
-    result = dialog.exec()
+    # dialog = ImageConfirmationDialog(None, notice)
+    # result = dialog.exec()
     # if timer_was_active:
     #     self.timer.start()
-    if result == QDialog.DialogCode.Accepted:
-        self.robot.high_speed_mode()
-        self.robot.recording_flag = True
-        thread.start()
-    else:
-        self.robot.recording_flag = False
-        self.robot.low_speed_mode()
-        thread.join()
+    # if result == QDialog.DialogCode.Accepted:
+    self.robot.high_speed_mode()
+    self.robot.recording_flag = True
+    thread.start()
+    # else:
+    #     self.robot.recording_flag = False
+    #     self.robot.low_speed_mode()
+    #     thread.join()
 
 
 def on_record_finished(self:"SceneStreamer", thread: Thread):
@@ -72,10 +91,10 @@ def on_record_finished(self:"SceneStreamer", thread: Thread):
     thread.join()
     
     notice = "Data collection finished. Please Check the robot arm if it's end at correct position."
-    image_file = self.collected_data.resource_path + '/' + self.collected_data.saved_data_json.get(
-                            self.data_tree_view.selected_item.root_text
-                            ).get('main_cam_files')[-1]
-    dialog = ImageConfirmationDialog(image_file, notice)
+    # image_file = self.collected_data.resource_path + '/' + self.collected_data.saved_data_json.get(
+    #                         self.data_tree_view.selected_item.root_text
+    #                         ).get('main_cam_files')[-1]
+    dialog = ImageConfirmationDialog(None, notice)
     result = dialog.exec()
     if result == QDialog.DialogCode.Accepted:
         logger.info("Data collection confirmed")
@@ -98,22 +117,26 @@ def collect_data_at_fps(self: "SceneStreamer", fps):
     logger.info("Data collection started")
     while self.robot.recording_flag:
         robot_pose = self.robot.get_state('tcp')
-        joint_position = self.robot.get_joint_position()
+        joint_position = self.robot.get_state('joint')
         
         # Collect frames from all available cameras
         frames = {}
+        cam_num: int = len(self.streamer.cameras)
+        count = 0
         for camera_name in self.streamer.cameras.keys():
             if camera_name in self.current_frame:
+                count += 1
                 frames[camera_name] = self.current_frame[camera_name]
-
-        self.collected_data.add_record(
-            prompt=self.prompt_text.text(),
-            frames=frames,
-            base_poses=robot_pose,
-            joint_position=joint_position,
-            record_stage=True
-        )
-        idx += 1
+                
+        if count == cam_num:
+            self.collected_data.add_record(
+                prompt=self.prompt_text.text(),
+                frames=frames,
+                base_poses=robot_pose,
+                joint_position=joint_position,
+                record_stage=True
+            )
+            idx += 1
         time.sleep(interval)
         if idx > 300:
             logger.error("Failed to collect data, idx is greater than 300, please check!")

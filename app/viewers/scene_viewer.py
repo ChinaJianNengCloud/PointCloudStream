@@ -61,7 +61,7 @@ class MultiCamStreamer:
                 return False, None
         else:
             cap = cv2.VideoCapture(idx)
-            logger.info(f"Camera RES: {cap.get(cv2.CAP_PROP_FRAME_WIDTH)}x{cap.get(cv2.CAP_PROP_FRAME_HEIGHT)}")
+            logger.info(f"Camera RES: {cap.get(cv2.CAP_PROP_FRAME_WIDTH)}x{cap.get(cv2.CAP_PROP_FRAME_HEIGHT)}, ID: {idx}")
             if not cap.isOpened():
                 return False, None
             return True, cap
@@ -77,8 +77,9 @@ class MultiCamStreamer:
                 'name': name,
                 'http_url': http_url if idx == 99 else None
             }
-            
+            # print("Camera added:", name)
             # Create and start a camera reader thread
+            logger.info(f"Cam name: {name}, ID: {idx} success: {success}")
             thread = CameraReader(name, cap)
             thread.start()
             self.camera_threads[name] = thread
@@ -113,6 +114,7 @@ class MultiCamStreamer:
             cam_name = camera.get('name', f'cam_{len(self.cameras)}')
             http_url = camera.get('http_url') if cam_id == 99 else None
             
+
             if not self.add_camera(cam_id, cam_name, http_url):
                 success = False
                 

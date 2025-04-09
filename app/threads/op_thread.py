@@ -64,8 +64,8 @@ class RobotJointOpThread(QThread):
                 self.action_start.emit()
                 while not self.robot.recording_flag:
                     time.sleep(0.1)
-
             self.progress.emit(idx)
+        time.sleep(0.5)
         self.action_finished.emit()
         self.robot.set_teach_mode(True)
 

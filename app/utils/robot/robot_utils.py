@@ -189,7 +189,8 @@ class RobotInterface:
                 logging.info(f"Invalid state type: {state_type}") 
                 return None
 
-    def step(self, action: np.ndarray, action_type: str, wait=True) -> np.ndarray:
+    def step(self, action: np.ndarray, 
+             action_type: str, wait=True) -> np.ndarray:
         if action_type == "joint":
             assert action.shape == (6,), f"Invalid action shape: {action.shape}"
             self._set_joint_position(action, wait=wait)

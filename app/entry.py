@@ -108,6 +108,7 @@ class SceneStreamer(SceneStreamerUI):
         """Update camera list in params from the UI list widget"""
         camera_list = []
         for i in range(self.camera_list_widget.count()):
+            
             item = self.camera_list_widget.item(i)
             camera_data = item.data(Qt.ItemDataRole.UserRole)
             if camera_data:
@@ -117,7 +118,7 @@ class SceneStreamer(SceneStreamerUI):
                     'name': camera_data.get('name', f'camera_{i}'),
                     'device_name': camera_data.get('device_name', '')
                 }
-                
+                logger.info(f"Camera entry: {camera_entry}")
                 # Add HTTP URL for HTTP cameras (ID 99)
                 if camera_entry['id'] == 99:
                     camera_entry['http_url'] = camera_data.get('http_url', '')
