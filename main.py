@@ -9,25 +9,25 @@ def main():
     params = {
         'directory': '.',
         'Image_Amount': 13,
-        'board_shape': (7, 10),
+        'board_shape': (3, 5),
         'board_square_size': 23.5,
         'board_marker_size': 19,    
         'input_method': 'auto_calibrated_mode',
         'folder_path': '_tmp',
         'camera_list': [
             {
-                'id': 4, 
+                'id': 7, 
                 'name': 'main'
             },
-            #    {
-            #     'id': 2, 
-            #     'name': 'wrist'
-            # },
             {
-                'id': 99, 
-                'name': 'wrist', 
-                'http_url': 'http://192.168.1.123:81/stream'
-            }
+                'id': 0, 
+                'name': 'control'
+            },
+            # {
+            #     'id': 99, 
+            #     'name': 'wrist', 
+            #     'http_url': 'http://192.168.1.123:81/stream'
+            # }
         ],
         'pose_file_path': './poses.txt',
         'load_intrinsic': True,

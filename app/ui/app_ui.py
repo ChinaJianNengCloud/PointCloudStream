@@ -336,6 +336,22 @@ class SceneStreamerUI(QMainWindow):
         self.robot_state_type_combobox.addItems(["tcp", "joint"])
         robot_plot_layout.addWidget(self.robot_state_type_combobox)
 
+        # Board Control
+        self.board_control_layout = QHBoxLayout()
+        robot_group_layout.addLayout(self.board_control_layout)
+        
+        self.sync_board_button = QPushButton("Sync Board")
+        self.board_control_layout.addWidget(self.sync_board_button)
+
+        self.board_tracker_checkbox = QCheckBox("Track Board")
+        self.board_control_layout.addWidget(self.board_tracker_checkbox)
+
+        self.teach_mode_button = QPushButton("Teach Mode")
+        self.board_control_layout.addWidget(self.teach_mode_button)
+
+        self.end_teach_mode_button = QPushButton("End Teach Mode")
+        self.board_control_layout.addWidget(self.end_teach_mode_button)
+
     def on_camera_type_changed(self, camera_type):
         """Handle camera type combobox changes"""
         if camera_type == "HTTP Camera":
@@ -477,14 +493,14 @@ class SceneStreamerUI(QMainWindow):
         col_label = QLabel("Col")
         h_layout.addWidget(col_label)
         self.board_col_num_edit = QSpinBox()
-        self.board_col_num_edit.setRange(5, 15)
+        self.board_col_num_edit.setRange(2, 15)
         self.board_col_num_edit.setValue(11)
         h_layout.addWidget(self.board_col_num_edit)
 
         row_label = QLabel("Row")
         h_layout.addWidget(row_label)
         self.board_row_num_edit = QSpinBox()
-        self.board_row_num_edit.setRange(5, 15)
+        self.board_row_num_edit.setRange(2, 15)
         self.board_row_num_edit.setValue(6)
         h_layout.addWidget(self.board_row_num_edit)
 

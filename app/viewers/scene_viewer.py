@@ -69,6 +69,11 @@ class MultiCamStreamer:
     def add_camera(self, idx: int, name: str, http_url: str = None):
         """Add a camera to the streamer with a custom name"""
         success, cap = self.init_by_cam_id(idx, http_url)
+        if success and 'control' in name:
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920 )
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+            cap.set(cv2.CAP_PROP_FPS, 30)
         if success:
             # Add camera to cameras dictionary
             self.cameras[name] = {

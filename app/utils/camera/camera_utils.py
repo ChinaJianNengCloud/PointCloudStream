@@ -3,7 +3,7 @@ import cv2
 from scipy.spatial.transform import Rotation as R
 import logging
 import threading
-import open3d as o3d
+# import open3d as o3d
 try:
     from app.utils.calibration.calibration_data import CalibrationData
 except ImportError:
@@ -123,23 +123,6 @@ class CameraInterface:
 
 
 
-def camera_test(params):
-    charuco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_100)
-    charuco_board = cv2.aruco.CharucoBoard(
-        params['board_shape'],
-        squareLength=params['board_square_size'] / 1000,
-        markerLength=params['board_marker_size'] / 1000,
-        dictionary=charuco_dict
-    )
-    calibration_data = CalibrationData(charuco_board)
-    camera_config = './default_config.json'
-    sensor_config = o3d.io.read_azure_kinect_sensor_config(camera_config)
-    camera = o3d.io.AzureKinectSensor(sensor_config)
-    if not camera.connect(0):
-        raise RuntimeError('Failed to connect to Azure Kinect sensor')
-    camera_interface = CameraInterface(camera, calibration_data)
-    camera_interface.start_live_feedback()
-
 if __name__ == '__main__':
     params = {
         'directory': '.',  # Change to your directory if needed
@@ -156,4 +139,4 @@ if __name__ == '__main__':
     }
 
 
-    camera_test(params)
+    # camera_test(params)

@@ -5,7 +5,7 @@ import numpy as np
 from typing import TYPE_CHECKING
 from app.utils import RobotInterface, CameraInterface, ARUCO_BOARD
 from app.utils import CalibrationData
-from app.utils.pose import Pose
+from app.utils.robot.pose import Pose
 from app.threads.op_thread import RobotTcpOpThread
 
 if TYPE_CHECKING:
@@ -38,16 +38,17 @@ def on_calib_check_button_clicked(self: "SceneStreamer"):
         self.calib_combobox.clear()
         self.calib_combobox.addItems(
             self.calib.get('calibration_results').keys())
-        self.calib_combobox.setEnabled(True)
-        self.calib_combobox.setCurrentIndex(0)
-        curent_selected = self.calib_combobox.currentText()
+        if self.calib_combobox.count() > 0:
+            self.calib_combobox.setEnabled(True)
+            self.calib_combobox.setCurrentIndex(0)
+        # curent_selected = self.calib_combobox.currentText()
         
-        self.T_CamToBase = Pose.from_matrix(
-            np.array(self.calib\
-                     .get('calibration_results')\
-                        .get(curent_selected)\
-                            .get('transformation_matrix')))
-        self.center_to_robot_base_toggle.setEnabled(True)
+        # self.T_CamToBase = Pose.from_matrix(
+        #     np.array(self.calib\
+        #              .get('calibration_results')\
+        #                 .get(curent_selected)\
+        #                     .get('transformation_matrix')))
+        # self.center_to_robot_base_toggle.setEnabled(True)
         
     except Exception as e:
         logger.error(f"Failed to load calibration data: {e}")
@@ -55,7 +56,7 @@ def on_calib_check_button_clicked(self: "SceneStreamer"):
 
 def on_cam_calib_init_button_clicked(self: "SceneStreamer"):
     try:
-        if not hasattr(self, 'calibration_data'):
+        if not hasattr(self, 'calibration_data') or self.calibration_data is None:
             charuco_dict = cv2.aruco.getPredefinedDictionary(ARUCO_BOARD[self.params['board_type']])
             charuco_board = cv2.aruco.CharucoBoard(
                 self.params['board_shape'],
@@ -89,25 +90,28 @@ def on_cam_calib_init_button_clicked(self: "SceneStreamer"):
             self.calibration_data.save_dir = self.params['folder_path']
 
 
-        if self.camera_interface is None:
-            self.camera_interface = CameraInterface(self.streamer.camera, self.calibration_data)
+        # if self.camera_interface is None:
+            # self.camera_interface = CameraInterface(self.streamer.camera, self.calibration_data)
         
         self.cam_calib_init_button.setStyleSheet("background-color: green;")
         self.set_enable_after_calib_init()
     except Exception as e:
+        self.calibration_data = None
         self.cam_calib_init_button.setStyleSheet("background-color: red;")
         logger.error(f"Failed to init camera calibration: {e}")
     
 def on_calib_collect_button_clicked(self: "SceneStreamer"):
-    if hasattr(self, 'calibration_data'):
-        robot_pose = self.robot.get_state('tcp')
-        color = self.current_frame['color']
-        self.calibration_data.append(color, robot_pose=robot_pose)
+    if hasattr(self, 'calibration_data') and self.calibration_data is not None:
+        if 'control' in self.current_frame:
+            if self.current_frame['control'] is not None:
+                self.calibration_data.append(self.current_frame['control'])
+        else:
+            logger.error("Please init a 'control' streamer")
     logger.debug("Calibration collect button clicked")
 
 def on_calib_list_remove_button_clicked(self: "SceneStreamer"): 
     self.calibration_data.pop(self.calib_data_list.currentIndex().row())
-    logger.debug(f"Calibration list remove button clicked")
+    logger.debug("Calibration list remove button clicked")
 
 def on_robot_move_button_clicked(self: "SceneStreamer"):
     idx = self.calib_data_list.currentIndex().row()
@@ -131,11 +135,8 @@ def on_robot_move_button_clicked(self: "SceneStreamer"):
 
 def on_calib_button_clicked(self: "SceneStreamer"):
     self.calibration_data.calibrate_all()
+    logger.info(f"Calib Matrix: {self.calibration_data.camera_matrix}")
     logger.debug("Calibration button clicked")
-
-    def on_detect_board_toggle_state_changed(self):
-        logger.debug("Detect board state changed to:")
-
 
 def on_detect_board_toggle_state_changed(self: "SceneStreamer"):
     logger.debug("Detect board state changed to:")

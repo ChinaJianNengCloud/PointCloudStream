@@ -1,5 +1,7 @@
+from ast import Tuple
 import time
 import numpy as np
+import cv2
 from functools import partial
 from typing import List, Dict, Any
 
@@ -9,12 +11,16 @@ from PySide6.QtWidgets import (QLabel, QListWidgetItem)
 from app.ui import SceneStreamerUI
 from app.utils import CalibrationData, CollectedData, ConversationData
 from app.utils.camera import CameraInterface
+from app.utils.robot.board_sync import BoardRobotSyncManager
 from app.utils.robot import RobotInterface
 from app.viewers.scene_viewer import MultiCamStreamer
 from app.threads.op_thread import DataSendToServerThread, RobotTcpOpThread, RobotJointOpThread
 from app.utils.camera.device.usb_camera_parser import USBVideoManager
 from app.callbacks import (
-    on_stream_init_button_clicked,        
+    on_stream_init_button_clicked,
+    on_teach_mode_button_clicked,
+    on_end_teach_mode_button_clicked,
+    on_sync_board_button_clicked,
     # Calibration Tab
     on_cam_calib_init_button_clicked,
     on_robot_init_button_clicked,
@@ -45,7 +51,7 @@ from app.callbacks import (
     on_scan_button_clicked,
     on_send_button_clicked,
 )
-from app.utils.pose import Pose
+from app.utils.robot.pose import Pose
 import logging
 logger = logging.getLogger(__name__)
 
@@ -74,11 +80,12 @@ class SceneStreamer(SceneStreamerUI):
         self.streamer = MultiCamStreamer(params=params)
         self.video_manager = USBVideoManager()
         self.timer = QTimer()
-        
+        self.board_and_robot_pose_list: List[Pose] = None
         # Data management
         self.collected_data = CollectedData(self.params.get('data_path', './data'))
         self.conversation_data = ConversationData()
-        
+        self.calibration_data: CalibrationData = None
+
         # Display components
         self.rectangle_geometry = None
         self.palettes = self.get_num_of_palette(80)
@@ -91,6 +98,7 @@ class SceneStreamer(SceneStreamerUI):
         self.camera_interface = None
         self.pcd_seg_model = None
         self.calib = None
+        self.board_sync_manager: BoardRobotSyncManager = None
         
         # Network components
         self.sendingThread = None
@@ -223,37 +231,64 @@ class SceneStreamer(SceneStreamerUI):
             # Get the robot state based on the selected type
             robot_state = self.robot.get_state(robot_state_type)
             frame_elements.update({
-                'robot_pose': robot_state,
+                'robot_pose': Pose.from_1d_array(self.robot.get_state('tcp'), vector_type='euler', degrees=False),
+                'robot_pose_graph': robot_state,
                 'robot_state_type': robot_state_type
             })
+        
+        if 'control' in frame_elements and frame_elements['control'] is not None:
+            # rotate 90 degrees
+            frame_elements['control'] = cv2.rotate(frame_elements['control'], cv2.ROTATE_90_COUNTERCLOCKWISE)
             
         self.elements_update(frame_elements)
         self.current_frame = frame_elements
 
+        if self.board_tracker_checkbox.isChecked() and \
+            'board_pose' in self.current_frame:
+            self.board_sync_manager.step_async(self.current_frame['board_pose'], use_swap=True)
+            
+        
+    def board_detect(self, image: np.ndarray):
+        if self.calibration_data is not None and \
+            self.detect_board_toggle.isChecked():
+            rvec, tvec, img = self.calibration_data.draw_board(image)
+            if rvec is not None and tvec is not None:
+                pose = Pose.from_1d_array(np.hstack([rvec.ravel(), tvec.ravel()]), 
+                                         vector_type="rotvec", degrees=False)
+                return pose, img
+            return None, img
+        return None, image
+
     def elements_update(self, frame_elements: dict):
         """Update visualization with point cloud and images."""
         scene_viewer = self.viewer
+        add_dict = {}
         if scene_viewer:
             for camera_name, frame in frame_elements.items():
+
                 # Skip non-camera keys
                 if camera_name in ['status_message', 'fps', 'robot_pose', 'robot_state_type']:
                     continue
-                
-                # Get the camera widget and update it
                 if camera_name in scene_viewer.camera_widgets:
                     camera_info = scene_viewer.camera_widgets[camera_name]
                     camera_widget = camera_info['widget']
-                    self.update_widget_with_image(camera_widget, frame)
-            
+                    if 'control' in camera_name and frame is not None:
+                        pose, img = self.board_detect(frame.copy())
+                        self.update_widget_with_image(camera_widget, img)
+                        if pose is not None:
+                            add_dict['board_pose'] = pose
+                    else:
+                        self.update_widget_with_image(camera_widget, frame)
+
             # Update robot pose graph if robot pose data is available
-            if 'robot_pose' in frame_elements and hasattr(scene_viewer, 'robot_pose_graph'):
+            if 'robot_pose_graph' in frame_elements and hasattr(scene_viewer, 'robot_pose_graph'):
                 # Only update if plot robot pose checkbox is checked
                 if hasattr(self, 'plot_robot_pose_checkbox') and self.plot_robot_pose_checkbox.isChecked():
                     # Get the state type
                     state_type = frame_elements.get('robot_state_type', 'tcp')
                     # Update graph with state type
                     scene_viewer.robot_pose_graph.update_data(
-                        frame_elements['robot_pose'],
+                        frame_elements['robot_pose_graph'],
                         state_type=state_type
                     )
                     # Make the robot pose graph visible
@@ -261,7 +296,9 @@ class SceneStreamer(SceneStreamerUI):
                 else:
                     # Hide the robot pose graph when checkbox is unchecked
                     scene_viewer.robot_pose_graph.setVisible(False)
-
+        frame_elements.update(add_dict)
+        if 'board_pose' in frame_elements and 'robot_pose' in frame_elements:
+            self.board_and_robot_pose_list = [frame_elements['board_pose'], frame_elements['robot_pose']]
         if 'status_message' in frame_elements:
             self.status_message.setText(frame_elements['status_message'])
 
@@ -284,11 +321,10 @@ class SceneStreamer(SceneStreamerUI):
                                           Qt.AspectRatioMode.KeepAspectRatio,
                                           Qt.TransformationMode.SmoothTransformation))
 
-    def update_widget_with_image(self, widget, image):
+    def update_widget_with_image(self, widget: QLabel, image: np.ndarray):
         """Update any widget with an image"""
         if image is None:
             return
-        
         h, w, c = image.shape
         bytes_per_line = c * w
         q_img = QImage(image.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
@@ -354,6 +390,9 @@ class SceneStreamer(SceneStreamerUI):
         # General Tab
         self.main_init_button.clicked.connect(partial(on_stream_init_button_clicked, self))
         self.sub_camera_combobox.currentTextChanged.connect(self.update_cam_ids)
+        self.teach_mode_button.clicked.connect(partial(on_teach_mode_button_clicked, self))
+        self.end_teach_mode_button.clicked.connect(partial(on_end_teach_mode_button_clicked, self))
+        self.sync_board_button.clicked.connect(partial(on_sync_board_button_clicked, self))
 
         # Calibration Tab
         self.cam_calib_init_button.clicked.connect(partial(on_cam_calib_init_button_clicked, self))
@@ -453,6 +492,7 @@ class SceneStreamer(SceneStreamerUI):
 
     def set_enable_after_calib_init(self):
         """Enable UI elements after calibration initialization."""
+        self.calib_collect_button.setEnabled(True)
         self.calib_button.setEnabled(True)
         self.detect_board_toggle.setEnabled(True)
         self.show_axis_in_scene_button.setEnabled(True)

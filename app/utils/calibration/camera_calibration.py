@@ -357,9 +357,13 @@ def main(params):
     )
     calibration_data = CalibrationData(charuco_board, save_dir='./Calibration_results')
     if input_method == 'capture':
-        camera = cv2.VideoCapture(0)
-        camera.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-        camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        camera = cv2.VideoCapture(6)
+        # Set MJPEG format
+        camera.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+
+        # Set resolution and FPS
+        camera.set(cv2.CAP_PROP_FRAME_WIDTH, 1920 )
+        camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
         camera.set(cv2.CAP_PROP_FPS, 30)
         if not camera.isOpened():
             raise RuntimeError("Failed to open cv2 camera with id 0")

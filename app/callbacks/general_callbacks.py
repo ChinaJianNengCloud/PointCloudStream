@@ -1,6 +1,6 @@
 from PySide6.QtCore import QTimer
 from typing import TYPE_CHECKING
-from app.ui.app_ui import SceneViewer
+from app.utils.robot.board_sync import BoardRobotSyncManager
 from app.utils import RobotInterface
 import logging 
 
@@ -68,10 +68,28 @@ def on_robot_init_button_clicked(self: "SceneStreamer"):
         self.robot.connect()
         ip = self.robot.ip_address
         msg = f'Robot: Connected [{ip}]'
+        self.board_sync_manager = BoardRobotSyncManager(self.robot, self)
         self.robot_init_button.setStyleSheet("background-color: green;")
+        self.flag_robot_init = True
     except Exception as e:
         msg = 'Robot: Connection failed'
         del self.robot
         logger.error(msg+f' [{e}]')
         self.robot_init_button.setStyleSheet("background-color: red;")
         self.flag_robot_init = False
+
+
+def on_teach_mode_button_clicked(self: "SceneStreamer"):
+    if hasattr(self, 'robot') and self.flag_robot_init:
+        logger.info("Setting robot to teach mode")
+        self.robot.set_teach_mode(True)
+
+def on_end_teach_mode_button_clicked(self: "SceneStreamer"):
+    if hasattr(self, 'robot') and self.flag_robot_init:
+        logger.info("Setting robot to end teach mode")
+        self.robot.set_teach_mode(False)
+
+def on_sync_board_button_clicked(self: "SceneStreamer"):
+    if hasattr(self, 'robot') and self.flag_robot_init:
+        logger.info("Syncing board")
+        self.board_sync_manager.sync(self.board_and_robot_pose_list[0], self.board_and_robot_pose_list[1])
