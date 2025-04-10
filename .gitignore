@@ -2,8 +2,10 @@
 *.pyc
 *.png
 *.pdf
-data*/
+data/
 testoutput/
 *test*.py
 wandb/
 runs/
+_tmp*/
+*.csv
