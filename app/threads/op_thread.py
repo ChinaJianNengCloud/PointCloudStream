@@ -3,7 +3,7 @@ import logging
 import numpy as np
 import socket
 import pickle
-
+from app.utils.robot.openpi_client import websocket_client_policy
 from typing import List, Tuple
 from PySide6.QtCore import QThread, Signal
 # Import specific modules from vtkmodules
@@ -18,6 +18,9 @@ class RobotTcpOpThread(QThread):
     def __init__(self, robot: RobotInterface, robot_poses: List[np.ndarray]):
         self.robot = robot
         self.robot_poses = robot_poses
+        self.robot.update_motion_parameters(
+            acceleration=10, velocity=10, time_running=0, radius=0
+        )
         super().__init__()
 
     def run(self):
@@ -30,7 +33,7 @@ class RobotTcpOpThread(QThread):
                 logger.error(f"Failed to move to pose {idx}: {e}")
                 logger.info(f"Skipping pose {idx}: {action}")
             self.progress.emit(idx)
-        self.robot.set_teach_mode(True)
+        # self.robot.set_teach_mode(True)
 
 class RobotJointOpThread(QThread):
     progress = Signal(int)  # Signal to communicate progress updates
@@ -68,59 +71,16 @@ class RobotJointOpThread(QThread):
 
 class DataSendToServerThread(QThread):
     progress = Signal(tuple)  # Signal to communicate progress updates (step, progress)
-    def __init__(self, ip, port, msg_dict: dict):
-        self.ip = ip
-        self.port = port
+    def __init__(self, msg_dict: dict, server:websocket_client_policy.WebsocketClientPolicy):
+        self.server = server
         self.msg_dict = msg_dict
         super().__init__()
 
     def run(self):
         try:
-            logger.debug("Sending data to server")
-            # Serialize the message dictionary
-            data = pickle.dumps(self.msg_dict)
-            data_length = len(data)
-
-            with socket.create_connection((self.ip, int(self.port))) as client_socket:
-                start_time = time.time()
-                client_socket.sendall(data_length.to_bytes(4, byteorder='big'))
-                self.progress.emit(("Sending Length", 100))  # Mark step as complete
-
-                bytes_sent = 0
-                chunk_size = 4096 
-                while bytes_sent < data_length:
-                    chunk = data[bytes_sent:bytes_sent + chunk_size]
-                    sent = client_socket.send(chunk)
-                    bytes_sent += sent
-                    progress = (bytes_sent / data_length) * 100
-                    self.progress.emit(("Sending Data", progress))
-
-                # Ensure sending step reaches 100%
-                self.progress.emit(("Sending Data", 100))
-
-                # Step 3: Receiving the response length
-                response_length = int.from_bytes(client_socket.recv(4), byteorder='big')
-                self.progress.emit(("Receiving Length", 100))  # Mark step as complete
-
-                # Step 4: Receiving the response data
-                response_data = b""
-                bytes_received = 0
-                while len(response_data) < response_length:
-                    packet = client_socket.recv(4096)
-                    if not packet:
-                        break
-                    response_data += packet
-                    bytes_received = len(response_data)
-                    progress = (bytes_received / response_length) * 100
-                    self.progress.emit(("Receiving Data", progress))
-
-                # Ensure receiving step reaches 100%
-                self.progress.emit(("Receiving Data", 100))
-                # Deserialize the response
-                self.__response = pickle.loads(response_data)
-                end_time = time.time() - start_time
-                logger.debug(f"Response from server: {self.__response}")
-                logger.debug(f"Total time: {end_time:.2f} s")
+            response = self.server.infer(self.msg_dict)
+            self.__response = {"status": "action", "message": response}
+            self.progress.emit(("Success", 100))
         except Exception as e:
             self.__response = {"status": "error", "message": str(e)}
             print(f"An error occurred: {e}")

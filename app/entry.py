@@ -103,7 +103,7 @@ class SceneStreamer(SceneStreamerUI):
         self.board_sync_manager: BoardRobotSyncManager = None
         self.init_pose_list: List[np.ndarray] = [None, None, None]
         # Network components
-        self.sendingThread = None
+        self.sendingThread: DataSendToServerThread = None
         
         # Initialize UI and callbacks
         self.__init_ui_values_from_params()

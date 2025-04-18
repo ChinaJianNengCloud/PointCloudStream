@@ -1,9 +1,12 @@
 import logging
+from re import L
 import sys
 import numpy as np
 from copy import deepcopy
 from typing import TYPE_CHECKING
 from app.utils.networking import send_message, discover_server
+from app.utils.robot.openpi_client import image_tools
+from app.utils.robot.openpi_client import websocket_client_policy
 from PIL import Image
 if TYPE_CHECKING:
     from app.entry import SceneStreamer
@@ -35,6 +38,8 @@ def on_reset_button_clicked(self: 'SceneStreamer'):
     
 
 def on_send_button_clicked(self: 'SceneStreamer'):
+    if not hasattr(self, 'websocket'):
+        self.websocket = websocket_client_policy.WebsocketClientPolicy(host=self.ip_editor.text(), port=int(self.port_editor.text()))
     
     text = self.agent_prompt_editor.toPlainText().strip()
     intruction ='''The robot should only interact with the breast closest to its arm. Directions are defined relative to the human body:
@@ -46,19 +51,23 @@ def on_send_button_clicked(self: 'SceneStreamer'):
             logger.error("No current frame, please start streaming first.")
             return
         frame = deepcopy(self.current_frame)
-        image = np.asarray(frame['color'].cpu())
+        image = np.asarray(frame['main'].cpu())
+        wrist_image = np.asarray(frame['wrist'].cpu())
     else:
-        image = Image.open("/home/capre/disk_4/yutao/data/resources/00af133d3fe24ee1a6b16a8859b08c49_color_4.png")
-        image = np.asarray(image)
+        return False
+    state = self.robot.get_state('tcp')
+    observation = {
+        "observation/image": image_tools.convert_to_uint8(
+            image_tools.resize_with_pad(image, 480, 640)
+        ),
+        "observation/wrist_image": image_tools.convert_to_uint8(
+            image_tools.resize_with_pad(wrist_image, 480, 640)
+        ),
+        "observation/state": state,
+        "prompt": intruction + text,
+    }
 
-    msg_dict = {
-        'prompt': intruction + text,
-        'image': image,
-        'command': "process_pcd"
-        }
-    self.sendingThread = DataSendToServerThread(ip=self.ip_editor.text(), 
-                                                    port=int(self.port_editor.text()), 
-                                                    msg_dict=msg_dict)
+    self.sendingThread = DataSendToServerThread(msg_dict=observation, server=self.websocket)
 
     self.sendingThread.progress.connect(lambda progress: on_send_progress(progress))
     self.sendingThread.finished.connect(lambda: on_finish_sending_thread(self))
@@ -76,8 +85,10 @@ def on_finish_sending_thread(self: "SceneStreamer"):
     if response['status'] == 'action':
         self.chat_history.add_message(f"{response['message']}", is_user=False)
         real_pose = self.view_predicted_poses(response['message'])
-        thread = RobotTcpOpThread(self.robot, real_pose)
-        thread.start()
+        self.tct_move_thread = RobotTcpOpThread(self.robot, real_pose)
+        self.tct_move_thread.start()
+        if self.auto_send_toggle.isChecked():
+            self.tct_move_thread.finished.connect(lambda: self.send_button.click())
 
     elif response['status'] == 'no_action':
         self.chat_history.add_message("Something went wrong", is_user=False)

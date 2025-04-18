@@ -619,7 +619,7 @@ class SceneStreamerUI(QMainWindow):
         self.ip_editor.setMinimumWidth(em * 10)
 
         port_label = QLabel("Port:")
-        self.port_editor = QLineEdit("65432")
+        self.port_editor = QLineEdit("8000")
         self.port_editor.setMinimumWidth(em * 5)
 
         self.scan_button = QPushButton("Scan")
@@ -682,8 +682,10 @@ class SceneStreamerUI(QMainWindow):
         self.send_button = QPushButton("Send")
         self.send_button.setMaximumWidth(int(em * 10))
         self.send_button.setMinimumHeight(int(em * 2.5))
+        self.auto_send_toggle = QCheckBox("Auto Next")
         send_button_layout.addStretch()
         send_button_layout.addWidget(self.send_button)
+        send_button_layout.addWidget(self.auto_send_toggle)
         prompt_group_layout.addLayout(send_button_layout)
 
         # Add prompt group to the splitter
