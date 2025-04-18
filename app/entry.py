@@ -46,6 +46,8 @@ from app.callbacks import (
     on_tree_selection_changed,
     on_data_tree_changed,
     on_data_replay_and_save_button_clicked,
+    on_register_button_clicked,
+    on_init_pose_button_clicked,
 
     # Agent Tab
     on_scan_button_clicked,
@@ -99,7 +101,7 @@ class SceneStreamer(SceneStreamerUI):
         self.pcd_seg_model = None
         self.calib = None
         self.board_sync_manager: BoardRobotSyncManager = None
-        
+        self.init_pose_list: List[np.ndarray] = [None, None, None]
         # Network components
         self.sendingThread = None
         
@@ -245,7 +247,7 @@ class SceneStreamer(SceneStreamerUI):
 
         if self.board_tracker_checkbox.isChecked() and \
             'board_pose' in self.current_frame:
-            self.board_sync_manager.step_async(self.current_frame['board_pose'], use_swap=True)
+            self.board_sync_manager.step_async(self.current_frame['board_pose'], use_swap=False)
             
         
     def board_detect(self, image: np.ndarray):
@@ -419,6 +421,10 @@ class SceneStreamer(SceneStreamerUI):
         self.data_tree_view.set_on_selection_changed(partial(on_tree_selection_changed, self))
         self.collected_data.data_changed.connect(partial(on_data_tree_changed, self))
         self.data_replay_and_save_button.clicked.connect(partial(on_data_replay_and_save_button_clicked, self))
+        self.init_pose_1_button.clicked.connect(partial(on_init_pose_button_clicked, self, 0))
+        self.init_pose_2_button.clicked.connect(partial(on_init_pose_button_clicked, self, 1))
+        self.init_pose_3_button.clicked.connect(partial(on_init_pose_button_clicked, self, 2))
+        self.register_button.clicked.connect(partial(on_register_button_clicked, self))
 
         # Agent Tab
         self.scan_button.clicked.connect(partial(on_scan_button_clicked, self))

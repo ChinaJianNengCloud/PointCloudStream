@@ -49,13 +49,10 @@ class RobotJointOpThread(QThread):
         self.robot.set_teach_mode(False)
         self.start_to_move = False
         for idx, joint_position in enumerate(self.joint_positions):
-
-            
             print(f"Progress: {idx}")
             logger.info(f"Moving to pose {idx}")
             try:
-                self.robot._set_joint_position(joint_position, self._wait)
-                
+                self.robot.step(joint_position, action_type='joint', wait=self._wait)
             except Exception as e:
                 logger.error(f"Failed to move to pose {idx}: {e}")
                 logger.info(f"Skipping pose {idx}: {joint_position}")

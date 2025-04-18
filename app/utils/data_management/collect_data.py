@@ -264,11 +264,11 @@ class CollectedData(QObject):
                 for file_name in file_list:
                     file_path = os.path.join(self.resource_path, file_name)
                     if not os.path.exists(file_path):
-                        files_exist = False
+                        # files_exist = False
                         logger.warning(f"File {file_path} does not exist. Skipping data_id {data_id}.")
-                        break
-                if not files_exist:
-                    break
+                        # break
+                # if not files_exist:
+                #     break
             if files_exist:
                 # All files exist, proceed to load data_entry
                 data_entry = {

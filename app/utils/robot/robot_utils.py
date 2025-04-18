@@ -169,8 +169,11 @@ class RobotInterface:
         position = self.lebai.get_kin_data()
         return position['actual_joint_pose']
     
-    def _set_joint_position(self, joint_posistion, wait=True):
+    def _set_joint_position(self, joint_posistion: np.ndarray, wait=True):
         """Send movement command to the robotic arm."""
+        assert joint_posistion.shape == (6,), f"Invalid joint position shape: {joint_posistion.shape}"
+        if isinstance(joint_posistion, np.ndarray):
+            joint_posistion = joint_posistion.tolist()
         try:
             self.lebai.movej(joint_posistion, self.acceleration, self.velocity, self.time_running, self.radius)
             logging.info(f"Robot moving to joint position: {joint_posistion}")
@@ -182,7 +185,7 @@ class RobotInterface:
     def get_state(self, state_type='joint') -> np.ndarray:
         match state_type:
             case 'joint':
-                return self.lebai.get_kin_data()['actual_joint_pose']
+                return np.array(self.lebai.get_kin_data()['actual_joint_pose'])
             case 'tcp':
                 return self.euler_dict_to_array(self.lebai.get_kin_data()['actual_tcp_pose'])
             case _:
@@ -192,6 +195,8 @@ class RobotInterface:
     def step(self, action: np.ndarray, 
              action_type: str, wait=True) -> np.ndarray:
         if action_type == "joint":
+            if isinstance(action, list):
+                action = np.array(action)
             assert action.shape == (6,), f"Invalid action shape: {action.shape}"
             self._set_joint_position(action, wait=wait)
             return self.get_state('joint')

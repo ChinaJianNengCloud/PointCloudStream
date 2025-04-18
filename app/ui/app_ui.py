@@ -553,9 +553,19 @@ class SceneStreamerUI(QMainWindow):
         h_layout.addWidget(self.calib_check_button)
 
     def data_collect_layout(self, layout:QVBoxLayout):
-        self.data_collect_button = QPushButton("Collect Current Data")
-        layout.addWidget(self.data_collect_button)
-
+        self.init_pose_1_button = QPushButton("Pose 1")
+        self.init_pose_2_button = QPushButton("Pose 2")
+        self.init_pose_3_button = QPushButton("Pose 3")
+        self.pose_idx_combobox = QComboBox()
+        self.pose_idx_combobox.addItems(["1", "2", "3"])
+        self.register_button = QPushButton("Register")
+        init_pose_layout = QHBoxLayout()
+        init_pose_layout.addWidget(self.init_pose_1_button)
+        init_pose_layout.addWidget(self.init_pose_2_button)
+        init_pose_layout.addWidget(self.init_pose_3_button)
+        init_pose_layout.addWidget(self.pose_idx_combobox)
+        init_pose_layout.addWidget(self.register_button)
+        layout.addLayout(init_pose_layout)
         prompt_layout = QHBoxLayout()
         layout.addLayout(prompt_layout)
         prompt_label = QLabel("Prompt:")
@@ -576,7 +586,8 @@ class SceneStreamerUI(QMainWindow):
         list_operation_layout.addWidget(self.data_tree_view_load_button)
         self.data_replay_and_save_button = QPushButton("Replay and Save")
         list_operation_layout.addWidget(self.data_replay_and_save_button)
-
+        self.data_collect_button = QPushButton("Collect Current Data")
+        layout.addWidget(self.data_collect_button)
         data_folder_layout = QHBoxLayout()
         layout.addLayout(data_folder_layout)
         data_folder_label = QLabel("Save to:")

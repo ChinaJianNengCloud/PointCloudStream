@@ -12,43 +12,35 @@ class StepWorker(QObject):
     finished = Signal(object)  # Emits the target robot pose when finished.
     error = Signal(Exception)  # Emits any exception encountered.
 
-    def __init__(self, board_origin: "Pose", robot_origin: "Pose", 
-                 current_board_pose: "Pose", robot: "RobotInterface", use_swap: bool = False):
+    def __init__(self, robot_pose: "Pose", robot: "RobotInterface", use_swap: bool = False):
         """
-        :param board_origin: The Pose representing board sync origin.
-        :param robot_origin: The Pose representing robot sync origin.
-        :param current_board_pose: The current board pose.
+        :param robot_pose: The current robot pose.
         :param robot: A RobotInterface object.
         :param use_swap: Whether to swap the axes.
         """
         super().__init__()
-        self.board_origin = board_origin
-        self.robot_origin = robot_origin
-        self.current_board_pose = current_board_pose
+        self.robot_pose = robot_pose
         self.robot = robot
         self.use_swap = use_swap
 
     def run(self):
         try:
-            # Calculate the board delta pose.
-            board_delta = self.board_origin.cal_delta_pose(self.current_board_pose, on="ee")
-            print(f"Board delta pose: {board_delta}")
             if self.use_swap:
-                vec = board_delta.to_1d_array(vector_type="rotvec")
+                vec = self.robot_pose.to_1d_array(vector_type="rotvec")
                 swapped_position = np.array([vec[2], vec[1], vec[0]])
                 swapped_rot = np.array([vec[5], vec[4], vec[3]])
                 swapped_vec = np.hstack((swapped_position, swapped_rot))
-                robot_delta = board_delta.__class__.from_1d_array(swapped_vec, vector_type="rotvec")
+                robot_delta = self.robot_pose.__class__.from_1d_array(swapped_vec, vector_type="rotvec")
                 print(f"Robot delta (after swapping axes): {robot_delta}")
             else:
-                robot_delta = board_delta
+                robot_delta = self.robot_pose
                 print(f"Robot delta (without axis swap): {robot_delta}")
-            target_robot_pose = self.robot_origin.apply_delta_pose(robot_delta, on="ee")
-            print(f"Robot origin: {self.robot_origin}")
-            print(f"Target robot pose: {target_robot_pose}")
-            robot_cmd = target_robot_pose.to_1d_array("euler")
-            self.robot.step(robot_cmd, action_type="tcp", wait=True)
-            self.finished.emit(target_robot_pose)
+
+            print(f"Target robot pose: {robot_delta}")
+            robot_cmd = robot_delta.to_1d_array("euler")
+            state = self.robot.step(robot_cmd, action_type="tcp", wait=True)
+            print(f"State: {state}")
+            self.finished.emit(Pose.from_1d_array(state, vector_type="euler"))
         except Exception as e:
             self.error.emit(e)
 
@@ -62,9 +54,10 @@ class BoardRobotSyncManager(QObject):
         super().__init__()
         self.streamer = parent
         self.robot = robot
-        self.board_origin = None  # Pose in board frame.
-        self.robot_origin = None  # Pose in robot frame.
+        # self.board_origin = None  # Pose in board frame.
+        # self.robot_origin = None  # Pose in robot frame.
         self.is_moving = False
+        self.calib_pose: "Pose" = None
 
         # Store the board pose associated with the latest step command.
         self._last_board_pose = None
@@ -74,9 +67,10 @@ class BoardRobotSyncManager(QObject):
         self._worker = None
 
     def sync(self, board_pose: "Pose", robot_pose: "Pose"):
-        self.board_origin = board_pose
-        self.robot_origin = robot_pose
-        print(f"Sync complete:\n  Board origin: {self.board_origin}\n  Robot origin: {self.robot_origin}")
+        self.calib_pose = board_pose.cal_delta_pose(robot_pose, on="base")
+        print(f"Sync complete:\n  Board origin: {board_pose}\n"  
+              f"Robot origin: {robot_pose}\n" 
+              f"delta: {self.calib_pose}")
 
     def swap_axes(self, pose: "Pose") -> "Pose":
         vec = pose.to_1d_array(vector_type="rotvec")
@@ -90,14 +84,13 @@ class BoardRobotSyncManager(QObject):
             print("Step in progress, ignoring new step call.")
             return
 
-        if self.board_origin is None or self.robot_origin is None:
+        if self.calib_pose is None:
             raise ValueError("Please call sync() first to initialize origins.")
 
-        self._last_board_pose = current_board_pose
+        calib_robot_pose = current_board_pose.apply_delta_pose(self.calib_pose, on="base")
         self.is_moving = True
         self._thread = QThread(self)
-        self._worker = StepWorker(self.board_origin, self.robot_origin,
-                                  current_board_pose, self.robot, use_swap=use_swap)
+        self._worker = StepWorker(calib_robot_pose, self.robot, use_swap=use_swap)
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
         self._worker.finished.connect(self.on_step_finished)
@@ -110,10 +103,8 @@ class BoardRobotSyncManager(QObject):
     @Slot(object)
     def on_step_finished(self, target_robot_pose: "Pose"):
         self.is_moving = False
-        self.board_origin = self.streamer.board_and_robot_pose_list[0]
-        self.robot_origin = self.streamer.board_and_robot_pose_list[1]
-        print(f"Step finished: Target robot pose: {target_robot_pose}")
-        # self.sync(self._last_board_pose, target_robot_pose)
+        print(f"Step finished: robot pose: {target_robot_pose}")
+
 
     @Slot(Exception)
     def on_step_error(self, error: Exception):

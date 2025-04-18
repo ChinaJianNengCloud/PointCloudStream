@@ -139,6 +139,8 @@ def collect_data_at_fps(self: "SceneStreamer", fps):
             idx += 1
         time.sleep(interval)
         if idx > 300:
+            self.robot.recording_flag = False
+            self.robot.low_speed_mode()
             logger.error("Failed to collect data, idx is greater than 300, please check!")
             break
 
@@ -264,3 +266,36 @@ def on_data_tree_changed(self: "SceneStreamer"):
                 root_text=key
             )
     self.data_tree_view.expandAll()
+
+def on_register_button_clicked(self: "SceneStreamer"):
+    if self.robot is not None:
+        match self.pose_idx_combobox.currentText():
+            case "1":
+                self.init_pose_list[0] = self.robot.get_state('joint')
+                self.init_pose_1_button.setStyleSheet("background-color: green;")
+            case "2":
+                self.init_pose_list[1] = self.robot.get_state('joint')
+                self.init_pose_2_button.setStyleSheet("background-color: green;")
+            case "3":
+                self.init_pose_list[2] = self.robot.get_state('joint')
+                self.init_pose_3_button.setStyleSheet("background-color: green;")
+    else:
+        logger.error("Failed to get robot pose")
+    logger.debug("Register button clicked")
+
+def on_init_pose_button_clicked(self: "SceneStreamer", idx: int):
+    if self.robot is not None:
+        self.robot.set_teach_mode(False)
+        match idx:
+            case 0:
+                self.robot.step(self.init_pose_list[0], action_type='joint', wait=False)
+            case 1:
+                self.robot.step(self.init_pose_list[1], action_type='joint', wait=False)
+            case 2:
+                self.robot.step(self.init_pose_list[2], action_type='joint', wait=False)
+            case _:
+                logger.error("Invalid pose index")
+        self.robot.set_teach_mode(True)
+    else:
+        logger.error("Failed to get robot pose")
+    logger.debug(f"Init pose {idx} button clicked")

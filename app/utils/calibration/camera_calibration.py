@@ -231,6 +231,7 @@ class PySideCameraInterface:
             return
         ret, frame = self.camera.read()
         if ret:
+            frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
             # Detect board and obtain corner information.
             board_detected, obj_pts, img_pts, charuco_corners, charuco_ids = self.calibration_data.board_dectect(frame)
             if board_detected:
@@ -257,6 +258,7 @@ class PySideCameraInterface:
         if not ret:
             logger.warning("Failed to capture frame from camera.")
             return
+        frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
         prev_count = len(self.calibration_data)
         # Trigger calibration automatically if at least 3 images will be available.
         recalib = (prev_count + 1 >= 3)
@@ -273,7 +275,9 @@ class PySideCameraInterface:
 
     def capture_frame(self):
         ret, frame = self.camera.read()
+        
         if ret:
+            cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
             return frame
         return None
 
@@ -357,7 +361,7 @@ def main(params):
     )
     calibration_data = CalibrationData(charuco_board, save_dir='./Calibration_results')
     if input_method == 'capture':
-        camera = cv2.VideoCapture(6)
+        camera = cv2.VideoCapture(0)
         # Set MJPEG format
         camera.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
 

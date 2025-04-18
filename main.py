@@ -16,12 +16,12 @@ def main():
         'folder_path': '_tmp',
         'camera_list': [
             {
-                'id': 7, 
+                'id': 6, 
                 'name': 'main'
             },
             {
                 'id': 0, 
-                'name': 'control'
+                'name': 'wrist'
             },
             # {
             #     'id': 99, 
