@@ -1,5 +1,9 @@
 # PCDStreamerUI
 
+## 中文技术文档
+
+[中文技术文档索引](docs/README.md)介绍当前实现中的系统架构、多相机采集、相机标定、位姿与轨迹插值、机械臂跟随、示教数据、Agent 通信、点云算法和离线数据处理，并说明各模块的接口约定与实现边界。
+
 ## Overview
 
 **PCDStreamerUI** is a desktop application built using PySide6 and VTK that provides an interactive GUI for visualizing and managing 3D point cloud data (PCD). It integrates with robotic systems, camera calibration tools, and data collection workflows, enabling users to perform tasks such as real-time point cloud rendering, robot-hand-eye calibration, and interactive data management.
